@@ -1,8 +1,0 @@
--- AlterTable
-ALTER TABLE "Sale" ADD COLUMN "address1" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "address2" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "city" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "country" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "county" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "customerPhone" TEXT;
-ALTER TABLE "Sale" ADD COLUMN "postcode" TEXT;
