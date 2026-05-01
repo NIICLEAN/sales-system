@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Staff {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+
+  sales     Sale[]
+  quotes    Quote[]
+}
+
+model Sale {
+  id                Int      @id @default(autoincrement())
+
+  shopifyOrderId    String?
+  shopifyOrderName  String?
+
+  customerId        String?
+  customerName      String
+  customerEmail     String?
+  customerVatNumber String?
+  customerPhone     String?
+
+  address1          String?
+  address2          String?
+  city              String?
+  county            String?
+  postcode          String?
+  country           String?
+
+  reference         String?
+  paymentMethod     String
+
+  subtotal          Float    @default(0)
+  discountTotal     Float    @default(0)
+  vatAmount         Float    @default(0)
+  total             Float    @default(0)
+
+  staffId           Int
+  staff             Staff    @relation(fields: [staffId], references: [id])
+
+  lineItems         SaleLineItem[]
+
+  createdAt         DateTime @default(now())
+}
+
+model SaleLineItem {
+  id                Int      @id @default(autoincrement())
+
+  saleId            Int
+  sale              Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  shopifyVariantId  String?
+  title             String
+  sku               String?
+  quantity          Int      @default(1)
+
+  unitPrice         Float    @default(0)
+  discount          Float    @default(0)
+  lineTotal         Float    @default(0)
+
+  createdAt         DateTime @default(now())
+}
+
+model Quote {
+  id                Int      @id @default(autoincrement())
+
+  customerName      String
+  customerEmail     String?
+  customerPhone     String?
+
+  address1          String?
+  address2          String?
+  city              String?
+  county            String?
+  postcode          String?
+  country           String?
+
+  reference         String?
+
+  subtotal          Float    @default(0)
+  discountTotal     Float    @default(0)
+  vatAmount         Float    @default(0)
+  total             Float    @default(0)
+
+  staffId           Int
+  staff             Staff    @relation(fields: [staffId], references: [id])
+
+  lineItems         QuoteLineItem[]
+
+  createdAt         DateTime @default(now())
+}
+
+model QuoteLineItem {
+  id                Int      @id @default(autoincrement())
+
+  quoteId           Int
+  quote             Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  shopifyVariantId  String?
+  title             String
+  sku               String?
+
+  quantity          Int      @default(1)
+  unitPrice         Float    @default(0)
+  discount          Float    @default(0)
+  lineTotal         Float    @default(0)
+
+  createdAt         DateTime @default(now())
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
