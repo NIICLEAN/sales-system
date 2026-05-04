@@ -2,7 +2,7 @@
 
 client_id = "f51fb489627e112aea6c86720d07c665"
 name = "sales-app-ncp"
-application_url = "https://example.com"
+application_url = "https://sales-system-production-e547.up.railway.app"
 embedded = true
 
 [access_scopes]
