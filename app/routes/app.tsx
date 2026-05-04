@@ -1,28 +1,48 @@
-import { Outlet, Link } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import {
+  Link,
+  Outlet,
+  useLoaderData,
+  useRouteError,
+} from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { NavMenu } from "@shopify/app-bridge-react";
+import { AppProvider } from "@shopify/shopify-app-react-router/react";
+
 import { authenticate } from "../shopify.server";
 
-export async function loader({ request }: { request: Request }) {
+export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return null;
-}
 
-export default function AppLayout() {
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+  };
+};
+
+export default function App() {
+  const { apiKey } = useLoaderData<typeof loader>();
+
   return (
-    <div style={{ display: "flex", height: "100%" }}>
-      <div style={{ width: 200, padding: 20, background: "#f4f6f8" }}>
-        <h3>NCP Sales</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <Link to="/app/invoice">Invoice</Link>
-          <Link to="/app/invoices">Invoices</Link>
-          <Link to="/app/quotes">Quotes</Link>
-          <Link to="/app/reports">Reports</Link>
-          <Link to="/app/staff">Staff</Link>
-        </div>
-      </div>
+    <AppProvider apiKey={apiKey}>
+      <NavMenu>
+        <Link to="/app" rel="home">Home</Link>
+        <Link to="/app/invoice">Invoice</Link>
+        <Link to="/app/invoices">Invoices</Link>
+        <Link to="/app/quote">Create Quote</Link>
+        <Link to="/app/quotes">Quotes</Link>
+        <Link to="/app/reports">Reports</Link>
+        <Link to="/app/staff">Staff</Link>
+      </NavMenu>
 
-      <div style={{ flex: 1, padding: 20 }}>
-        <Outlet />
-      </div>
-    </div>
+      <Outlet />
+    </AppProvider>
   );
 }
+
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
+}
+
+export const headers: HeadersFunction = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
