@@ -162,14 +162,59 @@ export default function ReportsPage() {
     { label: "All time", value: "all" },
   ];
 
-  const downloadParams = new URLSearchParams({
-    staffId,
-    period,
-    fromDate,
-    toDate,
-  });
+  function csvEscape(value: any) {
+    const stringValue =
+      value === null || value === undefined ? "" : String(value);
 
-  const downloadUrl = `/app/reports/download?${downloadParams.toString()}`;
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+
+  function downloadCsv() {
+    const rows = [
+      [
+        "Invoice",
+        "Shopify Order Number",
+        "Customer",
+        "Customer Email",
+        "Payment Method",
+        "Payment Reference",
+        "Salesperson",
+        "Subtotal",
+        "Discount",
+        "VAT",
+        "Total Amount",
+        "Date/Time",
+      ],
+      ...sales.map((sale: any) => [
+        `INV-${sale.id}`,
+        sale.shopifyOrderName || "",
+        sale.customerName || "",
+        sale.customerEmail || "",
+        sale.paymentMethod || "",
+        sale.reference || "",
+        sale.staff?.name || "",
+        Number(sale.subtotal).toFixed(2),
+        Number(sale.discountTotal).toFixed(2),
+        Number(sale.vatAmount).toFixed(2),
+        Number(sale.total).toFixed(2),
+        new Date(sale.createdAt).toLocaleString("en-GB"),
+      ]),
+    ];
+
+    const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sales-report-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <Page title="Sales Reports">
@@ -229,14 +274,7 @@ export default function ReportsPage() {
                     Run Report
                   </Button>
 
-                  <a
-                    href={downloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ textDecoration: "none" }}
-                  >
-                    <Button>Download CSV</Button>
-                  </a>
+                  <Button onClick={downloadCsv}>Download CSV</Button>
                 </InlineStack>
               </BlockStack>
             </Form>
@@ -370,10 +408,14 @@ export default function ReportsPage() {
               {sales.map((sale: any, index: number) => (
                 <IndexTable.Row id={String(sale.id)} key={sale.id} position={index}>
                   <IndexTable.Cell>INV-{sale.id}</IndexTable.Cell>
-                  <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {sale.shopifyOrderName || "-"}
+                  </IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
-                  <IndexTable.Cell>£{Number(sale.total).toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    £{Number(sale.total).toFixed(2)}
+                  </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}
                   </IndexTable.Cell>
@@ -407,12 +449,16 @@ export default function ReportsPage() {
               {sales.map((sale: any, index: number) => (
                 <IndexTable.Row id={String(sale.id)} key={sale.id} position={index}>
                   <IndexTable.Cell>INV-{sale.id}</IndexTable.Cell>
-                  <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {sale.shopifyOrderName || "-"}
+                  </IndexTable.Cell>
                   <IndexTable.Cell>{sale.customerName}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
-                  <IndexTable.Cell>£{Number(sale.total).toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    £{Number(sale.total).toFixed(2)}
+                  </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}
                   </IndexTable.Cell>
