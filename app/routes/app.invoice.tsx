@@ -334,8 +334,8 @@ export default function InvoicePage() {
 
   const totals = useMemo(() => {
     const subtotal = items.reduce(
-      (sum, item) +>
-        sum + Number(item.unitPrice) * Number(item.quantity),
+(sum, item) =>
+          sum + Number(item.unitPrice) * Number(item.quantity),
       0,
     );
 
