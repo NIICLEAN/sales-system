@@ -69,20 +69,6 @@ export async function loader({ request }: { request: Request }) {
                 node {
                   id
                   displayName
-                  firstName
-                  lastName
-                  email
-                  phone
-                  taxExempt
-                  defaultAddress {
-                    address1
-                    address2
-                    city
-                    province
-                    zip
-                    country
-                    phone
-                  }
                 }
               }
             }
@@ -193,17 +179,20 @@ export async function action({ request }: { request: Request }) {
             email: customerEmail || undefined,
             phone: customerPhone || undefined,
             taxExempt: customerVatNumber ? true : false,
-            addresses: [
-              {
-                address1,
-                address2,
-                city,
-                province: county,
-                zip: postcode,
-                country,
-                phone: customerPhone || undefined,
-              },
-            ],
+            addresses:
+              address1 || city || postcode || country
+                ? [
+                    {
+                      address1,
+                      address2,
+                      city,
+                      province: county,
+                      zip: postcode,
+                      country,
+                      phone: customerPhone || undefined,
+                    },
+                  ]
+                : undefined,
           },
         },
       },
@@ -237,6 +226,9 @@ export async function action({ request }: { request: Request }) {
   const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
 
+  const hasManualShippingAddress =
+    address1 || address2 || city || county || postcode || country;
+
   const draftOrderInput = {
     customerId: shopifyCustomerId || undefined,
     email: customerEmail || undefined,
@@ -250,16 +242,18 @@ export async function action({ request }: { request: Request }) {
       { key: "Salesperson ID", value: String(staffId) },
       { key: "VAT Number", value: customerVatNumber || "-" },
     ],
-    shippingAddress: {
-      firstName: customerName,
-      address1,
-      address2,
-      city,
-      province: county,
-      zip: postcode,
-      country,
-      phone: customerPhone || undefined,
-    },
+    shippingAddress: hasManualShippingAddress
+      ? {
+          firstName: customerName,
+          address1,
+          address2,
+          city,
+          province: county,
+          zip: postcode,
+          country,
+          phone: customerPhone || undefined,
+        }
+      : undefined,
     lineItems: lineItems.map((item: any) => ({
       variantId: item.id,
       quantity: Number(item.quantity),
@@ -402,7 +396,7 @@ export default function InvoicePage() {
   const [city, setCity] = useState("");
   const [county, setCounty] = useState("");
   const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("United Kingdom");
+  const [country, setCountry] = useState("");
 
   const [reference, setReference] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
@@ -421,19 +415,8 @@ export default function InvoicePage() {
   ];
 
   function selectCustomer(customer: any) {
-    const address = customer.defaultAddress;
-
     setCustomerId(customer.id);
     setCustomerName(customer.displayName || "");
-    setCustomerEmail(customer.email || "");
-    setCustomerPhone(customer.phone || address?.phone || "");
-
-    setAddress1(address?.address1 || "");
-    setAddress2(address?.address2 || "");
-    setCity(address?.city || "");
-    setCounty(address?.province || "");
-    setPostcode(address?.zip || "");
-    setCountry(address?.country || "United Kingdom");
   }
 
   function clearSelectedCustomer() {
@@ -447,7 +430,7 @@ export default function InvoicePage() {
     setCity("");
     setCounty("");
     setPostcode("");
-    setCountry("United Kingdom");
+    setCountry("");
   }
 
   function addItem(variant: any) {
@@ -517,7 +500,7 @@ export default function InvoicePage() {
                       value={customerSearchTerm}
                       onChange={setCustomerSearchTerm}
                       autoComplete="off"
-                      placeholder="Search by name, email, or phone"
+                      placeholder="Search by customer name"
                     />
                   </div>
 
@@ -533,12 +516,7 @@ export default function InvoicePage() {
                 <IndexTable
                   resourceName={{ singular: "customer", plural: "customers" }}
                   itemCount={customers.length}
-                  headings={[
-                    { title: "Customer" },
-                    { title: "Email" },
-                    { title: "Phone" },
-                    { title: "Action" },
-                  ]}
+                  headings={[{ title: "Customer" }, { title: "Action" }]}
                   selectable={false}
                 >
                   {customers.map((customer: any, index: number) => (
@@ -548,8 +526,6 @@ export default function InvoicePage() {
                       position={index}
                     >
                       <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
-                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
-                      <IndexTable.Cell>{customer.phone || "-"}</IndexTable.Cell>
                       <IndexTable.Cell>
                         <Button onClick={() => selectCustomer(customer)}>
                           Use customer
@@ -558,6 +534,15 @@ export default function InvoicePage() {
                     </IndexTable.Row>
                   ))}
                 </IndexTable>
+
+                {customers.length === 0 && (
+                  <div style={{ marginTop: "12px" }}>
+                    <Text as="p" tone="subdued">
+                      No customers found. Enter customer details below to create
+                      a new customer.
+                    </Text>
+                  </div>
+                )}
               </div>
             )}
           </Card>
@@ -662,14 +647,16 @@ export default function InvoicePage() {
 
                 {customerId && (
                   <Text as="p" tone="success">
-                    Existing Shopify customer selected.
+                    Existing Shopify customer selected. Shopify will use the
+                    customer profile/default address unless you manually enter
+                    address details below.
                   </Text>
                 )}
 
                 {!customerId && (
                   <Text as="p" tone="subdued">
                     If no existing customer is selected, a new Shopify customer
-                    will be created using these details.
+                    will be created when email or phone is provided.
                   </Text>
                 )}
 
@@ -687,6 +674,11 @@ export default function InvoicePage() {
                   value={customerEmail}
                   onChange={setCustomerEmail}
                   autoComplete="off"
+                  helpText={
+                    customerId
+                      ? "Optional. Leave blank to use Shopify customer details."
+                      : undefined
+                  }
                 />
 
                 <TextField
@@ -704,11 +696,23 @@ export default function InvoicePage() {
                   value={customerPhone}
                   onChange={setCustomerPhone}
                   autoComplete="off"
+                  helpText={
+                    customerId
+                      ? "Optional. Leave blank to use Shopify customer details."
+                      : undefined
+                  }
                 />
 
                 <Text as="h2" variant="headingMd">
                   Shipping address
                 </Text>
+
+                {customerId && (
+                  <Text as="p" tone="subdued">
+                    Leave address fields blank to use the customer’s saved
+                    Shopify address.
+                  </Text>
+                )}
 
                 <TextField
                   label="Address line 1"
@@ -717,6 +721,7 @@ export default function InvoicePage() {
                   onChange={setAddress1}
                   autoComplete="off"
                 />
+
                 <TextField
                   label="Address line 2"
                   name="address2"
@@ -724,6 +729,7 @@ export default function InvoicePage() {
                   onChange={setAddress2}
                   autoComplete="off"
                 />
+
                 <TextField
                   label="Town / City"
                   name="city"
@@ -731,6 +737,7 @@ export default function InvoicePage() {
                   onChange={setCity}
                   autoComplete="off"
                 />
+
                 <TextField
                   label="County"
                   name="county"
@@ -738,6 +745,7 @@ export default function InvoicePage() {
                   onChange={setCounty}
                   autoComplete="off"
                 />
+
                 <TextField
                   label="Postcode"
                   name="postcode"
@@ -745,12 +753,14 @@ export default function InvoicePage() {
                   onChange={setPostcode}
                   autoComplete="off"
                 />
+
                 <TextField
                   label="Country"
                   name="country"
                   value={country}
                   onChange={setCountry}
                   autoComplete="off"
+                  placeholder="United Kingdom"
                 />
 
                 <TextField
