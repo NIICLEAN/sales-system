@@ -8,12 +8,16 @@ import { loginErrorMessage } from "./error.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const errors = loginErrorMessage(await login(request));
+
   return { errors };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const errors = loginErrorMessage(await login(request));
-  return { errors };
+
+  return {
+    errors,
+  };
 };
 
 export default function Auth() {
@@ -24,19 +28,22 @@ export default function Auth() {
 
   return (
     <AppProvider embedded={false}>
-      <Form method="post">
-        <label>
-          Shop domain
-          <input
+      <s-page>
+        <Form method="post">
+        <s-section heading="Log in">
+          <s-text-field
             name="shop"
-            placeholder="example.myshopify.com"
+            label="Shop domain"
+            details="example.myshopify.com"
             value={shop}
             onChange={(e) => setShop(e.currentTarget.value)}
-          />
-        </label>
-        <button type="submit">Log in</button>
-        {errors?.shop && <p>{errors.shop}</p>}
-      </Form>
+            autocomplete="on"
+            error={errors.shop}
+          ></s-text-field>
+          <s-button type="submit">Log in</s-button>
+        </s-section>
+        </Form>
+      </s-page>
     </AppProvider>
   );
 }
