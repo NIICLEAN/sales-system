@@ -45,7 +45,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://sales-system-production-e547.up.railway.app/auth/callback" ]
 
 [build]
 include_config_on_deploy = true
