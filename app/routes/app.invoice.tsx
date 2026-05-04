@@ -20,7 +20,8 @@ import { unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request }: { request: Request }) {
-const { admin } = await unauthenticated.admin("j0tccd-cm.myshopify.com");  const url = new URL(request.url);
+const { admin } = await authenticate.admin(request);
+ const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
 
   const staff = await prisma.staff.findMany({
@@ -68,8 +69,7 @@ const { admin } = await unauthenticated.admin("j0tccd-cm.myshopify.com");  const
 }
 
 export async function action({ request }: { request: Request }) {
-const { admin } = await unauthenticated.admin("j0tccd-cm.myshopify.com");
-
+const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
 
   const staffId = Number(formData.get("staffId"));
