@@ -21,12 +21,14 @@ export async function loader({ request }: { request: Request }) {
 
   const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
+  const customerSearch = url.searchParams.get("customerSearch") || "";
 
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
   });
 
   let variants: any[] = [];
+  let customers: any[] = [];
 
   if (productSearch.trim()) {
     const productsResponse = await admin.graphql(
@@ -47,11 +49,7 @@ export async function loader({ request }: { request: Request }) {
           }
         }
       `,
-      {
-        variables: {
-          query: productSearch,
-        },
-      },
+      { variables: { query: productSearch } },
     );
 
     const productsJson = await productsResponse.json();
@@ -61,10 +59,53 @@ export async function loader({ request }: { request: Request }) {
       [];
   }
 
+  if (customerSearch.trim()) {
+    const customersResponse = await admin.graphql(
+      `
+        query Customers($query: String!) {
+          customers(first: 10, query: $query) {
+            edges {
+              node {
+                id
+                displayName
+                firstName
+                lastName
+                email
+                phone
+                taxExempt
+                defaultAddress {
+                  address1
+                  address2
+                  city
+                  province
+                  zip
+                  country
+                  phone
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          query: customerSearch,
+        },
+      },
+    );
+
+    const customersJson = await customersResponse.json();
+
+    customers =
+      customersJson.data?.customers?.edges?.map((edge: any) => edge.node) || [];
+  }
+
   return {
     staff,
     variants,
     productSearch,
+    customers,
+    customerSearch,
   };
 }
 
@@ -73,6 +114,8 @@ export async function action({ request }: { request: Request }) {
   const formData = await request.formData();
 
   const staffId = Number(formData.get("staffId"));
+  const selectedCustomerId = String(formData.get("customerId") || "").trim();
+
   const customerName =
     String(formData.get("customerName") || "").trim() || "Walk-in customer";
   const customerEmail = String(formData.get("customerEmail") || "").trim();
@@ -109,6 +152,62 @@ export async function action({ request }: { request: Request }) {
   const paymentMethod = String(formData.get("paymentMethod") || "");
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
 
+  let shopifyCustomerId = selectedCustomerId || null;
+
+  if (!shopifyCustomerId && (customerEmail || customerPhone)) {
+    const [firstName, ...rest] = customerName.split(" ");
+    const lastName = rest.join(" ");
+
+    const createCustomerResponse = await admin.graphql(
+      `
+        mutation CustomerCreate($input: CustomerInput!) {
+          customerCreate(input: $input) {
+            customer {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          input: {
+            firstName: firstName || customerName,
+            lastName: lastName || undefined,
+            email: customerEmail || undefined,
+            phone: customerPhone || undefined,
+            taxExempt: customerVatNumber ? true : false,
+            addresses: [
+              {
+                address1,
+                address2,
+                city,
+                province: county,
+                zip: postcode,
+                country,
+                phone: customerPhone || undefined,
+              },
+            ],
+          },
+        },
+      },
+    );
+
+    const createCustomerJson = await createCustomerResponse.json();
+    const customerErrors = createCustomerJson.data.customerCreate.userErrors;
+
+    if (customerErrors.length > 0) {
+      throw new Response(customerErrors.map((e: any) => e.message).join(", "), {
+        status: 400,
+      });
+    }
+
+    shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
+  }
+
   const subtotal = lineItems.reduce(
     (sum: number, item: any) =>
       sum + Number(item.unitPrice) * Number(item.quantity),
@@ -125,6 +224,7 @@ export async function action({ request }: { request: Request }) {
   const total = netTotal + vatAmount;
 
   const draftOrderInput = {
+    customerId: shopifyCustomerId || undefined,
     email: customerEmail || undefined,
     phone: customerPhone || undefined,
     taxExempt: customerVatNumber ? true : false,
@@ -134,6 +234,7 @@ export async function action({ request }: { request: Request }) {
       { key: "Payment Method", value: paymentMethod },
       { key: "Reference", value: reference || "-" },
       { key: "Salesperson ID", value: String(staffId) },
+      { key: "VAT Number", value: customerVatNumber || "-" },
     ],
     shippingAddress: {
       firstName: customerName,
@@ -174,11 +275,7 @@ export async function action({ request }: { request: Request }) {
         }
       }
     `,
-    {
-      variables: {
-        input: draftOrderInput,
-      },
-    },
+    { variables: { input: draftOrderInput } },
   );
 
   const createDraftJson = await createDraftResponse.json();
@@ -210,11 +307,7 @@ export async function action({ request }: { request: Request }) {
         }
       }
     `,
-    {
-      variables: {
-        id: draftOrderId,
-      },
-    },
+    { variables: { id: draftOrderId } },
   );
 
   const completeDraftJson = await completeDraftResponse.json();
@@ -233,7 +326,7 @@ export async function action({ request }: { request: Request }) {
     data: {
       shopifyOrderId: shopifyOrder?.id || null,
       shopifyOrderName: shopifyOrder?.name || null,
-      customerId: null,
+      customerId: shopifyCustomerId,
       customerName,
       customerEmail,
       customerVatNumber,
@@ -271,9 +364,20 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function InvoicePage() {
-  const { staff, variants, productSearch } = useLoaderData<typeof loader>();
+  const {
+    staff,
+    variants,
+    productSearch,
+    customers,
+    customerSearch,
+  } = useLoaderData<typeof loader>();
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
+  const [customerSearchTerm, setCustomerSearchTerm] = useState(
+    customerSearch || "",
+  );
+
+  const [customerId, setCustomerId] = useState("");
   const [staffId, setStaffId] = useState(
     staff[0]?.id ? String(staff[0].id) : "",
   );
@@ -306,6 +410,36 @@ export default function InvoicePage() {
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
 
+  function selectCustomer(customer: any) {
+    const address = customer.defaultAddress;
+
+    setCustomerId(customer.id);
+    setCustomerName(customer.displayName || "");
+    setCustomerEmail(customer.email || "");
+    setCustomerPhone(customer.phone || address?.phone || "");
+
+    setAddress1(address?.address1 || "");
+    setAddress2(address?.address2 || "");
+    setCity(address?.city || "");
+    setCounty(address?.province || "");
+    setPostcode(address?.zip || "");
+    setCountry(address?.country || "United Kingdom");
+  }
+
+  function clearSelectedCustomer() {
+    setCustomerId("");
+    setCustomerName("");
+    setCustomerEmail("");
+    setCustomerVatNumber("");
+    setCustomerPhone("");
+    setAddress1("");
+    setAddress2("");
+    setCity("");
+    setCounty("");
+    setPostcode("");
+    setCountry("United Kingdom");
+  }
+
   function addItem(variant: any) {
     setItems((current) => [
       ...current,
@@ -334,8 +468,7 @@ export default function InvoicePage() {
 
   const totals = useMemo(() => {
     const subtotal = items.reduce(
-(sum, item) =>
-          sum + Number(item.unitPrice) * Number(item.quantity),
+      (sum, item) => sum + Number(item.unitPrice) * Number(item.quantity),
       0,
     );
 
@@ -361,6 +494,72 @@ export default function InvoicePage() {
         <Layout.Section>
           <Card>
             <Form method="get">
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Find existing customer
+                </Text>
+
+                <InlineStack gap="300" blockAlign="end">
+                  <div style={{ flex: 1 }}>
+                    <TextField
+                      label="Search customers"
+                      name="customerSearch"
+                      value={customerSearchTerm}
+                      onChange={setCustomerSearchTerm}
+                      autoComplete="off"
+                      placeholder="Search by name, email, or phone"
+                    />
+                  </div>
+
+                  <input
+                    type="hidden"
+                    name="productSearch"
+                    value={searchTerm}
+                  />
+
+                  <Button submit>Search Customer</Button>
+                </InlineStack>
+              </BlockStack>
+            </Form>
+
+            {customerSearch && (
+              <div style={{ marginTop: "16px" }}>
+                <IndexTable
+                  resourceName={{ singular: "customer", plural: "customers" }}
+                  itemCount={customers.length}
+                  headings={[
+                    { title: "Customer" },
+                    { title: "Email" },
+                    { title: "Phone" },
+                    { title: "Action" },
+                  ]}
+                  selectable={false}
+                >
+                  {customers.map((customer: any, index: number) => (
+                    <IndexTable.Row
+                      id={customer.id}
+                      key={customer.id}
+                      position={index}
+                    >
+                      <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
+                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>{customer.phone || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Button onClick={() => selectCustomer(customer)}>
+                          Use customer
+                        </Button>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
+              </div>
+            )}
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <Form method="get">
               <InlineStack gap="300" blockAlign="end">
                 <div style={{ flex: 1 }}>
                   <TextField
@@ -372,7 +571,14 @@ export default function InvoicePage() {
                     placeholder="Search by product name or SKU"
                   />
                 </div>
-                <Button submit>Search</Button>
+
+                <input
+                  type="hidden"
+                  name="customerSearch"
+                  value={customerSearchTerm}
+                />
+
+                <Button submit>Search Product</Button>
               </InlineStack>
             </Form>
           </Card>
@@ -382,7 +588,7 @@ export default function InvoicePage() {
           <Layout.Section>
             <Card>
               <Text as="h2" variant="headingMd">
-                Search results
+                Product search results
               </Text>
 
               <IndexTable
@@ -420,11 +626,8 @@ export default function InvoicePage() {
         <Layout.Section>
           <Card>
             <Form method="post">
-              <input
-                type="hidden"
-                name="lineItems"
-                value={JSON.stringify(items)}
-              />
+              <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
+              <input type="hidden" name="customerId" value={customerId} />
 
               <BlockStack gap="400">
                 <Select
@@ -435,9 +638,30 @@ export default function InvoicePage() {
                   onChange={setStaffId}
                 />
 
-                <Text as="h2" variant="headingMd">
-                  Customer details
-                </Text>
+                <InlineStack gap="300" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    Customer details
+                  </Text>
+
+                  {customerId && (
+                    <Button onClick={clearSelectedCustomer}>
+                      Clear selected customer
+                    </Button>
+                  )}
+                </InlineStack>
+
+                {customerId && (
+                  <Text as="p" tone="success">
+                    Existing Shopify customer selected.
+                  </Text>
+                )}
+
+                {!customerId && (
+                  <Text as="p" tone="subdued">
+                    If no existing customer is selected, a new Shopify customer
+                    will be created using these details.
+                  </Text>
+                )}
 
                 <TextField
                   label="Customer name"
@@ -476,53 +700,12 @@ export default function InvoicePage() {
                   Shipping address
                 </Text>
 
-                <TextField
-                  label="Address line 1"
-                  name="address1"
-                  value={address1}
-                  onChange={setAddress1}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Address line 2"
-                  name="address2"
-                  value={address2}
-                  onChange={setAddress2}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Town / City"
-                  name="city"
-                  value={city}
-                  onChange={setCity}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="County"
-                  name="county"
-                  value={county}
-                  onChange={setCounty}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Postcode"
-                  name="postcode"
-                  value={postcode}
-                  onChange={setPostcode}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Country"
-                  name="country"
-                  value={country}
-                  onChange={setCountry}
-                  autoComplete="off"
-                />
+                <TextField label="Address line 1" name="address1" value={address1} onChange={setAddress1} autoComplete="off" />
+                <TextField label="Address line 2" name="address2" value={address2} onChange={setAddress2} autoComplete="off" />
+                <TextField label="Town / City" name="city" value={city} onChange={setCity} autoComplete="off" />
+                <TextField label="County" name="county" value={county} onChange={setCounty} autoComplete="off" />
+                <TextField label="Postcode" name="postcode" value={postcode} onChange={setPostcode} autoComplete="off" />
+                <TextField label="Country" name="country" value={country} onChange={setCountry} autoComplete="off" />
 
                 <TextField
                   label="Reference"
@@ -557,9 +740,7 @@ export default function InvoicePage() {
                           <TextField
                             label="Qty"
                             value={String(item.quantity)}
-                            onChange={(value) =>
-                              updateItem(index, "quantity", value)
-                            }
+                            onChange={(value) => updateItem(index, "quantity", value)}
                             autoComplete="off"
                             type="number"
                           />
@@ -569,9 +750,7 @@ export default function InvoicePage() {
                           <TextField
                             label="Unit price"
                             value={String(item.unitPrice)}
-                            onChange={(value) =>
-                              updateItem(index, "unitPrice", value)
-                            }
+                            onChange={(value) => updateItem(index, "unitPrice", value)}
                             autoComplete="off"
                             type="number"
                             prefix="£"
@@ -582,9 +761,7 @@ export default function InvoicePage() {
                           <TextField
                             label="Discount"
                             value={String(item.discount)}
-                            onChange={(value) =>
-                              updateItem(index, "discount", value)
-                            }
+                            onChange={(value) => updateItem(index, "discount", value)}
                             autoComplete="off"
                             type="number"
                             prefix="£"
@@ -592,10 +769,7 @@ export default function InvoicePage() {
                         </div>
 
                         <div style={{ paddingTop: "28px" }}>
-                          <Button
-                            tone="critical"
-                            onClick={() => removeItem(index)}
-                          >
+                          <Button tone="critical" onClick={() => removeItem(index)}>
                             Remove
                           </Button>
                         </div>
