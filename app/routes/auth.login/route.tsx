@@ -6,7 +6,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop =
     process.env.SHOPIFY_SHOP_DOMAIN || "nii-clean-products.myshopify.com";
 
-  const location = `/auth?shop=${shop}`;
+const location = `/auth/shopify?shop=${shop}`;
 
   return { location };
 };
@@ -23,9 +23,9 @@ export default function AuthLogin() {
   return (
     <div style={{ padding: 40 }}>
       <h2>Redirecting to Shopify login...</h2>
-      <a href={location} target="_top">
-        Click here if it does not continue
-      </a>
+      <a href={location}>
+  Click here if it does not continue
+</a>
     </div>
   );
 }
