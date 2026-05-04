@@ -15,11 +15,12 @@ import {
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
-import { authenticate } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
+
+const { admin } = await unauthenticated.admin("j0tccd-cm.myshopify.com");
   const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
 
@@ -69,7 +70,7 @@ export async function loader({ request }: { request: Request }) {
 }
 
 export async function action({ request }: { request: Request }) {
-  await authenticate.admin(request);
+const { admin } = await unauthenticated.admin("j0tccd-cm.myshopify.com");
 
   const formData = await request.formData();
 
