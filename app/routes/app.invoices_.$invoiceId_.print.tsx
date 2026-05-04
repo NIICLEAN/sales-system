@@ -9,7 +9,7 @@ export async function loader({
   request: Request;
   params: { invoiceId: string };
 }) {
-  const { admin } = await authenticate.admin(request);
+  await authenticate.admin(request);
 
   const invoice = await prisma.sale.findUnique({
     where: { id: Number(params.invoiceId) },
@@ -23,29 +23,9 @@ export async function loader({
     throw new Response("Invoice not found", { status: 404 });
   }
 
-  const shopResponse = await admin.graphql(`
-    query ShopBrand {
-      shop {
-        name
-        brand {
-          logo {
-            image {
-              url
-            }
-          }
-        }
-      }
-    }
-  `);
-
-  const shopJson = await shopResponse.json();
-
-  const logoUrl =
-    shopJson.data?.shop?.brand?.logo?.image?.url || null;
-
   return {
     invoice,
-    logoUrl,
+    logoUrl: process.env.BUSINESS_LOGO_URL || "",
   };
 }
 
@@ -218,10 +198,7 @@ export default function PrintInvoicePage() {
             padding: 25px;
           }
 
-          .actions {
-            display: none;
-          }
-
+          .actions,
           button {
             display: none;
           }
@@ -249,11 +226,7 @@ export default function PrintInvoicePage() {
 
         <div className="business">
           {logoUrl && (
-            <img
-              src={logoUrl}
-              alt="NII Clean Products logo"
-              className="logo"
-            />
+            <img src={logoUrl} alt="NII Clean Products logo" className="logo" />
           )}
 
           <h2>NII Clean Products</h2>
@@ -303,9 +276,9 @@ export default function PrintInvoicePage() {
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{item.unitPrice.toFixed(2)}</td>
-              <td className="right">£{item.discount.toFixed(2)}</td>
-              <td className="right">£{item.lineTotal.toFixed(2)}</td>
+              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
+              <td className="right">£{Number(item.discount).toFixed(2)}</td>
+              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -314,22 +287,22 @@ export default function PrintInvoicePage() {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{invoice.subtotal.toFixed(2)}</span>
+          <span>£{Number(invoice.subtotal).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{invoice.discountTotal.toFixed(2)}</span>
+          <span>£{Number(invoice.discountTotal).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{invoice.vatAmount.toFixed(2)}</span>
+          <span>£{Number(invoice.vatAmount).toFixed(2)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{invoice.total.toFixed(2)}</span>
+          <span>£{Number(invoice.total).toFixed(2)}</span>
         </div>
       </div>
 

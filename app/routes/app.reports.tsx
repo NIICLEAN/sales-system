@@ -48,47 +48,6 @@ function getStartDate(period: string) {
   return null;
 }
 
-function csvEscape(value: any) {
-  const stringValue = value === null || value === undefined ? "" : String(value);
-  return `"${stringValue.replace(/"/g, '""')}"`;
-}
-
-function buildCsv(sales: any[]) {
-  const headers = [
-    "Invoice",
-    "Shopify Order Number",
-    "Customer",
-    "Customer Email",
-    "Payment Method",
-    "Payment Reference",
-    "Salesperson",
-    "Subtotal",
-    "Discount",
-    "VAT",
-    "Total Amount",
-    "Date/Time",
-  ];
-
-  const rows = sales.map((sale) => [
-    `INV-${sale.id}`,
-    sale.shopifyOrderName || "",
-    sale.customerName || "",
-    sale.customerEmail || "",
-    sale.paymentMethod || "",
-    sale.reference || "",
-    sale.staff?.name || "",
-    sale.subtotal?.toFixed(2) || "0.00",
-    sale.discountTotal?.toFixed(2) || "0.00",
-    sale.vatAmount?.toFixed(2) || "0.00",
-    sale.total?.toFixed(2) || "0.00",
-    new Date(sale.createdAt).toLocaleString("en-GB"),
-  ]);
-
-  return [headers, ...rows]
-    .map((row) => row.map(csvEscape).join(","))
-    .join("\n");
-}
-
 export async function loader({ request }: { request: Request }) {
   await authenticate.admin(request);
 
@@ -97,7 +56,6 @@ export async function loader({ request }: { request: Request }) {
   const period = url.searchParams.get("period") || "today";
   const fromDate = url.searchParams.get("fromDate") || "";
   const toDate = url.searchParams.get("toDate") || "";
-  const download = url.searchParams.get("download") || "";
 
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
@@ -106,8 +64,7 @@ export async function loader({ request }: { request: Request }) {
   let dateFilter: any = {};
 
   if (period === "custom" && fromDate) {
-    const start = new Date(`${fromDate}T00:00:00`);
-    dateFilter.gte = start;
+    dateFilter.gte = new Date(`${fromDate}T00:00:00`);
   } else {
     const startDate = getStartDate(period);
     if (startDate) {
@@ -116,8 +73,7 @@ export async function loader({ request }: { request: Request }) {
   }
 
   if (period === "custom" && toDate) {
-    const end = new Date(`${toDate}T23:59:59`);
-    dateFilter.lte = end;
+    dateFilter.lte = new Date(`${toDate}T23:59:59`);
   }
 
   const sales = await prisma.sale.findMany({
@@ -132,22 +88,12 @@ export async function loader({ request }: { request: Request }) {
     },
   });
 
-  if (download === "csv") {
-    const csv = buildCsv(sales);
-
-    return new Response(csv, {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="sales-report-${new Date()
-          .toISOString()
-          .slice(0, 10)}.csv"`,
-      },
-    });
-  }
-
-  const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
-  const totalVat = sales.reduce((sum, sale) => sum + sale.vatAmount, 0);
-  const totalDiscount = sales.reduce((sum, sale) => sum + sale.discountTotal, 0);
+  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
+  const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount), 0);
+  const totalDiscount = sales.reduce(
+    (sum, sale) => sum + Number(sale.discountTotal),
+    0,
+  );
   const averageSale = sales.length ? totalSales / sales.length : 0;
 
   const paymentTotals: Record<string, { count: number; total: number }> = {};
@@ -160,7 +106,7 @@ export async function loader({ request }: { request: Request }) {
     }
 
     paymentTotals[method].count += 1;
-    paymentTotals[method].total += sale.total;
+    paymentTotals[method].total += Number(sale.total);
   }
 
   return {
@@ -215,6 +161,15 @@ export default function ReportsPage() {
     { label: "Custom date range", value: "custom" },
     { label: "All time", value: "all" },
   ];
+
+  const downloadParams = new URLSearchParams({
+    staffId,
+    period,
+    fromDate,
+    toDate,
+  });
+
+  const downloadUrl = `/app/reports/download?${downloadParams.toString()}`;
 
   return (
     <Page title="Sales Reports">
@@ -274,9 +229,14 @@ export default function ReportsPage() {
                     Run Report
                   </Button>
 
-                  <Button submit name="download" value="csv">
-                    Download CSV
-                  </Button>
+                  <a
+                    href={downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <Button>Download CSV</Button>
+                  </a>
                 </InlineStack>
               </BlockStack>
             </Form>
@@ -305,7 +265,7 @@ export default function ReportsPage() {
                     Total Sales
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{summary.totalSales.toFixed(2)}
+                    £{Number(summary.totalSales).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -318,7 +278,7 @@ export default function ReportsPage() {
                     Average Sale
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{summary.averageSale.toFixed(2)}
+                    £{Number(summary.averageSale).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -335,7 +295,7 @@ export default function ReportsPage() {
                     VAT Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{summary.totalVat.toFixed(2)}
+                    £{Number(summary.totalVat).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -348,7 +308,7 @@ export default function ReportsPage() {
                     Discount Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{summary.totalDiscount.toFixed(2)}
+                    £{Number(summary.totalDiscount).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -379,7 +339,9 @@ export default function ReportsPage() {
                 <IndexTable.Row id={method} key={method} position={index}>
                   <IndexTable.Cell>{method}</IndexTable.Cell>
                   <IndexTable.Cell>{data.count}</IndexTable.Cell>
-                  <IndexTable.Cell>£{data.total.toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    £{Number(data.total).toFixed(2)}
+                  </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
             </IndexTable>
@@ -411,7 +373,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
-                  <IndexTable.Cell>£{sale.total.toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>£{Number(sale.total).toFixed(2)}</IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}
                   </IndexTable.Cell>
@@ -450,7 +412,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
-                  <IndexTable.Cell>£{sale.total.toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>£{Number(sale.total).toFixed(2)}</IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}
                   </IndexTable.Cell>

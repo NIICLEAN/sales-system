@@ -23,11 +23,19 @@ export async function loader({
     throw new Response("Quote not found", { status: 404 });
   }
 
-  return { quote };
+  return {
+    quote,
+    logoUrl: process.env.BUSINESS_LOGO_URL || "",
+  };
 }
 
 export default function PrintQuotePage() {
-  const { quote } = useLoaderData<typeof loader>();
+  const { quote, logoUrl } = useLoaderData<typeof loader>();
+
+  function downloadPdf() {
+    document.title = `Quote QUO-${quote.id}`;
+    window.print();
+  }
 
   return (
     <div className="page">
@@ -52,17 +60,40 @@ export default function PrintQuotePage() {
         }
 
         button {
-          padding: 8px 14px;
+          padding: 9px 15px;
           margin-right: 8px;
           cursor: pointer;
+          border: 1px solid #111;
+          background: #111;
+          color: white;
+          border-radius: 6px;
+          font-weight: 600;
+        }
+
+        button.secondary {
+          background: white;
+          color: #111;
         }
 
         .header {
           display: flex;
           justify-content: space-between;
+          gap: 30px;
           border-bottom: 3px solid #111;
           padding-bottom: 25px;
           margin-bottom: 30px;
+        }
+
+        .business {
+          text-align: right;
+          min-width: 260px;
+        }
+
+        .logo {
+          max-width: 190px;
+          max-height: 90px;
+          object-fit: contain;
+          margin-bottom: 12px;
         }
 
         h1 {
@@ -72,6 +103,10 @@ export default function PrintQuotePage() {
 
         h2 {
           margin: 0 0 10px;
+        }
+
+        p {
+          margin: 4px 0;
         }
 
         .muted {
@@ -113,6 +148,7 @@ export default function PrintQuotePage() {
         td {
           padding: 12px;
           border-bottom: 1px solid #e5e5e5;
+          vertical-align: top;
         }
 
         .right {
@@ -162,7 +198,8 @@ export default function PrintQuotePage() {
             padding: 25px;
           }
 
-          .actions {
+          .actions,
+          button {
             display: none;
           }
         }
@@ -170,18 +207,27 @@ export default function PrintQuotePage() {
 
       <div className="actions">
         <button onClick={() => window.print()}>Print Quote</button>
-        <button onClick={() => window.history.back()}>Back</button>
+        <button onClick={downloadPdf}>Download PDF</button>
+        <button className="secondary" onClick={() => window.history.back()}>
+          Back
+        </button>
       </div>
 
       <div className="header">
         <div>
           <h1>Quote QUO-{quote.id}</h1>
-          <p className="muted">Date: {new Date(quote.createdAt).toLocaleString()}</p>
+          <p className="muted">
+            Date: {new Date(quote.createdAt).toLocaleString("en-GB")}
+          </p>
           <p>Salesperson: {quote.staff?.name || "-"}</p>
           <p>Reference: {quote.reference || "-"}</p>
         </div>
 
-        <div>
+        <div className="business">
+          {logoUrl && (
+            <img src={logoUrl} alt="NII Clean Products logo" className="logo" />
+          )}
+
           <h2>NII Clean Products</h2>
           <p>96 Bushmills Road</p>
           <p>Coleraine / BT52 2BT</p>
@@ -202,7 +248,9 @@ export default function PrintQuotePage() {
           <h3>Address</h3>
           <p>{quote.address1 || ""}</p>
           <p>{quote.address2 || ""}</p>
-          <p>{quote.city || ""} {quote.county || ""}</p>
+          <p>
+            {quote.city || ""} {quote.county || ""}
+          </p>
           <p>{quote.postcode || ""}</p>
           <p>{quote.country || ""}</p>
         </div>
@@ -226,9 +274,9 @@ export default function PrintQuotePage() {
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{item.unitPrice.toFixed(2)}</td>
-              <td className="right">£{item.discount.toFixed(2)}</td>
-              <td className="right">£{item.lineTotal.toFixed(2)}</td>
+              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
+              <td className="right">£{Number(item.discount).toFixed(2)}</td>
+              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -237,22 +285,22 @@ export default function PrintQuotePage() {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{quote.subtotal.toFixed(2)}</span>
+          <span>£{Number(quote.subtotal).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{quote.discountTotal.toFixed(2)}</span>
+          <span>£{Number(quote.discountTotal).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{quote.vatAmount.toFixed(2)}</span>
+          <span>£{Number(quote.vatAmount).toFixed(2)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{quote.total.toFixed(2)}</span>
+          <span>£{Number(quote.total).toFixed(2)}</span>
         </div>
       </div>
 
