@@ -8,9 +8,7 @@ import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-
+export const loader = async () => {
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
   };
