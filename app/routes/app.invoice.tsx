@@ -60,44 +60,57 @@ export async function loader({ request }: { request: Request }) {
   }
 
   if (customerSearch.trim()) {
-    const customersResponse = await admin.graphql(
-      `
-        query Customers($query: String!) {
-          customers(first: 10, query: $query) {
-            edges {
-              node {
-                id
-                displayName
-                firstName
-                lastName
-                taxExempt
-                defaultEmailAddress {
-                  emailAddress
-                }
-                defaultPhoneNumber {
-                  phoneNumber
-                }
-                defaultAddress {
-                  address1
-                  address2
-                  city
-                  province
-                  zip
-                  country
+    try {
+      const customersResponse = await admin.graphql(
+        `
+          query Customers($query: String!) {
+            customers(first: 10, query: $query) {
+              edges {
+                node {
+                  id
+                  displayName
+                  firstName
+                  lastName
+                  email
                   phone
+                  taxExempt
+                  defaultAddress {
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                    phone
+                  }
                 }
               }
             }
           }
-        }
-      `,
-      { variables: { query: customerSearch } },
-    );
+        `,
+        {
+          variables: {
+            query: customerSearch,
+          },
+        },
+      );
 
-    const customersJson = await customersResponse.json();
+      const customersJson = await customersResponse.json();
 
-    customers =
-      customersJson.data?.customers?.edges?.map((edge: any) => edge.node) || [];
+      if (customersJson.errors) {
+        console.error(
+          "Customer search GraphQL errors:",
+          JSON.stringify(customersJson.errors, null, 2),
+        );
+      }
+
+      customers =
+        customersJson.data?.customers?.edges?.map((edge: any) => edge.node) ||
+        [];
+    } catch (error) {
+      console.error("Customer search failed:", error);
+      customers = [];
+    }
   }
 
   return {
@@ -197,7 +210,8 @@ export async function action({ request }: { request: Request }) {
     );
 
     const createCustomerJson = await createCustomerResponse.json();
-    const customerErrors = createCustomerJson.data.customerCreate.userErrors;
+    const customerErrors =
+      createCustomerJson.data?.customerCreate?.userErrors || [];
 
     if (customerErrors.length > 0) {
       throw new Response(customerErrors.map((e: any) => e.message).join(", "), {
@@ -279,7 +293,7 @@ export async function action({ request }: { request: Request }) {
   );
 
   const createDraftJson = await createDraftResponse.json();
-  const createErrors = createDraftJson.data.draftOrderCreate.userErrors;
+  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
 
   if (createErrors.length > 0) {
     throw new Response(createErrors.map((e: any) => e.message).join(", "), {
@@ -311,7 +325,8 @@ export async function action({ request }: { request: Request }) {
   );
 
   const completeDraftJson = await completeDraftResponse.json();
-  const completeErrors = completeDraftJson.data.draftOrderComplete.userErrors;
+  const completeErrors =
+    completeDraftJson.data?.draftOrderComplete?.userErrors || [];
 
   if (completeErrors.length > 0) {
     throw new Response(completeErrors.map((e: any) => e.message).join(", "), {
@@ -410,10 +425,8 @@ export default function InvoicePage() {
 
     setCustomerId(customer.id);
     setCustomerName(customer.displayName || "");
-    setCustomerEmail(customer.defaultEmailAddress?.emailAddress || "");
-    setCustomerPhone(
-      customer.defaultPhoneNumber?.phoneNumber || address?.phone || "",
-    );
+    setCustomerEmail(customer.email || "");
+    setCustomerPhone(customer.phone || address?.phone || "");
 
     setAddress1(address?.address1 || "");
     setAddress2(address?.address2 || "");
@@ -535,12 +548,8 @@ export default function InvoicePage() {
                       position={index}
                     >
                       <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {customer.defaultEmailAddress?.emailAddress || "-"}
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {customer.defaultPhoneNumber?.phoneNumber || "-"}
-                      </IndexTable.Cell>
+                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>{customer.phone || "-"}</IndexTable.Cell>
                       <IndexTable.Cell>
                         <Button onClick={() => selectCustomer(customer)}>
                           Use customer
@@ -623,7 +632,11 @@ export default function InvoicePage() {
         <Layout.Section>
           <Card>
             <Form method="post">
-              <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
+              <input
+                type="hidden"
+                name="lineItems"
+                value={JSON.stringify(items)}
+              />
               <input type="hidden" name="customerId" value={customerId} />
 
               <BlockStack gap="400">
@@ -697,12 +710,48 @@ export default function InvoicePage() {
                   Shipping address
                 </Text>
 
-                <TextField label="Address line 1" name="address1" value={address1} onChange={setAddress1} autoComplete="off" />
-                <TextField label="Address line 2" name="address2" value={address2} onChange={setAddress2} autoComplete="off" />
-                <TextField label="Town / City" name="city" value={city} onChange={setCity} autoComplete="off" />
-                <TextField label="County" name="county" value={county} onChange={setCounty} autoComplete="off" />
-                <TextField label="Postcode" name="postcode" value={postcode} onChange={setPostcode} autoComplete="off" />
-                <TextField label="Country" name="country" value={country} onChange={setCountry} autoComplete="off" />
+                <TextField
+                  label="Address line 1"
+                  name="address1"
+                  value={address1}
+                  onChange={setAddress1}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Address line 2"
+                  name="address2"
+                  value={address2}
+                  onChange={setAddress2}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Town / City"
+                  name="city"
+                  value={city}
+                  onChange={setCity}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="County"
+                  name="county"
+                  value={county}
+                  onChange={setCounty}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Postcode"
+                  name="postcode"
+                  value={postcode}
+                  onChange={setPostcode}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Country"
+                  name="country"
+                  value={country}
+                  onChange={setCountry}
+                  autoComplete="off"
+                />
 
                 <TextField
                   label="Reference"
@@ -737,7 +786,9 @@ export default function InvoicePage() {
                           <TextField
                             label="Qty"
                             value={String(item.quantity)}
-                            onChange={(value) => updateItem(index, "quantity", value)}
+                            onChange={(value) =>
+                              updateItem(index, "quantity", value)
+                            }
                             autoComplete="off"
                             type="number"
                           />
@@ -747,7 +798,9 @@ export default function InvoicePage() {
                           <TextField
                             label="Unit price"
                             value={String(item.unitPrice)}
-                            onChange={(value) => updateItem(index, "unitPrice", value)}
+                            onChange={(value) =>
+                              updateItem(index, "unitPrice", value)
+                            }
                             autoComplete="off"
                             type="number"
                             prefix="£"
@@ -758,7 +811,9 @@ export default function InvoicePage() {
                           <TextField
                             label="Discount"
                             value={String(item.discount)}
-                            onChange={(value) => updateItem(index, "discount", value)}
+                            onChange={(value) =>
+                              updateItem(index, "discount", value)
+                            }
                             autoComplete="off"
                             type="number"
                             prefix="£"
@@ -766,7 +821,10 @@ export default function InvoicePage() {
                         </div>
 
                         <div style={{ paddingTop: "28px" }}>
-                          <Button tone="critical" onClick={() => removeItem(index)}>
+                          <Button
+                            tone="critical"
+                            onClick={() => removeItem(index)}
+                          >
                             Remove
                           </Button>
                         </div>
