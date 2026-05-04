@@ -1,31 +1,42 @@
-export const loader = async () => {
-  const shopHandle = "niicleanproducts";
-  const clientId = process.env.SHOPIFY_API_KEY || "";
+import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { useState } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { Form, useActionData, useLoaderData } from "react-router";
 
-  const installUrl = `https://admin.shopify.com/store/${shopHandle}/oauth/install?client_id=${clientId}`;
+import { login } from "../../shopify.server";
+import { loginErrorMessage } from "./error.server";
 
-  return new Response(
-    `
-    <html>
-      <body>
-        <p>Redirecting to Shopify...</p>
-        <script>
-          window.top.location.href = ${JSON.stringify(installUrl)};
-        </script>
-        <a href="${installUrl}" target="_top">Click here if it does not continue</a>
-      </body>
-    </html>
-    `,
-    {
-      headers: {
-        "Content-Type": "text/html",
-      },
-    }
-  );
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const errors = loginErrorMessage(await login(request));
+  return { errors };
 };
 
-export const action = loader;
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const errors = loginErrorMessage(await login(request));
+  return { errors };
+};
 
-export default function AuthLogin() {
-  return null;
+export default function Auth() {
+  const loaderData = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const [shop, setShop] = useState("");
+  const { errors } = actionData || loaderData;
+
+  return (
+    <AppProvider embedded={false}>
+      <Form method="post">
+        <label>
+          Shop domain
+          <input
+            name="shop"
+            placeholder="example.myshopify.com"
+            value={shop}
+            onChange={(e) => setShop(e.currentTarget.value)}
+          />
+        </label>
+        <button type="submit">Log in</button>
+        {errors?.shop && <p>{errors.shop}</p>}
+      </Form>
+    </AppProvider>
+  );
 }
