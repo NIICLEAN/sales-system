@@ -1,7 +1,6 @@
 import { Form, useLoaderData } from "react-router";
 import { useState } from "react";
 import {
-  AppProvider,
   Page,
   Layout,
   Card,
@@ -11,8 +10,8 @@ import {
   InlineStack,
   Select,
   Button,
+  TextField,
 } from "@shopify/polaris";
-import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -49,23 +48,82 @@ function getStartDate(period: string) {
   return null;
 }
 
+function csvEscape(value: any) {
+  const stringValue = value === null || value === undefined ? "" : String(value);
+  return `"${stringValue.replace(/"/g, '""')}"`;
+}
+
+function buildCsv(sales: any[]) {
+  const headers = [
+    "Invoice",
+    "Shopify Order Number",
+    "Customer",
+    "Customer Email",
+    "Payment Method",
+    "Payment Reference",
+    "Salesperson",
+    "Subtotal",
+    "Discount",
+    "VAT",
+    "Total Amount",
+    "Date/Time",
+  ];
+
+  const rows = sales.map((sale) => [
+    `INV-${sale.id}`,
+    sale.shopifyOrderName || "",
+    sale.customerName || "",
+    sale.customerEmail || "",
+    sale.paymentMethod || "",
+    sale.reference || "",
+    sale.staff?.name || "",
+    sale.subtotal?.toFixed(2) || "0.00",
+    sale.discountTotal?.toFixed(2) || "0.00",
+    sale.vatAmount?.toFixed(2) || "0.00",
+    sale.total?.toFixed(2) || "0.00",
+    new Date(sale.createdAt).toLocaleString("en-GB"),
+  ]);
+
+  return [headers, ...rows]
+    .map((row) => row.map(csvEscape).join(","))
+    .join("\n");
+}
+
 export async function loader({ request }: { request: Request }) {
   await authenticate.admin(request);
 
   const url = new URL(request.url);
   const staffId = url.searchParams.get("staffId") || "all";
   const period = url.searchParams.get("period") || "today";
+  const fromDate = url.searchParams.get("fromDate") || "";
+  const toDate = url.searchParams.get("toDate") || "";
+  const download = url.searchParams.get("download") || "";
 
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
   });
 
-  const startDate = getStartDate(period);
+  let dateFilter: any = {};
+
+  if (period === "custom" && fromDate) {
+    const start = new Date(`${fromDate}T00:00:00`);
+    dateFilter.gte = start;
+  } else {
+    const startDate = getStartDate(period);
+    if (startDate) {
+      dateFilter.gte = startDate;
+    }
+  }
+
+  if (period === "custom" && toDate) {
+    const end = new Date(`${toDate}T23:59:59`);
+    dateFilter.lte = end;
+  }
 
   const sales = await prisma.sale.findMany({
     where: {
       ...(staffId !== "all" ? { staffId: Number(staffId) } : {}),
-      ...(startDate ? { createdAt: { gte: startDate } } : {}),
+      ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
     },
     orderBy: { createdAt: "desc" },
     include: {
@@ -73,6 +131,19 @@ export async function loader({ request }: { request: Request }) {
       lineItems: true,
     },
   });
+
+  if (download === "csv") {
+    const csv = buildCsv(sales);
+
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sales-report-${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv"`,
+      },
+    });
+  }
 
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
   const totalVat = sales.reduce((sum, sale) => sum + sale.vatAmount, 0);
@@ -96,6 +167,8 @@ export async function loader({ request }: { request: Request }) {
     staff,
     selectedStaffId: staffId,
     selectedPeriod: period,
+    selectedFromDate: fromDate,
+    selectedToDate: toDate,
     sales,
     summary: {
       count: sales.length,
@@ -113,6 +186,8 @@ export default function ReportsPage() {
     staff,
     selectedStaffId,
     selectedPeriod,
+    selectedFromDate,
+    selectedToDate,
     sales,
     summary,
     paymentTotals,
@@ -120,6 +195,8 @@ export default function ReportsPage() {
 
   const [staffId, setStaffId] = useState(selectedStaffId);
   const [period, setPeriod] = useState(selectedPeriod);
+  const [fromDate, setFromDate] = useState(selectedFromDate);
+  const [toDate, setToDate] = useState(selectedToDate);
 
   const staffOptions = [
     { label: "All employees", value: "all" },
@@ -135,18 +212,19 @@ export default function ReportsPage() {
     { label: "This month", value: "month" },
     { label: "Last 6 months", value: "sixMonths" },
     { label: "This year", value: "year" },
+    { label: "Custom date range", value: "custom" },
     { label: "All time", value: "all" },
   ];
 
   return (
-    <AppProvider i18n={{}}>
-      <Page title="Sales Reports">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <Form method="get">
+    <Page title="Sales Reports">
+      <Layout>
+        <Layout.Section>
+          <Card>
+            <Form method="get">
+              <BlockStack gap="400">
                 <InlineStack gap="300" blockAlign="end">
-                  <div style={{ minWidth: 240 }}>
+                  <div style={{ minWidth: 220 }}>
                     <Select
                       label="Employee"
                       name="staffId"
@@ -156,7 +234,7 @@ export default function ReportsPage() {
                     />
                   </div>
 
-                  <div style={{ minWidth: 240 }}>
+                  <div style={{ minWidth: 220 }}>
                     <Select
                       label="Report period"
                       name="period"
@@ -166,140 +244,222 @@ export default function ReportsPage() {
                     />
                   </div>
 
+                  {period === "custom" && (
+                    <>
+                      <div style={{ minWidth: 180 }}>
+                        <TextField
+                          label="From date"
+                          name="fromDate"
+                          type="date"
+                          value={fromDate}
+                          onChange={setFromDate}
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div style={{ minWidth: 180 }}>
+                        <TextField
+                          label="To date"
+                          name="toDate"
+                          type="date"
+                          value={toDate}
+                          onChange={setToDate}
+                          autoComplete="off"
+                        />
+                      </div>
+                    </>
+                  )}
+
                   <Button submit variant="primary">
                     Run Report
                   </Button>
+
+                  <Button submit name="download" value="csv">
+                    Download CSV
+                  </Button>
                 </InlineStack>
-              </Form>
-            </Card>
-          </Layout.Section>
+              </BlockStack>
+            </Form>
+          </Card>
+        </Layout.Section>
 
-          <Layout.Section>
-            <InlineStack gap="300">
-              <div style={{ flex: 1 }}>
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="p" tone="subdued">Sales Count</Text>
-                    <Text as="h2" variant="headingLg">{summary.count}</Text>
-                  </BlockStack>
-                </Card>
-              </div>
+        <Layout.Section>
+          <InlineStack gap="300">
+            <div style={{ flex: 1 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" tone="subdued">
+                    Sales Count
+                  </Text>
+                  <Text as="h2" variant="headingLg">
+                    {summary.count}
+                  </Text>
+                </BlockStack>
+              </Card>
+            </div>
 
-              <div style={{ flex: 1 }}>
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="p" tone="subdued">Total Sales</Text>
-                    <Text as="h2" variant="headingLg">
-                      £{summary.totalSales.toFixed(2)}
-                    </Text>
-                  </BlockStack>
-                </Card>
-              </div>
+            <div style={{ flex: 1 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" tone="subdued">
+                    Total Sales
+                  </Text>
+                  <Text as="h2" variant="headingLg">
+                    £{summary.totalSales.toFixed(2)}
+                  </Text>
+                </BlockStack>
+              </Card>
+            </div>
 
-              <div style={{ flex: 1 }}>
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="p" tone="subdued">Average Sale</Text>
-                    <Text as="h2" variant="headingLg">
-                      £{summary.averageSale.toFixed(2)}
-                    </Text>
-                  </BlockStack>
-                </Card>
-              </div>
-            </InlineStack>
-          </Layout.Section>
+            <div style={{ flex: 1 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" tone="subdued">
+                    Average Sale
+                  </Text>
+                  <Text as="h2" variant="headingLg">
+                    £{summary.averageSale.toFixed(2)}
+                  </Text>
+                </BlockStack>
+              </Card>
+            </div>
+          </InlineStack>
+        </Layout.Section>
 
-          <Layout.Section>
-            <InlineStack gap="300">
-              <div style={{ flex: 1 }}>
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="p" tone="subdued">VAT Total</Text>
-                    <Text as="h2" variant="headingMd">
-                      £{summary.totalVat.toFixed(2)}
-                    </Text>
-                  </BlockStack>
-                </Card>
-              </div>
+        <Layout.Section>
+          <InlineStack gap="300">
+            <div style={{ flex: 1 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" tone="subdued">
+                    VAT Total
+                  </Text>
+                  <Text as="h2" variant="headingMd">
+                    £{summary.totalVat.toFixed(2)}
+                  </Text>
+                </BlockStack>
+              </Card>
+            </div>
 
-              <div style={{ flex: 1 }}>
-                <Card>
-                  <BlockStack gap="200">
-                    <Text as="p" tone="subdued">Discount Total</Text>
-                    <Text as="h2" variant="headingMd">
-                      £{summary.totalDiscount.toFixed(2)}
-                    </Text>
-                  </BlockStack>
-                </Card>
-              </div>
-            </InlineStack>
-          </Layout.Section>
+            <div style={{ flex: 1 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" tone="subdued">
+                    Discount Total
+                  </Text>
+                  <Text as="h2" variant="headingMd">
+                    £{summary.totalDiscount.toFixed(2)}
+                  </Text>
+                </BlockStack>
+              </Card>
+            </div>
+          </InlineStack>
+        </Layout.Section>
 
-          <Layout.Section>
-            <Card>
-              <Text as="h2" variant="headingMd">
-                Payment method breakdown
-              </Text>
+        <Layout.Section>
+          <Card>
+            <Text as="h2" variant="headingMd">
+              Payment method breakdown
+            </Text>
 
-              <IndexTable
-                resourceName={{ singular: "payment method", plural: "payment methods" }}
-                itemCount={paymentTotals.length}
-                headings={[
-                  { title: "Payment method" },
-                  { title: "Sales count" },
-                  { title: "Total" },
-                ]}
-                selectable={false}
-              >
-                {paymentTotals.map(([method, data]: any, index: number) => (
-                  <IndexTable.Row id={method} key={method} position={index}>
-                    <IndexTable.Cell>{method}</IndexTable.Cell>
-                    <IndexTable.Cell>{data.count}</IndexTable.Cell>
-                    <IndexTable.Cell>£{data.total.toFixed(2)}</IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            </Card>
-          </Layout.Section>
+            <IndexTable
+              resourceName={{
+                singular: "payment method",
+                plural: "payment methods",
+              }}
+              itemCount={paymentTotals.length}
+              headings={[
+                { title: "Payment method" },
+                { title: "Sales count" },
+                { title: "Total" },
+              ]}
+              selectable={false}
+            >
+              {paymentTotals.map(([method, data]: any, index: number) => (
+                <IndexTable.Row id={method} key={method} position={index}>
+                  <IndexTable.Cell>{method}</IndexTable.Cell>
+                  <IndexTable.Cell>{data.count}</IndexTable.Cell>
+                  <IndexTable.Cell>£{data.total.toFixed(2)}</IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
+          </Card>
+        </Layout.Section>
 
-          <Layout.Section>
-            <Card>
-              <Text as="h2" variant="headingMd">
-                Sales log
-              </Text>
+        <Layout.Section>
+          <Card>
+            <Text as="h2" variant="headingMd">
+              Sales report download preview
+            </Text>
 
-              <IndexTable
-                resourceName={{ singular: "sale", plural: "sales" }}
-                itemCount={sales.length}
-                headings={[
-                  { title: "Invoice" },
-                  { title: "Shopify Order" },
-                  { title: "Customer" },
-                  { title: "Employee" },
-                  { title: "Payment" },
-                  { title: "Total" },
-                  { title: "Date" },
-                ]}
-                selectable={false}
-              >
-                {sales.map((sale: any, index: number) => (
-                  <IndexTable.Row id={String(sale.id)} key={sale.id} position={index}>
-                    <IndexTable.Cell>INV-{sale.id}</IndexTable.Cell>
-                    <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
-                    <IndexTable.Cell>{sale.customerName}</IndexTable.Cell>
-                    <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
-                    <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
-                    <IndexTable.Cell>£{sale.total.toFixed(2)}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {new Date(sale.createdAt).toLocaleString()}
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            </Card>
-          </Layout.Section>
-        </Layout>
-      </Page>
-    </AppProvider>
+            <IndexTable
+              resourceName={{ singular: "sale", plural: "sales" }}
+              itemCount={sales.length}
+              headings={[
+                { title: "Invoice" },
+                { title: "Order Number" },
+                { title: "Payment Reference" },
+                { title: "Salesperson" },
+                { title: "Amount" },
+                { title: "Date / Time" },
+              ]}
+              selectable={false}
+            >
+              {sales.map((sale: any, index: number) => (
+                <IndexTable.Row id={String(sale.id)} key={sale.id} position={index}>
+                  <IndexTable.Cell>INV-{sale.id}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>£{sale.total.toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {new Date(sale.createdAt).toLocaleString("en-GB")}
+                  </IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <Text as="h2" variant="headingMd">
+              Full sales log
+            </Text>
+
+            <IndexTable
+              resourceName={{ singular: "sale", plural: "sales" }}
+              itemCount={sales.length}
+              headings={[
+                { title: "Invoice" },
+                { title: "Shopify Order" },
+                { title: "Customer" },
+                { title: "Employee" },
+                { title: "Payment" },
+                { title: "Reference" },
+                { title: "Total" },
+                { title: "Date" },
+              ]}
+              selectable={false}
+            >
+              {sales.map((sale: any, index: number) => (
+                <IndexTable.Row id={String(sale.id)} key={sale.id} position={index}>
+                  <IndexTable.Cell>INV-{sale.id}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.shopifyOrderName || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.customerName}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
+                  <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
+                  <IndexTable.Cell>£{sale.total.toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {new Date(sale.createdAt).toLocaleString("en-GB")}
+                  </IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }

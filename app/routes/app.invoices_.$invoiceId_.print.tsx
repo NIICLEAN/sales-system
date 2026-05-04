@@ -9,7 +9,7 @@ export async function loader({
   request: Request;
   params: { invoiceId: string };
 }) {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const invoice = await prisma.sale.findUnique({
     where: { id: Number(params.invoiceId) },
@@ -23,11 +23,39 @@ export async function loader({
     throw new Response("Invoice not found", { status: 404 });
   }
 
-  return { invoice };
+  const shopResponse = await admin.graphql(`
+    query ShopBrand {
+      shop {
+        name
+        brand {
+          logo {
+            image {
+              url
+            }
+          }
+        }
+      }
+    }
+  `);
+
+  const shopJson = await shopResponse.json();
+
+  const logoUrl =
+    shopJson.data?.shop?.brand?.logo?.image?.url || null;
+
+  return {
+    invoice,
+    logoUrl,
+  };
 }
 
 export default function PrintInvoicePage() {
-  const { invoice } = useLoaderData<typeof loader>();
+  const { invoice, logoUrl } = useLoaderData<typeof loader>();
+
+  function downloadPdf() {
+    document.title = `Invoice INV-${invoice.id}`;
+    window.print();
+  }
 
   return (
     <div className="page">
@@ -52,17 +80,40 @@ export default function PrintInvoicePage() {
         }
 
         button {
-          padding: 8px 14px;
+          padding: 9px 15px;
           margin-right: 8px;
           cursor: pointer;
+          border: 1px solid #111;
+          background: #111;
+          color: white;
+          border-radius: 6px;
+          font-weight: 600;
+        }
+
+        button.secondary {
+          background: white;
+          color: #111;
         }
 
         .header {
           display: flex;
           justify-content: space-between;
+          gap: 30px;
           border-bottom: 3px solid #111;
           padding-bottom: 25px;
           margin-bottom: 30px;
+        }
+
+        .business {
+          text-align: right;
+          min-width: 260px;
+        }
+
+        .logo {
+          max-width: 190px;
+          max-height: 90px;
+          object-fit: contain;
+          margin-bottom: 12px;
         }
 
         h1 {
@@ -72,6 +123,10 @@ export default function PrintInvoicePage() {
 
         h2 {
           margin: 0 0 10px;
+        }
+
+        p {
+          margin: 4px 0;
         }
 
         .muted {
@@ -166,31 +221,46 @@ export default function PrintInvoicePage() {
           .actions {
             display: none;
           }
+
+          button {
+            display: none;
+          }
         }
       `}</style>
 
       <div className="actions">
         <button onClick={() => window.print()}>Print Invoice</button>
-        <button onClick={() => window.history.back()}>Back</button>
+        <button onClick={downloadPdf}>Download PDF</button>
+        <button className="secondary" onClick={() => window.history.back()}>
+          Back
+        </button>
       </div>
 
       <div className="header">
         <div>
           <h1>Invoice INV-{invoice.id}</h1>
           <p className="muted">
-            Date: {new Date(invoice.createdAt).toLocaleString()}
+            Date: {new Date(invoice.createdAt).toLocaleString("en-GB")}
           </p>
           <p>Salesperson: {invoice.staff?.name || "-"}</p>
           <p>Payment method: {invoice.paymentMethod}</p>
           <p>Reference: {invoice.reference || "-"}</p>
         </div>
 
-        <div>
-          <h2>Your Company Name</h2>
-          <p>Your address line 1</p>
-          <p>Your town / postcode</p>
-          <p>Email: sales@example.com</p>
-          <p>VAT No: YOUR VAT NUMBER</p>
+        <div className="business">
+          {logoUrl && (
+            <img
+              src={logoUrl}
+              alt="NII Clean Products logo"
+              className="logo"
+            />
+          )}
+
+          <h2>NII Clean Products</h2>
+          <p>96 Bushmills Road</p>
+          <p>Coleraine / BT52 2BT</p>
+          <p>Email: sales@niicleanproducts.com</p>
+          <p>VAT No: 369865135</p>
         </div>
       </div>
 
@@ -263,9 +333,7 @@ export default function PrintInvoicePage() {
         </div>
       </div>
 
-      <div className="footer">
-        Thank you for your business.
-      </div>
+      <div className="footer">Thank you for your business.</div>
     </div>
   );
 }

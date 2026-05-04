@@ -182,11 +182,11 @@ export default function PrintQuotePage() {
         </div>
 
         <div>
-          <h2>Your Company Name</h2>
-          <p>Your address line 1</p>
-          <p>Your town / postcode</p>
-          <p>Email: sales@example.com</p>
-          <p>VAT No: YOUR VAT NUMBER</p>
+          <h2>NII Clean Products</h2>
+          <p>96 Bushmills Road</p>
+          <p>Coleraine / BT52 2BT</p>
+          <p>Email: sales@niicleanproducts.com</p>
+          <p>VAT No: 369865135</p>
         </div>
       </div>
 

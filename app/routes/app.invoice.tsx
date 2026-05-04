@@ -70,9 +70,13 @@ export async function loader({ request }: { request: Request }) {
                 displayName
                 firstName
                 lastName
-                email
-                phone
                 taxExempt
+                defaultEmailAddress {
+                  emailAddress
+                }
+                defaultPhoneNumber {
+                  phoneNumber
+                }
                 defaultAddress {
                   address1
                   address2
@@ -87,11 +91,7 @@ export async function loader({ request }: { request: Request }) {
           }
         }
       `,
-      {
-        variables: {
-          query: customerSearch,
-        },
-      },
+      { variables: { query: customerSearch } },
     );
 
     const customersJson = await customersResponse.json();
@@ -364,13 +364,8 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function InvoicePage() {
-  const {
-    staff,
-    variants,
-    productSearch,
-    customers,
-    customerSearch,
-  } = useLoaderData<typeof loader>();
+  const { staff, variants, productSearch, customers, customerSearch } =
+    useLoaderData<typeof loader>();
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
   const [customerSearchTerm, setCustomerSearchTerm] = useState(
@@ -415,8 +410,10 @@ export default function InvoicePage() {
 
     setCustomerId(customer.id);
     setCustomerName(customer.displayName || "");
-    setCustomerEmail(customer.email || "");
-    setCustomerPhone(customer.phone || address?.phone || "");
+    setCustomerEmail(customer.defaultEmailAddress?.emailAddress || "");
+    setCustomerPhone(
+      customer.defaultPhoneNumber?.phoneNumber || address?.phone || "",
+    );
 
     setAddress1(address?.address1 || "");
     setAddress2(address?.address2 || "");
@@ -511,11 +508,7 @@ export default function InvoicePage() {
                     />
                   </div>
 
-                  <input
-                    type="hidden"
-                    name="productSearch"
-                    value={searchTerm}
-                  />
+                  <input type="hidden" name="productSearch" value={searchTerm} />
 
                   <Button submit>Search Customer</Button>
                 </InlineStack>
@@ -542,8 +535,12 @@ export default function InvoicePage() {
                       position={index}
                     >
                       <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
-                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
-                      <IndexTable.Cell>{customer.phone || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>
+                        {customer.defaultEmailAddress?.emailAddress || "-"}
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>
+                        {customer.defaultPhoneNumber?.phoneNumber || "-"}
+                      </IndexTable.Cell>
                       <IndexTable.Cell>
                         <Button onClick={() => selectCustomer(customer)}>
                           Use customer
