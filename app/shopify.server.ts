@@ -19,9 +19,9 @@ const shopify = shopifyApp({
   future: {
     expiringOfflineAccessTokens: true,
   },
-  ...(process.env.SHOP_CUSTOM_DOMAIN
-    ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
-    : {}),
+...(process.env.SHOPIFY_SHOP_DOMAIN
+  ? { customShopDomains: [process.env.SHOPIFY_SHOP_DOMAIN] }
+  : {}),
 });
 
 export default shopify;
