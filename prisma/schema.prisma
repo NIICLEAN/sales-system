@@ -135,3 +135,61 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model WorksOrder {
+  id                Int      @id @default(autoincrement())
+
+  customerId        String?
+  customerName      String
+  customerEmail     String?
+  customerPhone     String?
+  customerVatNumber String?
+
+  address1          String?
+  address2          String?
+  city              String?
+  county            String?
+  postcode          String?
+  country           String?
+
+  salespersonId     Int
+  assignedStaffId   Int?
+
+  serviceType       String
+  extraInfo         String?
+
+  paymentMethod     String
+  paymentStatus     String   @default("unpaid")
+  amountPaid        Decimal  @default(0)
+
+  subtotal          Decimal
+  discountTotal     Decimal  @default(0)
+  vatAmount         Decimal
+  total             Decimal
+
+  status            String   @default("awaiting_scheduled")
+  scheduledDate     DateTime?
+
+  xeroInvoiceId     String?
+  xeroInvoiceNumber String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  lineItems         WorksOrderLineItem[]
+}
+
+model WorksOrderLineItem {
+  id               Int      @id @default(autoincrement())
+  worksOrderId     Int
+
+  shopifyVariantId String?
+  title            String
+  sku              String?
+  quantity         Int
+  unitPrice        Decimal
+  discount         Decimal  @default(0)
+  lineTotal        Decimal
+
+  worksOrder       WorksOrder @relation(fields: [worksOrderId], references: [id])
+}
