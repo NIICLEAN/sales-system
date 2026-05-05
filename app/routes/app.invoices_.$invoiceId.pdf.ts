@@ -1,6 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import { Buffer } from "node:buffer";
 
 function money(value: any) {
@@ -279,7 +279,8 @@ export async function loader({
 
 const browser = await puppeteer.launch({
   headless: true,
-  executablePath: puppeteer.executablePath(),
+  executablePath:
+    process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser",
   args: [
     "--no-sandbox",
     "--disable-setuid-sandbox",
