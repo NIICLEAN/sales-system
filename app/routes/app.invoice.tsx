@@ -66,9 +66,19 @@ export async function loader({ request }: { request: Request }) {
           query Customers($query: String!) {
             customers(first: 10, query: $query) {
               edges {
-                node {
-                  id
-                  displayName
+          node {
+                id
+                displayName
+                email
+                phone
+            defaultAddress {
+                address1
+                address2
+                city
+                province
+                zip
+                country
+                phone
                 }
               }
             }
@@ -414,11 +424,21 @@ export default function InvoicePage() {
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
 
-  function selectCustomer(customer: any) {
-    setCustomerId(customer.id);
-    setCustomerName(customer.displayName || "");
-  }
+function selectCustomer(customer: any) {
+  const address = customer.defaultAddress || {};
 
+  setCustomerId(customer.id);
+  setCustomerName(customer.displayName || "");
+  setCustomerEmail(customer.email || "");
+  setCustomerPhone(customer.phone || address.phone || "");
+
+  setAddress1(address.address1 || "");
+  setAddress2(address.address2 || "");
+  setCity(address.city || "");
+  setCounty(address.province || "");
+  setPostcode(address.zip || "");
+  setCountry(address.country || "");
+}
   function clearSelectedCustomer() {
     setCustomerId("");
     setCustomerName("");
