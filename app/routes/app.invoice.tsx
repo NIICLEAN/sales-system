@@ -61,35 +61,36 @@ export async function loader({ request }: { request: Request }) {
 
   if (customerSearch.trim()) {
     try {
-      const customersResponse = await admin.graphql(
-        `
-          query Customers($query: String!) {
-            customers(first: 10, query: $query) {
-              edges {
+    const customersResponse = await admin.graphql(
+  `
+    query Customers($query: String!) {
+      customers(first: 10, query: $query) {
+        edges {
           node {
-                id
-                displayName
-                email
-                phone
+            id
+            displayName
+            email
+            phone
             defaultAddress {
-                address1
-                address2
-                city
-                province
-                zip
-                country
-                phone
-                }
-              }
+              address1
+              address2
+              city
+              province
+              zip
+              country
+              phone
             }
           }
-        `,
-        {
-          variables: {
-            query: customerSearch,
-          },
-        },
-      );
+        }
+      }
+    }
+  `,
+  {
+    variables: {
+      query: customerSearch,
+    },
+  },
+);
 
       const customersJson = await customersResponse.json();
 
