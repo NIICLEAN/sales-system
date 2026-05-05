@@ -32,31 +32,34 @@ export async function loader({
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
 
- async function downloadPdf() {
-  const pdfUrl = `/app/invoices/${invoice.id}/pdf${window.location.search}`;
+  async function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
 
-  const response = await fetch(pdfUrl, {
-    method: "GET",
-    credentials: "include",
-  });
+    const currentPath = window.location.pathname.replace(/\/$/, "");
+    const pdfUrl = `${currentPath}/pdf${window.location.search}`;
 
-  if (!response.ok) {
-    alert("PDF download failed. Please refresh the app and try again.");
-    return;
+    const response = await fetch(pdfUrl, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      alert("PDF download failed. Please refresh the app and try again.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Invoice-INV-${invoice.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+
+    link.remove();
+    window.URL.revokeObjectURL(url);
   }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `Invoice-INV-${invoice.id}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-
-  link.remove();
-  window.URL.revokeObjectURL(url);
-}
 
   return (
     <div className="page">
@@ -227,9 +230,19 @@ export default function PrintInvoicePage() {
       `}</style>
 
       <div className="actions">
-        <button onClick={() => window.print()}>Print Invoice</button>
-        <button onClick={downloadPdf}>Download PDF</button>
-        <button className="secondary" onClick={() => window.history.back()}>
+        <button type="button" onClick={() => window.print()}>
+          Print Invoice
+        </button>
+
+        <button type="button" onClick={downloadPdf}>
+          Download PDF
+        </button>
+
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => window.history.back()}
+        >
           Back
         </button>
       </div>
