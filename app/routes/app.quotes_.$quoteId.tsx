@@ -41,22 +41,22 @@ export default function QuoteViewPage() {
   const { quote } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-  function downloadPdf() {
-    const pdfUrl =
-      window.location.pathname.replace(/\/$/, "") +
-      "/pdf" +
-      window.location.search;
+function downloadPdf() {
+  const pdfUrl =
+    window.location.pathname.replace(/\/$/, "") +
+    "/print/pdf" +
+    window.location.search;
 
-    const link = document.createElement("a");
-    link.href = pdfUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.download = `Quote-QUO-${quote.id}.pdf`;
+  const link = document.createElement("a");
+  link.href = pdfUrl;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.download = `Quote-QUO-${quote.id}.pdf`;
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  }
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
 
   return (
     <Page
