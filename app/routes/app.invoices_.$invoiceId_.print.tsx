@@ -33,8 +33,7 @@ export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
 
   function downloadPdf() {
-    document.title = `Invoice INV-${invoice.id}`;
-    window.print();
+    window.location.href = `/invoices/${invoice.id}/pdf`;
   }
 
   return (
