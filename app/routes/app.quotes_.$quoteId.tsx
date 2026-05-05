@@ -41,23 +41,6 @@ export default function QuoteViewPage() {
   const { quote } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
-function downloadPdf() {
-  const pdfUrl =
-    window.location.pathname.replace(/\/$/, "") +
-    "/print/pdf" +
-    window.location.search;
-
-  const link = document.createElement("a");
-  link.href = pdfUrl;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.download = `NCP-QUO-${quote.id}.pdf`;
-
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
   return (
     <Page
       title={`Quote QUO-${quote.id}`}
@@ -102,10 +85,8 @@ function downloadPdf() {
                   variant="primary"
                   onClick={() => navigate(`/app/quotes/${quote.id}/print`)}
                 >
-                  Print Quote
+                  Print / Download Quote
                 </Button>
-
-                <Button onClick={downloadPdf}>Download PDF</Button>
 
                 <Button onClick={() => navigate("/app/quotes")}>Back</Button>
               </InlineStack>
