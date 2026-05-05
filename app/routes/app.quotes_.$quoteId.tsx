@@ -43,32 +43,62 @@ export default function QuoteViewPage() {
   const { quote } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
+  function downloadPdf() {
+    const pdfUrl =
+      window.location.pathname.replace(/\/$/, "") +
+      "/pdf" +
+      window.location.search;
+
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = `Quote-QUO-${quote.id}.pdf`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   return (
     <AppProvider i18n={{}}>
       <Page
         title={`Quote QUO-${quote.id}`}
-        backAction={{ content: "Quotes", onAction: () => navigate("/app/quotes") }}
+        backAction={{
+          content: "Quotes",
+          onAction: () => navigate("/app/quotes"),
+        }}
       >
         <Layout>
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">Customer</Text>
+                <Text as="h2" variant="headingMd">
+                  Customer
+                </Text>
                 <Text as="p">{quote.customerName}</Text>
                 <Text as="p">{quote.customerEmail || "-"}</Text>
                 <Text as="p">{quote.customerPhone || "-"}</Text>
 
-                <Text as="h2" variant="headingMd">Address</Text>
+                <Text as="h2" variant="headingMd">
+                  Address
+                </Text>
                 <Text as="p">{quote.address1 || "-"}</Text>
                 <Text as="p">{quote.address2 || ""}</Text>
-                <Text as="p">{quote.city || ""} {quote.county || ""}</Text>
+                <Text as="p">
+                  {quote.city || ""} {quote.county || ""}
+                </Text>
                 <Text as="p">{quote.postcode || ""}</Text>
                 <Text as="p">{quote.country || ""}</Text>
 
-                <Text as="h2" variant="headingMd">Details</Text>
+                <Text as="h2" variant="headingMd">
+                  Details
+                </Text>
                 <Text as="p">Salesperson: {quote.staff?.name || "-"}</Text>
                 <Text as="p">Reference: {quote.reference || "-"}</Text>
-                <Text as="p">Created: {new Date(quote.createdAt).toLocaleString()}</Text>
+                <Text as="p">
+                  Created: {new Date(quote.createdAt).toLocaleString()}
+                </Text>
 
                 <InlineStack gap="200">
                   <Button
@@ -78,9 +108,9 @@ export default function QuoteViewPage() {
                     Print Quote
                   </Button>
 
-                  <Button onClick={() => navigate("/app/quotes")}>
-                    Back
-                  </Button>
+                  <Button onClick={downloadPdf}>Download PDF</Button>
+
+                  <Button onClick={() => navigate("/app/quotes")}>Back</Button>
                 </InlineStack>
               </BlockStack>
             </Card>
@@ -88,7 +118,9 @@ export default function QuoteViewPage() {
 
           <Layout.Section>
             <Card>
-              <Text as="h2" variant="headingMd">Items</Text>
+              <Text as="h2" variant="headingMd">
+                Items
+              </Text>
 
               <IndexTable
                 resourceName={{ singular: "item", plural: "items" }}
@@ -104,22 +136,36 @@ export default function QuoteViewPage() {
                 selectable={false}
               >
                 {quote.lineItems.map((item: any, index: number) => (
-                  <IndexTable.Row key={item.id} id={String(item.id)} position={index}>
+                  <IndexTable.Row
+                    key={item.id}
+                    id={String(item.id)}
+                    position={index}
+                  >
                     <IndexTable.Cell>{item.title}</IndexTable.Cell>
                     <IndexTable.Cell>{item.sku || "-"}</IndexTable.Cell>
                     <IndexTable.Cell>{item.quantity}</IndexTable.Cell>
-                    <IndexTable.Cell>£{item.unitPrice.toFixed(2)}</IndexTable.Cell>
-                    <IndexTable.Cell>£{item.discount.toFixed(2)}</IndexTable.Cell>
-                    <IndexTable.Cell>£{item.lineTotal.toFixed(2)}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      £{Number(item.unitPrice).toFixed(2)}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      £{Number(item.discount).toFixed(2)}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      £{Number(item.lineTotal).toFixed(2)}
+                    </IndexTable.Cell>
                   </IndexTable.Row>
                 ))}
               </IndexTable>
 
               <div style={{ marginTop: 20 }}>
-                <Text as="p">Subtotal: £{quote.subtotal.toFixed(2)}</Text>
-                <Text as="p">Discount: £{quote.discountTotal.toFixed(2)}</Text>
-                <Text as="p">VAT: £{quote.vatAmount.toFixed(2)}</Text>
-                <Text as="p" fontWeight="bold">Total: £{quote.total.toFixed(2)}</Text>
+                <Text as="p">Subtotal: £{Number(quote.subtotal).toFixed(2)}</Text>
+                <Text as="p">
+                  Discount: £{Number(quote.discountTotal).toFixed(2)}
+                </Text>
+                <Text as="p">VAT: £{Number(quote.vatAmount).toFixed(2)}</Text>
+                <Text as="p" fontWeight="bold">
+                  Total: £{Number(quote.total).toFixed(2)}
+                </Text>
               </div>
             </Card>
           </Layout.Section>
