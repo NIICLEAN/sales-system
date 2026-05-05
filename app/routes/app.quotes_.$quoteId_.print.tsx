@@ -32,11 +32,25 @@ export async function loader({
 export default function PrintQuotePage() {
   const { quote, logoUrl } = useLoaderData<typeof loader>();
 
-  function downloadPdf() {
-    document.title = `Quote QUO-${quote.id}`;
-    window.print();
-  }
+function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
+  event?.preventDefault();
+  event?.stopPropagation();
 
+  const pdfUrl =
+    window.location.pathname.replace(/\/$/, "") +
+    "/pdf" +
+    window.location.search;
+
+  const link = document.createElement("a");
+  link.href = pdfUrl;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.download = `Quote-QUO-${quote.id}.pdf`;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
   return (
     <div className="page">
       <style>{`
@@ -207,7 +221,9 @@ export default function PrintQuotePage() {
 
       <div className="actions">
         <button onClick={() => window.print()}>Print Quote</button>
-        <button onClick={downloadPdf}>Download PDF</button>
+        <button type="button" onClick={downloadPdf}>
+  Download PDF
+</button>
         <button className="secondary" onClick={() => window.history.back()}>
           Back
         </button>
