@@ -32,14 +32,30 @@ export async function loader({
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
 
- function downloadPdf() {
-  const currentPath = window.location.pathname;
-  const appBase = currentPath.split(`/app/invoices/${invoice.id}`)[0];
+ async function downloadPdf() {
+  const pdfUrl = `/app/invoices/${invoice.id}/pdf${window.location.search}`;
 
-  window.open(
-    `${appBase}/app/invoices/${invoice.id}/pdf`,
-    "_blank",
-  );
+  const response = await fetch(pdfUrl, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    alert("PDF download failed. Please refresh the app and try again.");
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Invoice-INV-${invoice.id}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
   return (
