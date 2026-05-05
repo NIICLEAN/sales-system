@@ -193,3 +193,13 @@ model WorksOrderLineItem {
 
   worksOrder       WorksOrder @relation(fields: [worksOrderId], references: [id])
 }
+
+model XeroConnection {
+  id           Int      @id @default(autoincrement())
+
+  tenantId     String
+  tokenSet     Json
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
