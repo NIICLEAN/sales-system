@@ -1,6 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 function money(value: any) {
   return `£${Number(value || 0).toFixed(2)}`;
@@ -252,7 +252,9 @@ export async function loader({ request, params }: any) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    executablePath:
+      process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser",
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   });
 
   const page = await browser.newPage();
