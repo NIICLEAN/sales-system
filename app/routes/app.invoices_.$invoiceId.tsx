@@ -32,9 +32,15 @@ export async function loader({
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
 
-  function downloadPdf() {
-    window.location.href = `/app/invoices/${invoice.id}/pdf`;
-  }
+ function downloadPdf() {
+  const currentPath = window.location.pathname;
+  const appBase = currentPath.split(`/app/invoices/${invoice.id}`)[0];
+
+  window.open(
+    `${appBase}/app/invoices/${invoice.id}/pdf`,
+    "_blank",
+  );
+}
 
   return (
     <div className="page">
