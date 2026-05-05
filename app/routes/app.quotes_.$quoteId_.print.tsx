@@ -36,10 +36,11 @@ function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
   event?.preventDefault();
   event?.stopPropagation();
 
-  const pdfUrl =
-    window.location.pathname.replace(/\/$/, "") +
-    "/pdf" +
-    window.location.search;
+  const basePath = window.location.pathname
+    .replace(/\/print\/?$/, "") // remove /print
+    .replace(/\/$/, "");
+
+  const pdfUrl = basePath + "/pdf" + window.location.search;
 
   const link = document.createElement("a");
   link.href = pdfUrl;
