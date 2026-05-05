@@ -60,14 +60,17 @@ export default function QuoteViewPage() {
     link.remove();
   }
 
-  return (
-    <AppProvider i18n={{}}>
-      <Page
-        title={`Quote QUO-${quote.id}`}
-        backAction={{
-          content: "Quotes",
-          onAction: () => navigate("/app/quotes"),
-        }}
+return (
+  <Page
+    title={`Quote QUO-${quote.id}`}
+    backAction={{
+      content: "Quotes",
+      onAction: () => navigate("/app/quotes"),
+    }}
+  >
+    ...
+  </Page>
+
       >
         <Layout>
           <Layout.Section>
