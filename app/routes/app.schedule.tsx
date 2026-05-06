@@ -1,6 +1,19 @@
-import { redirect } from "react-router";
+import { redirect, Form, useLoaderData } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Form, useLoaderData } from "react-router";
+import {
+  Page,
+  Layout,
+  Card,
+  Text,
+  BlockStack,
+  InlineStack,
+  Button,
+  Select,
+  TextField,
+  DataTable,
+  Divider,
+} from "@shopify/polaris";
+import { useState } from "react";
 import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -21,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { scheduledDate: "asc" },
   });
 
-return { sales, staff, schedules };
+  return { sales, staff, schedules };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -43,90 +56,139 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function SchedulePage() {
   const { sales, staff, schedules } = useLoaderData<typeof loader>();
 
+  const [saleId, setSaleId] = useState(String(sales[0]?.id || ""));
+  const [workType, setWorkType] = useState("Repairs");
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [assignedStaffId, setAssignedStaffId] = useState(String(staff[0]?.id || ""));
+  const [note, setNote] = useState("");
+
+  const saleOptions = sales.map((sale) => ({
+    label: `${sale.shopifyOrderName || `Invoice #${sale.id}`} — ${sale.customerName}`,
+    value: String(sale.id),
+  }));
+
+  const staffOptions = staff.map((person) => ({
+    label: person.name,
+    value: String(person.id),
+  }));
+
+  const rows = schedules.map((item) => [
+    new Date(item.scheduledDate).toLocaleDateString("en-GB"),
+    item.sale.shopifyOrderName || `#${item.sale.id}`,
+    item.sale.customerName,
+    item.workType === "CustomBuilds" ? "Custom Builds" : item.workType,
+    item.assignedStaff.name,
+    item.note || "",
+  ]);
+
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Works Schedule</h1>
+    <Page
+      title="Works Schedule"
+      primaryAction={{
+        content: "Print Rota",
+        onAction: () => window.print(),
+      }}
+    >
+      <Layout>
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">
+                Schedule Works
+              </Text>
 
-      <h2>Schedule Works</h2>
+              <Form method="post">
+                <BlockStack gap="400">
+                  <input type="hidden" name="saleId" value={saleId} />
+                  <input type="hidden" name="workType" value={workType} />
+                  <input type="hidden" name="scheduledDate" value={scheduledDate} />
+                  <input type="hidden" name="assignedStaffId" value={assignedStaffId} />
+                  <input type="hidden" name="note" value={note} />
 
-      <Form method="post" style={{ display: "grid", gap: 12, maxWidth: 500 }}>
-        <label>
-          Invoice
-          <select name="saleId" required>
-            {sales.map((sale) => (
-              <option key={sale.id} value={sale.id}>
-                Invoice #{sale.id} — {sale.customerName}
-              </option>
-            ))}
-          </select>
-        </label>
+                  <Select
+                    label="Invoice"
+                    options={saleOptions}
+                    value={saleId}
+                    onChange={setSaleId}
+                  />
 
-        <label>
-          Work Type
-          <select name="workType" required>
-            <option value="Repairs">Repairs</option>
-            <option value="Fitting">Fitting</option>
-            <option value="CustomBuilds">Custom Builds</option>
-          </select>
-        </label>
+                  <InlineStack gap="400" wrap>
+                    <div style={{ minWidth: 220, flex: 1 }}>
+                      <Select
+                        label="Work type"
+                        options={[
+                          { label: "Repairs", value: "Repairs" },
+                          { label: "Fitting", value: "Fitting" },
+                          { label: "Custom Builds", value: "CustomBuilds" },
+                        ]}
+                        value={workType}
+                        onChange={setWorkType}
+                      />
+                    </div>
 
-        <label>
-          Date
-          <input type="date" name="scheduledDate" required />
-        </label>
+                    <div style={{ minWidth: 220, flex: 1 }}>
+                      <TextField
+                        label="Date"
+                        type="date"
+                        value={scheduledDate}
+                        onChange={setScheduledDate}
+                        autoComplete="off"
+                      />
+                    </div>
 
-        <label>
-          Assigned To
-          <select name="assignedStaffId" required>
-            {staff.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.name}
-              </option>
-            ))}
-          </select>
-        </label>
+                    <div style={{ minWidth: 220, flex: 1 }}>
+                      <Select
+                        label="Assigned to"
+                        options={staffOptions}
+                        value={assignedStaffId}
+                        onChange={setAssignedStaffId}
+                      />
+                    </div>
+                  </InlineStack>
 
-        <label>
-          Note
-          <textarea name="note" rows={4} />
-        </label>
+                  <TextField
+                    label="Note"
+                    value={note}
+                    onChange={setNote}
+                    multiline={4}
+                    autoComplete="off"
+                  />
 
-        <button type="submit">Schedule Works</button>
-      </Form>
+                  <InlineStack align="end">
+                    <Button variant="primary" submit>
+                      Schedule Works
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
+              </Form>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
 
-      <hr style={{ margin: "32px 0" }} />
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">
+                Calendar
+              </Text>
 
-      <h2>Calendar</h2>
+              <Divider />
 
-      <table width="100%" cellPadding="8" border={1}>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Invoice</th>
-            <th>Customer</th>
-            <th>Type</th>
-            <th>Assigned To</th>
-            <th>Note</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {schedules.map((item) => (
-            <tr key={item.id}>
-              <td>{new Date(item.scheduledDate).toLocaleDateString()}</td>
-              <td>#{item.sale.id}</td>
-              <td>{item.sale.customerName}</td>
-              <td>{item.workType}</td>
-              <td>{item.assignedStaff.name}</td>
-              <td>{item.note}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <button onClick={() => window.print()} style={{ marginTop: 24 }}>
-        Print Rota
-      </button>
-    </div>
+              {rows.length ? (
+                <DataTable
+                  columnContentTypes={["text", "text", "text", "text", "text", "text"]}
+                  headings={["Date", "Invoice", "Customer", "Type", "Assigned To", "Note"]}
+                  rows={rows}
+                />
+              ) : (
+                <Text as="p" tone="subdued">
+                  No works scheduled yet.
+                </Text>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }
