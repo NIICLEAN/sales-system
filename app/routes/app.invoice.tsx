@@ -20,7 +20,32 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
+const VAT_RATE = 0.2;
+
 const money = (value: number) => `£${Number(value || 0).toFixed(2)}`;
+
+function roundMoney(value: number) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function getPaymentStatus(total: any, amountPaid: any) {
+  const roundedTotal = roundMoney(Number(total || 0));
+  const roundedPaid = roundMoney(Number(amountPaid || 0));
+
+  if (roundedPaid <= 0) return "Unpaid";
+  if (roundedPaid + 0.01 < roundedTotal) return "Partially Paid";
+  return "Paid";
+}
+
+function getShopifyUnitPrice(item: any, isVatExempt: boolean) {
+  const netUnitPrice = Number(item.unitPrice || 0);
+  return isVatExempt ? roundMoney(netUnitPrice) : roundMoney(netUnitPrice * (1 + VAT_RATE));
+}
+
+function getShopifyDiscount(item: any, isVatExempt: boolean) {
+  const netDiscount = Number(item.discount || 0);
+  return isVatExempt ? roundMoney(netDiscount) : roundMoney(netDiscount * (1 + VAT_RATE));
+}
 
 export async function loader({ request }: { request: Request }) {
   const { admin } = await authenticate.admin(request);
@@ -143,6 +168,8 @@ export async function action({ request }: { request: Request }) {
     formData.get("customerVatNumber") || "",
   ).trim();
 
+  const isVatExempt = Boolean(customerVatNumber);
+
   let customerPhone = String(formData.get("customerPhone") || "").trim();
 
   if (customerPhone) {
@@ -172,9 +199,11 @@ export async function action({ request }: { request: Request }) {
   const paymentMethod = String(formData.get("paymentMethod") || "");
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
 
-  const amountPaid = Math.max(
-    0,
-    Number(String(formData.get("amountPaid") || "0").replace(/,/g, "")),
+  const amountPaid = roundMoney(
+    Math.max(
+      0,
+      Number(String(formData.get("amountPaid") || "0").replace(/,/g, "")),
+    ),
   );
 
   const depositPaid = String(formData.get("depositPaid") || "") === "on";
@@ -206,7 +235,7 @@ export async function action({ request }: { request: Request }) {
             lastName: lastName || undefined,
             email: customerEmail || undefined,
             phone: customerPhone || undefined,
-            taxExempt: customerVatNumber ? true : false,
+            taxExempt: isVatExempt,
             addresses:
               address1 || city || postcode || country
                 ? [
@@ -239,28 +268,26 @@ export async function action({ request }: { request: Request }) {
     shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
   }
 
-  const subtotal = lineItems.reduce(
-    (sum: number, item: any) =>
-      sum + Number(item.unitPrice) * Number(item.quantity),
-    0,
+  const subtotal = roundMoney(
+    lineItems.reduce(
+      (sum: number, item: any) =>
+        sum + Number(item.unitPrice) * Number(item.quantity),
+      0,
+    ),
   );
 
-  const discountTotal = lineItems.reduce(
-    (sum: number, item: any) => sum + Number(item.discount || 0),
-    0,
+  const discountTotal = roundMoney(
+    lineItems.reduce(
+      (sum: number, item: any) => sum + Number(item.discount || 0),
+      0,
+    ),
   );
 
-  const netTotal = subtotal - discountTotal;
-  const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
-  const total = netTotal + vatAmount;
-  const balanceDue = Math.max(total - amountPaid, 0);
-
-  const paymentStatus =
-    amountPaid <= 0
-      ? "Unpaid"
-      : amountPaid < total
-        ? "Partially Paid"
-        : "Paid";
+  const netTotal = roundMoney(subtotal - discountTotal);
+  const vatAmount = isVatExempt ? 0 : roundMoney(netTotal * VAT_RATE);
+  const total = roundMoney(netTotal + vatAmount);
+  const balanceDue = roundMoney(Math.max(total - amountPaid, 0));
+  const paymentStatus = getPaymentStatus(total, amountPaid);
 
   const hasManualShippingAddress =
     address1 || address2 || city || county || postcode || country;
@@ -276,7 +303,7 @@ export async function action({ request }: { request: Request }) {
     customerId: shopifyCustomerId || undefined,
     email: customerEmail || undefined,
     phone: customerPhone || undefined,
-    taxExempt: customerVatNumber ? true : false,
+    taxExempt: isVatExempt,
     note: reference || undefined,
     tags,
     customAttributes: [
@@ -288,6 +315,7 @@ export async function action({ request }: { request: Request }) {
       { key: "Reference", value: reference || "-" },
       { key: "Salesperson ID", value: String(staffId) },
       { key: "VAT Number", value: customerVatNumber || "-" },
+      { key: "Pricing Basis", value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT" },
     ],
     shippingAddress: hasManualShippingAddress
       ? {
@@ -301,13 +329,22 @@ export async function action({ request }: { request: Request }) {
           phone: customerPhone || undefined,
         }
       : undefined,
+
+    // IMPORTANT:
+    // Shopify draft orders treat originalUnitPrice as the final line price in store currency.
+    // Your invoice app prices are net, so for VAT customers we send gross price to Shopify
+    // to make Shopify order totals match invoice total.
     lineItems: lineItems.map((item: any) => {
+      const shopifyUnitPrice = getShopifyUnitPrice(item, isVatExempt);
+      const shopifyDiscount = getShopifyDiscount(item, isVatExempt);
+
       const base = {
         quantity: Number(item.quantity),
-        originalUnitPrice: String(Number(item.unitPrice)),
-        appliedDiscount: Number(item.discount || 0)
+        originalUnitPrice: String(shopifyUnitPrice),
+        taxable: !isVatExempt,
+        appliedDiscount: shopifyDiscount
           ? {
-              value: Number(item.discount || 0),
+              value: shopifyDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
@@ -431,9 +468,10 @@ export async function action({ request }: { request: Request }) {
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           discount: Number(item.discount || 0),
-          lineTotal:
+          lineTotal: roundMoney(
             Number(item.unitPrice) * Number(item.quantity) -
-            Number(item.discount || 0),
+              Number(item.discount || 0),
+          ),
           isCustom: item.type === "custom",
         })),
       },
@@ -563,24 +601,23 @@ export default function InvoicePage() {
   }
 
   const totals = useMemo(() => {
-    const subtotal = items.reduce(
-      (sum, item) => sum + Number(item.unitPrice) * Number(item.quantity),
-      0,
+    const subtotal = roundMoney(
+      items.reduce(
+        (sum, item) => sum + Number(item.unitPrice) * Number(item.quantity),
+        0,
+      ),
     );
 
-    const discount = items.reduce(
-      (sum, item) => sum + Number(item.discount || 0),
-      0,
+    const discount = roundMoney(
+      items.reduce((sum, item) => sum + Number(item.discount || 0), 0),
     );
 
-    const netTotal = subtotal - discount;
-    const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
-    const total = netTotal + vatAmount;
-    const paid = Math.max(0, Number(amountPaid || 0));
-    const balanceDue = Math.max(total - paid, 0);
-
-    const paymentStatus =
-      paid <= 0 ? "Unpaid" : paid < total ? "Partially Paid" : "Paid";
+    const netTotal = roundMoney(subtotal - discount);
+    const vatAmount = customerVatNumber ? 0 : roundMoney(netTotal * VAT_RATE);
+    const total = roundMoney(netTotal + vatAmount);
+    const paid = roundMoney(Math.max(0, Number(amountPaid || 0)));
+    const balanceDue = roundMoney(Math.max(total - paid, 0));
+    const paymentStatus = getPaymentStatus(total, paid);
 
     return {
       subtotal,
@@ -908,7 +945,7 @@ export default function InvoicePage() {
 
                             <div style={{ width: 115 }}>
                               <TextField
-                                label="Price"
+                                label="Net price"
                                 value={String(item.unitPrice)}
                                 onChange={(value) =>
                                   updateItem(index, "unitPrice", value)
@@ -934,10 +971,12 @@ export default function InvoicePage() {
                           </InlineStack>
 
                           <Text as="p" fontWeight="bold">
-                            Line total:{" "}
+                            Net line total:{" "}
                             {money(
-                              Number(item.unitPrice) * Number(item.quantity) -
-                                Number(item.discount || 0),
+                              roundMoney(
+                                Number(item.unitPrice) * Number(item.quantity) -
+                                  Number(item.discount || 0),
+                              ),
                             )}
                           </Text>
                         </BlockStack>
@@ -1183,7 +1222,7 @@ export default function InvoicePage() {
 
                     <BlockStack gap="200">
                       <InlineStack align="space-between">
-                        <Text as="p">Subtotal</Text>
+                        <Text as="p">Net subtotal</Text>
                         <Text as="p">{money(totals.subtotal)}</Text>
                       </InlineStack>
 
