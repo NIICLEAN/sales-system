@@ -91,7 +91,11 @@ export async function loader({ request }: { request: Request }) {
             }
           }
         `,
-        { variables: { query: customerSearch } },
+        {
+          variables: {
+            query: customerSearch,
+          },
+        },
       );
 
       const customersJson = await customersResponse.json();
@@ -480,36 +484,7 @@ export default function InvoicePage() {
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
 
-  function runSearch(
-    event: React.MouseEvent<HTMLButtonElement>,
-    type: "customer" | "product",
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const url = new URL(window.location.href);
-
-    url.searchParams.set("customerSearch", customerSearchTerm || "");
-    url.searchParams.set("productSearch", searchTerm || "");
-
-    if (type === "customer") {
-      url.searchParams.set("customerSearch", customerSearchTerm || "");
-    }
-
-    if (type === "product") {
-      url.searchParams.set("productSearch", searchTerm || "");
-    }
-
-    window.location.assign(url.toString());
-  }
-
-  function selectCustomer(
-    event: React.MouseEvent<HTMLButtonElement>,
-    customer: any,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-
+  function selectCustomer(customer: any) {
     const address = customer.defaultAddress || {};
 
     setCustomerId(customer.id);
@@ -525,10 +500,7 @@ export default function InvoicePage() {
     setCountry(address.country || "");
   }
 
-  function clearSelectedCustomer(event: React.MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-
+  function clearSelectedCustomer() {
     setCustomerId("");
     setCustomerName("");
     setCustomerEmail("");
@@ -542,10 +514,7 @@ export default function InvoicePage() {
     setCountry("");
   }
 
-  function addItem(event: React.MouseEvent<HTMLButtonElement>, variant: any) {
-    event.preventDefault();
-    event.stopPropagation();
-
+  function addItem(variant: any) {
     setItems((current) => [
       ...current,
       {
@@ -560,9 +529,8 @@ export default function InvoicePage() {
     ]);
   }
 
-  function addCustomItem(event: React.MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
+  function addCustomItem(event?: React.MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
 
     setItems((current) => [
       ...current,
@@ -586,10 +554,7 @@ export default function InvoicePage() {
     );
   }
 
-  function removeItem(event: React.MouseEvent<HTMLButtonElement>, index: number) {
-    event.preventDefault();
-    event.stopPropagation();
-
+  function removeItem(index: number) {
     setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
@@ -627,12 +592,12 @@ export default function InvoicePage() {
   return (
     <Page
       title="Create Invoice"
-      subtitle="Build an invoice, add products or custom items, and track partial payments."
+      subtitle="Add Shopify products, custom items, and track deposits or partial payments."
     >
       <Layout>
         <Layout.Section>
-          <BlockStack gap="400">
-            <Card>
+          <Card>
+            <Form method="get">
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">
                   Find existing customer
@@ -642,145 +607,136 @@ export default function InvoicePage() {
                   <div style={{ flex: 1 }}>
                     <TextField
                       label="Search customers"
+                      name="customerSearch"
                       value={customerSearchTerm}
                       onChange={setCustomerSearchTerm}
                       autoComplete="off"
-                      placeholder="Search by customer name, email, or phone"
+                      placeholder="Search by customer name"
                     />
                   </div>
 
-                  <Button onClick={(event) => runSearch(event, "customer")}>
-                    Search Customer
-                  </Button>
+                  <input type="hidden" name="productSearch" value={searchTerm} />
+
+                  <Button submit>Search Customer</Button>
                 </InlineStack>
+              </BlockStack>
+            </Form>
 
-                {customerSearch && (
-                  <div style={{ marginTop: 16 }}>
-                    <IndexTable
-                      resourceName={{
-                        singular: "customer",
-                        plural: "customers",
-                      }}
-                      itemCount={customers.length}
-                      headings={[
-                        { title: "Customer" },
-                        { title: "Email" },
-                        { title: "Action" },
-                      ]}
-                      selectable={false}
+            {customerSearch && (
+              <div style={{ marginTop: "16px" }}>
+                <IndexTable
+                  resourceName={{ singular: "customer", plural: "customers" }}
+                  itemCount={customers.length}
+                  headings={[
+                    { title: "Customer" },
+                    { title: "Email" },
+                    { title: "Action" },
+                  ]}
+                  selectable={false}
+                >
+                  {customers.map((customer: any, index: number) => (
+                    <IndexTable.Row
+                      id={customer.id}
+                      key={customer.id}
+                      position={index}
                     >
-                      {customers.map((customer: any, index: number) => (
-                        <IndexTable.Row
-                          id={customer.id}
-                          key={customer.id}
-                          position={index}
-                        >
-                          <IndexTable.Cell>
-                            {customer.displayName}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>
-                            {customer.email || "-"}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>
-                            <Button
-                              onClick={(event) =>
-                                selectCustomer(event, customer)
-                              }
-                            >
-                              Use customer
-                            </Button>
-                          </IndexTable.Cell>
-                        </IndexTable.Row>
-                      ))}
-                    </IndexTable>
+                      <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
+                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Button onClick={() => selectCustomer(customer)}>
+                          Use customer
+                        </Button>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
 
-                    {customers.length === 0 && (
-                      <div style={{ marginTop: 12 }}>
-                        <Text as="p" tone="subdued">
-                          No customers found.
-                        </Text>
-                      </div>
-                    )}
+                {customers.length === 0 && (
+                  <div style={{ marginTop: "12px" }}>
+                    <Text as="p" tone="subdued">
+                      No customers found. Enter customer details below to create
+                      a new customer.
+                    </Text>
                   </div>
                 )}
-              </BlockStack>
-            </Card>
+              </div>
+            )}
+          </Card>
+        </Layout.Section>
 
+        <Layout.Section>
+          <Card>
+            <Form method="get">
+              <InlineStack gap="300" blockAlign="end">
+                <div style={{ flex: 1 }}>
+                  <TextField
+                    label="Search products"
+                    name="productSearch"
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    autoComplete="off"
+                    placeholder="Search by product name or SKU"
+                  />
+                </div>
+
+                <input
+                  type="hidden"
+                  name="customerSearch"
+                  value={customerSearchTerm}
+                />
+
+                <Button submit>Search Product</Button>
+              </InlineStack>
+            </Form>
+          </Card>
+        </Layout.Section>
+
+        {productSearch && (
+          <Layout.Section>
             <Card>
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">
-                  Search products
+                  Product search results
                 </Text>
 
-                <InlineStack gap="300" blockAlign="end">
-                  <div style={{ flex: 1 }}>
-                    <TextField
-                      label="Product name or SKU"
-                      value={searchTerm}
-                      onChange={setSearchTerm}
-                      autoComplete="off"
-                      placeholder="Search by product name or SKU"
-                    />
-                  </div>
+                <IndexTable
+                  resourceName={{ singular: "product", plural: "products" }}
+                  itemCount={variants.length}
+                  headings={[
+                    { title: "Product" },
+                    { title: "SKU" },
+                    { title: "Price" },
+                    { title: "Action" },
+                  ]}
+                  selectable={false}
+                >
+                  {variants.map((variant: any, index: number) => (
+                    <IndexTable.Row
+                      id={variant.id}
+                      key={variant.id}
+                      position={index}
+                    >
+                      <IndexTable.Cell>
+                        {variant.product.title} - {variant.title}
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                      <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Button onClick={() => addItem(variant)}>Add</Button>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
 
-                  <Button onClick={(event) => runSearch(event, "product")}>
-                    Search Product
-                  </Button>
-                </InlineStack>
+                {variants.length === 0 && (
+                  <Text as="p" tone="subdued">
+                    No products found.
+                  </Text>
+                )}
               </BlockStack>
             </Card>
-
-            {productSearch && (
-              <Card>
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    Product search results
-                  </Text>
-
-                  <IndexTable
-                    resourceName={{
-                      singular: "product",
-                      plural: "products",
-                    }}
-                    itemCount={variants.length}
-                    headings={[
-                      { title: "Product" },
-                      { title: "SKU" },
-                      { title: "Price" },
-                      { title: "Action" },
-                    ]}
-                    selectable={false}
-                  >
-                    {variants.map((variant: any, index: number) => (
-                      <IndexTable.Row
-                        id={variant.id}
-                        key={variant.id}
-                        position={index}
-                      >
-                        <IndexTable.Cell>
-                          {variant.product.title} - {variant.title}
-                        </IndexTable.Cell>
-                        <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                        <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                        <IndexTable.Cell>
-                          <Button onClick={(event) => addItem(event, variant)}>
-                            Add
-                          </Button>
-                        </IndexTable.Cell>
-                      </IndexTable.Row>
-                    ))}
-                  </IndexTable>
-
-                  {variants.length === 0 && (
-                    <Text as="p" tone="subdued">
-                      No products found.
-                    </Text>
-                  )}
-                </BlockStack>
-              </Card>
-            )}
-          </BlockStack>
-        </Layout.Section>
+          </Layout.Section>
+        )}
       </Layout>
 
       <div style={{ marginTop: 16 }}>
@@ -799,7 +755,12 @@ export default function InvoicePage() {
                       </Text>
 
                       {customerId && (
-                        <Button onClick={clearSelectedCustomer}>
+                        <Button
+                          onClick={(event) => {
+                            event.preventDefault();
+                            clearSelectedCustomer();
+                          }}
+                        >
                           Clear selected customer
                         </Button>
                       )}
@@ -807,7 +768,9 @@ export default function InvoicePage() {
 
                     {customerId && (
                       <Text as="p" tone="success">
-                        Existing Shopify customer selected.
+                        Existing Shopify customer selected. Shopify will use the
+                        customer profile/default address unless you manually
+                        enter address details below.
                       </Text>
                     )}
 
@@ -843,16 +806,6 @@ export default function InvoicePage() {
                     <InlineStack gap="300">
                       <div style={{ flex: 1 }}>
                         <TextField
-                          label="Customer phone"
-                          name="customerPhone"
-                          value={customerPhone}
-                          onChange={setCustomerPhone}
-                          autoComplete="off"
-                        />
-                      </div>
-
-                      <div style={{ flex: 1 }}>
-                        <TextField
                           label="VAT number"
                           name="customerVatNumber"
                           value={customerVatNumber}
@@ -861,16 +814,25 @@ export default function InvoicePage() {
                           placeholder="Leave blank to charge 20% VAT"
                         />
                       </div>
+
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Customer phone"
+                          name="customerPhone"
+                          value={customerPhone}
+                          onChange={setCustomerPhone}
+                          autoComplete="off"
+                        />
+                      </div>
                     </InlineStack>
 
                     <Button
                       onClick={(event) => {
                         event.preventDefault();
-                        event.stopPropagation();
                         setShowAddress((open) => !open);
                       }}
                     >
-                      {showAddress ? "Hide address" : "Edit shipping address"}
+                      {showAddress ? "Hide shipping address" : "Edit shipping address"}
                     </Button>
 
                     {showAddress && (
@@ -1000,8 +962,8 @@ export default function InvoicePage() {
                     {items.length === 0 ? (
                       <Box paddingBlock="400">
                         <Text as="p" tone="subdued">
-                          No items added yet. Search for a Shopify product or
-                          add a custom item.
+                          No items added yet. Search for a Shopify product or add
+                          a custom item.
                         </Text>
                       </Box>
                     ) : (
@@ -1025,9 +987,10 @@ export default function InvoicePage() {
 
                                 <Button
                                   tone="critical"
-                                  onClick={(event) =>
-                                    removeItem(event, index)
-                                  }
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    removeItem(index);
+                                  }}
                                 >
                                   Remove
                                 </Button>
