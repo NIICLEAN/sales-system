@@ -47,8 +47,16 @@ export async function loader({ request }: { request: Request }) {
                 title
                 sku
                 price
+                image {
+                  url
+                  altText
+                }
                 product {
                   title
+                  featuredImage {
+                    url
+                    altText
+                  }
                 }
               }
             }
@@ -521,6 +529,7 @@ export default function InvoicePage() {
         quantity: 1,
         unitPrice: Number(variant.price || 0),
         discount: 0,
+        imageUrl: variant.image?.url || variant.product?.featuredImage?.url || "",
       },
     ]);
   }
@@ -536,6 +545,7 @@ export default function InvoicePage() {
         quantity: 1,
         unitPrice: 0,
         discount: 0,
+        imageUrl: "",
       },
     ]);
   }
@@ -714,6 +724,7 @@ export default function InvoicePage() {
                     }}
                     itemCount={variants.length}
                     headings={[
+                      { title: "Image" },
                       { title: "Product" },
                       { title: "SKU" },
                       { title: "Price" },
@@ -721,22 +732,73 @@ export default function InvoicePage() {
                     ]}
                     selectable={false}
                   >
-                    {variants.map((variant: any, index: number) => (
-                      <IndexTable.Row
-                        id={variant.id}
-                        key={variant.id}
-                        position={index}
-                      >
-                        <IndexTable.Cell>
-                          {variant.product.title} - {variant.title}
-                        </IndexTable.Cell>
-                        <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                        <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                        <IndexTable.Cell>
-                          <Button onClick={() => addItem(variant)}>Add</Button>
-                        </IndexTable.Cell>
-                      </IndexTable.Row>
-                    ))}
+                    {variants.map((variant: any, index: number) => {
+                      const imageUrl =
+                        variant.image?.url || variant.product?.featuredImage?.url;
+
+                      const imageAlt =
+                        variant.image?.altText ||
+                        variant.product?.featuredImage?.altText ||
+                        variant.product?.title ||
+                        "Product image";
+
+                      return (
+                        <IndexTable.Row
+                          id={variant.id}
+                          key={variant.id}
+                          position={index}
+                        >
+                          <IndexTable.Cell>
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={imageAlt}
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  objectFit: "cover",
+                                  borderRadius: 8,
+                                  border: "1px solid #ddd",
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  border: "1px solid #ddd",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 11,
+                                  color: "#777",
+                                  textAlign: "center",
+                                }}
+                              >
+                                No image
+                              </div>
+                            )}
+                          </IndexTable.Cell>
+
+                          <IndexTable.Cell>
+                            {variant.product.title} - {variant.title}
+                          </IndexTable.Cell>
+
+                          <IndexTable.Cell>
+                            {variant.sku || "-"}
+                          </IndexTable.Cell>
+
+                          <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+
+                          <IndexTable.Cell>
+                            <Button onClick={() => addItem(variant)}>
+                              Add
+                            </Button>
+                          </IndexTable.Cell>
+                        </IndexTable.Row>
+                      );
+                    })}
                   </IndexTable>
 
                   {variants.length === 0 && (
@@ -993,6 +1055,20 @@ export default function InvoicePage() {
                                 blockAlign="center"
                               >
                                 <InlineStack gap="200" blockAlign="center">
+                                  {item.imageUrl && (
+                                    <img
+                                      src={item.imageUrl}
+                                      alt={item.title}
+                                      style={{
+                                        width: 44,
+                                        height: 44,
+                                        objectFit: "cover",
+                                        borderRadius: 8,
+                                        border: "1px solid #ddd",
+                                      }}
+                                    />
+                                  )}
+
                                   <Text as="p" fontWeight="bold">
                                     {item.title}
                                   </Text>
