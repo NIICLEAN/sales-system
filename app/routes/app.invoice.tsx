@@ -1,4 +1,4 @@
-import { Form, useLoaderData, redirect } from "react-router";
+import { Form, useLoaderData, redirect, useSubmit } from "react-router";
 import { useMemo, useState } from "react";
 import {
   Page,
@@ -91,11 +91,7 @@ export async function loader({ request }: { request: Request }) {
             }
           }
         `,
-        {
-          variables: {
-            query: customerSearch,
-          },
-        },
+        { variables: { query: customerSearch } },
       );
 
       const customersJson = await customersResponse.json();
@@ -443,6 +439,8 @@ export default function InvoicePage() {
   const { staff, variants, productSearch, customers, customerSearch } =
     useLoaderData<typeof loader>();
 
+  const submit = useSubmit();
+
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
   const [customerSearchTerm, setCustomerSearchTerm] = useState(
     customerSearch || "",
@@ -471,6 +469,26 @@ export default function InvoicePage() {
   const [amountPaid, setAmountPaid] = useState("0");
   const [depositPaid, setDepositPaid] = useState(false);
   const [showAddress, setShowAddress] = useState(false);
+
+  function searchCustomers() {
+    submit(
+      {
+        customerSearch: customerSearchTerm,
+        productSearch: searchTerm,
+      },
+      { method: "get" },
+    );
+  }
+
+  function searchProducts() {
+    submit(
+      {
+        customerSearch: customerSearchTerm,
+        productSearch: searchTerm,
+      },
+      { method: "get" },
+    );
+  }
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -613,28 +631,19 @@ export default function InvoicePage() {
                     )}
                   </InlineStack>
 
-                  <Form method="get">
-                    <InlineStack gap="300" blockAlign="end">
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Find existing customer"
-                          name="customerSearch"
-                          value={customerSearchTerm}
-                          onChange={setCustomerSearchTerm}
-                          autoComplete="off"
-                          placeholder="Search by customer name, email, or phone"
-                        />
-                      </div>
-
-                      <input
-                        type="hidden"
-                        name="productSearch"
-                        value={searchTerm}
+                  <InlineStack gap="300" blockAlign="end">
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Find existing customer"
+                        value={customerSearchTerm}
+                        onChange={setCustomerSearchTerm}
+                        autoComplete="off"
+                        placeholder="Search by customer name, email, or phone"
                       />
+                    </div>
 
-                      <Button submit>Search</Button>
-                    </InlineStack>
-                  </Form>
+                    <Button onClick={searchCustomers}>Search</Button>
+                  </InlineStack>
 
                   {customerSearch && (
                     <IndexTable
@@ -843,28 +852,19 @@ export default function InvoicePage() {
                     <Button onClick={addCustomItem}>Add custom item</Button>
                   </InlineStack>
 
-                  <Form method="get">
-                    <InlineStack gap="300" blockAlign="end">
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Search Shopify products"
-                          name="productSearch"
-                          value={searchTerm}
-                          onChange={setSearchTerm}
-                          autoComplete="off"
-                          placeholder="Search by product name or SKU"
-                        />
-                      </div>
-
-                      <input
-                        type="hidden"
-                        name="customerSearch"
-                        value={customerSearchTerm}
+                  <InlineStack gap="300" blockAlign="end">
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Search Shopify products"
+                        value={searchTerm}
+                        onChange={setSearchTerm}
+                        autoComplete="off"
+                        placeholder="Search by product name or SKU"
                       />
+                    </div>
 
-                      <Button submit>Search</Button>
-                    </InlineStack>
-                  </Form>
+                    <Button onClick={searchProducts}>Search</Button>
+                  </InlineStack>
 
                   {productSearch && (
                     <IndexTable
@@ -890,7 +890,9 @@ export default function InvoicePage() {
                           <IndexTable.Cell>
                             {variant.product.title} - {variant.title}
                           </IndexTable.Cell>
-                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {variant.sku || "-"}
+                          </IndexTable.Cell>
                           <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
                           <IndexTable.Cell>
                             <Button onClick={() => addItem(variant)}>Add</Button>
@@ -914,7 +916,10 @@ export default function InvoicePage() {
                       {items.map((item, index) => (
                         <Card key={item.id || index}>
                           <BlockStack gap="300">
-                            <InlineStack align="space-between" blockAlign="center">
+                            <InlineStack
+                              align="space-between"
+                              blockAlign="center"
+                            >
                               <InlineStack gap="200" blockAlign="center">
                                 <Text as="p" fontWeight="bold">
                                   {item.title}
