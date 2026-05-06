@@ -14,6 +14,8 @@ model Staff {
 
   sales  Sale[]
   quotes Quote[]
+
+  assignedWorks WorkSchedule[] @relation("AssignedWorkStaff")
 }
 
 model Sale {
@@ -51,6 +53,26 @@ model Sale {
   staff   Staff @relation(fields: [staffId], references: [id])
 
   lineItems SaleLineItem[]
+
+  workSchedules WorkSchedule[]
+
+  createdAt DateTime @default(now())
+}
+
+model WorkSchedule {
+  id Int @id @default(autoincrement())
+
+  saleId Int
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  workType WorkType
+
+  scheduledDate DateTime
+
+  assignedStaffId Int
+  assignedStaff   Staff @relation("AssignedWorkStaff", fields: [assignedStaffId], references: [id])
+
+  note String?
 
   createdAt DateTime @default(now())
 }
@@ -208,4 +230,9 @@ model XeroConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+enum WorkType {
+  Repairs
+  Fitting
+  CustomBuilds
 }
