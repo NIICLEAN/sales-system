@@ -1,4 +1,4 @@
-import { Form, useLoaderData, redirect, useSubmit } from "react-router";
+import { Form, useLoaderData, redirect } from "react-router";
 import { useMemo, useState } from "react";
 import {
   Page,
@@ -439,8 +439,6 @@ export default function InvoicePage() {
   const { staff, variants, productSearch, customers, customerSearch } =
     useLoaderData<typeof loader>();
 
-  const submit = useSubmit();
-
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
   const [customerSearchTerm, setCustomerSearchTerm] = useState(
     customerSearch || "",
@@ -469,26 +467,6 @@ export default function InvoicePage() {
   const [amountPaid, setAmountPaid] = useState("0");
   const [depositPaid, setDepositPaid] = useState(false);
   const [showAddress, setShowAddress] = useState(false);
-
-  function searchCustomers() {
-    submit(
-      {
-        customerSearch: customerSearchTerm,
-        productSearch: searchTerm,
-      },
-      { method: "get" },
-    );
-  }
-
-  function searchProducts() {
-    submit(
-      {
-        customerSearch: customerSearchTerm,
-        productSearch: searchTerm,
-      },
-      { method: "get" },
-    );
-  }
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -610,31 +588,21 @@ export default function InvoicePage() {
       title="Create Invoice"
       subtitle="Build an invoice, add products or custom items, and track partial payments."
     >
-      <Form method="post">
-        <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
-        <input type="hidden" name="customerId" value={customerId} />
-
-        <Layout>
-          <Layout.Section>
-            <BlockStack gap="400">
-              <Card>
-                <BlockStack gap="400">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text as="h2" variant="headingMd">
-                      Customer
-                    </Text>
-
-                    {customerId && (
-                      <Button onClick={clearSelectedCustomer}>
-                        Clear selected customer
-                      </Button>
-                    )}
-                  </InlineStack>
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            <Card>
+              <Form method="get">
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Find existing customer
+                  </Text>
 
                   <InlineStack gap="300" blockAlign="end">
                     <div style={{ flex: 1 }}>
                       <TextField
-                        label="Find existing customer"
+                        label="Search customers"
+                        name="customerSearch"
                         value={customerSearchTerm}
                         onChange={setCustomerSearchTerm}
                         autoComplete="off"
@@ -642,220 +610,77 @@ export default function InvoicePage() {
                       />
                     </div>
 
-                    <Button onClick={searchCustomers}>Search</Button>
+                    <input
+                      type="hidden"
+                      name="productSearch"
+                      value={searchTerm}
+                    />
+
+                    <Button submit>Search Customer</Button>
                   </InlineStack>
-
-                  {customerSearch && (
-                    <IndexTable
-                      resourceName={{
-                        singular: "customer",
-                        plural: "customers",
-                      }}
-                      itemCount={customers.length}
-                      headings={[
-                        { title: "Customer" },
-                        { title: "Email" },
-                        { title: "Action" },
-                      ]}
-                      selectable={false}
-                    >
-                      {customers.map((customer: any, index: number) => (
-                        <IndexTable.Row
-                          id={customer.id}
-                          key={customer.id}
-                          position={index}
-                        >
-                          <IndexTable.Cell>
-                            {customer.displayName}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>
-                            {customer.email || "-"}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>
-                            <Button onClick={() => selectCustomer(customer)}>
-                              Use
-                            </Button>
-                          </IndexTable.Cell>
-                        </IndexTable.Row>
-                      ))}
-                    </IndexTable>
-                  )}
-
-                  <InlineStack gap="300">
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="Customer name"
-                        name="customerName"
-                        value={customerName}
-                        onChange={setCustomerName}
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="Customer email"
-                        name="customerEmail"
-                        value={customerEmail}
-                        onChange={setCustomerEmail}
-                        autoComplete="off"
-                      />
-                    </div>
-                  </InlineStack>
-
-                  <InlineStack gap="300">
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="Customer phone"
-                        name="customerPhone"
-                        value={customerPhone}
-                        onChange={setCustomerPhone}
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="VAT number"
-                        name="customerVatNumber"
-                        value={customerVatNumber}
-                        onChange={setCustomerVatNumber}
-                        autoComplete="off"
-                        placeholder="Leave blank to charge 20% VAT"
-                      />
-                    </div>
-                  </InlineStack>
-
-                  <Button onClick={() => setShowAddress((open) => !open)}>
-                    {showAddress ? "Hide address" : "Edit shipping address"}
-                  </Button>
-
-                  {showAddress && (
-                    <BlockStack gap="300">
-                      <InlineStack gap="300">
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Address line 1"
-                            name="address1"
-                            value={address1}
-                            onChange={setAddress1}
-                            autoComplete="off"
-                          />
-                        </div>
-
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Address line 2"
-                            name="address2"
-                            value={address2}
-                            onChange={setAddress2}
-                            autoComplete="off"
-                          />
-                        </div>
-                      </InlineStack>
-
-                      <InlineStack gap="300">
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Town / City"
-                            name="city"
-                            value={city}
-                            onChange={setCity}
-                            autoComplete="off"
-                          />
-                        </div>
-
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="County"
-                            name="county"
-                            value={county}
-                            onChange={setCounty}
-                            autoComplete="off"
-                          />
-                        </div>
-                      </InlineStack>
-
-                      <InlineStack gap="300">
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Postcode"
-                            name="postcode"
-                            value={postcode}
-                            onChange={setPostcode}
-                            autoComplete="off"
-                          />
-                        </div>
-
-                        <div style={{ flex: 1 }}>
-                          <TextField
-                            label="Country"
-                            name="country"
-                            value={country}
-                            onChange={setCountry}
-                            autoComplete="off"
-                            placeholder="United Kingdom"
-                          />
-                        </div>
-                      </InlineStack>
-                    </BlockStack>
-                  )}
                 </BlockStack>
-              </Card>
+              </Form>
 
-              <Card>
-                <BlockStack gap="400">
+              {customerSearch && (
+                <div style={{ marginTop: 16 }}>
+                  <IndexTable
+                    resourceName={{
+                      singular: "customer",
+                      plural: "customers",
+                    }}
+                    itemCount={customers.length}
+                    headings={[
+                      { title: "Customer" },
+                      { title: "Email" },
+                      { title: "Action" },
+                    ]}
+                    selectable={false}
+                  >
+                    {customers.map((customer: any, index: number) => (
+                      <IndexTable.Row
+                        id={customer.id}
+                        key={customer.id}
+                        position={index}
+                      >
+                        <IndexTable.Cell>
+                          {customer.displayName}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {customer.email || "-"}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Button onClick={() => selectCustomer(customer)}>
+                            Use customer
+                          </Button>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+
+                  {customers.length === 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <Text as="p" tone="subdued">
+                        No customers found. Enter customer details below to
+                        create a new customer.
+                      </Text>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            <Card>
+              <Form method="get">
+                <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">
-                    Invoice details
+                    Search products
                   </Text>
-
-                  <InlineStack gap="300">
-                    <div style={{ flex: 1 }}>
-                      <Select
-                        label="Account / Salesperson"
-                        name="staffId"
-                        options={staffOptions}
-                        value={staffId}
-                        onChange={setStaffId}
-                      />
-                    </div>
-
-                    <div style={{ flex: 1 }}>
-                      <Select
-                        label="Payment method"
-                        name="paymentMethod"
-                        options={paymentOptions}
-                        value={paymentMethod}
-                        onChange={setPaymentMethod}
-                      />
-                    </div>
-                  </InlineStack>
-
-                  <TextField
-                    label="Reference"
-                    name="reference"
-                    value={reference}
-                    onChange={setReference}
-                    autoComplete="off"
-                    placeholder="Customer PO, job ref, or note"
-                  />
-                </BlockStack>
-              </Card>
-
-              <Card>
-                <BlockStack gap="400">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text as="h2" variant="headingMd">
-                      Items
-                    </Text>
-
-                    <Button onClick={addCustomItem}>Add custom item</Button>
-                  </InlineStack>
 
                   <InlineStack gap="300" blockAlign="end">
                     <div style={{ flex: 1 }}>
                       <TextField
-                        label="Search Shopify products"
+                        label="Product name or SKU"
+                        name="productSearch"
                         value={searchTerm}
                         onChange={setSearchTerm}
                         autoComplete="off"
@@ -863,259 +688,510 @@ export default function InvoicePage() {
                       />
                     </div>
 
-                    <Button onClick={searchProducts}>Search</Button>
+                    <input
+                      type="hidden"
+                      name="customerSearch"
+                      value={customerSearchTerm}
+                    />
+
+                    <Button submit>Search Product</Button>
                   </InlineStack>
+                </BlockStack>
+              </Form>
+            </Card>
 
-                  {productSearch && (
-                    <IndexTable
-                      resourceName={{
-                        singular: "product",
-                        plural: "products",
-                      }}
-                      itemCount={variants.length}
-                      headings={[
-                        { title: "Product" },
-                        { title: "SKU" },
-                        { title: "Price" },
-                        { title: "Action" },
-                      ]}
-                      selectable={false}
-                    >
-                      {variants.map((variant: any, index: number) => (
-                        <IndexTable.Row
-                          id={variant.id}
-                          key={variant.id}
-                          position={index}
-                        >
-                          <IndexTable.Cell>
-                            {variant.product.title} - {variant.title}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>
-                            {variant.sku || "-"}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                          <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>Add</Button>
-                          </IndexTable.Cell>
-                        </IndexTable.Row>
-                      ))}
-                    </IndexTable>
-                  )}
+            {productSearch && (
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Product search results
+                  </Text>
 
-                  <Divider />
+                  <IndexTable
+                    resourceName={{
+                      singular: "product",
+                      plural: "products",
+                    }}
+                    itemCount={variants.length}
+                    headings={[
+                      { title: "Product" },
+                      { title: "SKU" },
+                      { title: "Price" },
+                      { title: "Action" },
+                    ]}
+                    selectable={false}
+                  >
+                    {variants.map((variant: any, index: number) => (
+                      <IndexTable.Row
+                        id={variant.id}
+                        key={variant.id}
+                        position={index}
+                      >
+                        <IndexTable.Cell>
+                          {variant.product.title} - {variant.title}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Button onClick={() => addItem(variant)}>Add</Button>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
 
-                  {items.length === 0 ? (
-                    <Box paddingBlock="400">
-                      <Text as="p" tone="subdued">
-                        No items added yet. Search for a Shopify product or add a
-                        custom item.
-                      </Text>
-                    </Box>
-                  ) : (
-                    <BlockStack gap="300">
-                      {items.map((item, index) => (
-                        <Card key={item.id || index}>
-                          <BlockStack gap="300">
-                            <InlineStack
-                              align="space-between"
-                              blockAlign="center"
-                            >
-                              <InlineStack gap="200" blockAlign="center">
-                                <Text as="p" fontWeight="bold">
-                                  {item.title}
-                                </Text>
-
-                                {item.type === "custom" && (
-                                  <Badge tone="info">Custom</Badge>
-                                )}
-                              </InlineStack>
-
-                              <Button
-                                tone="critical"
-                                onClick={() => removeItem(index)}
-                              >
-                                Remove
-                              </Button>
-                            </InlineStack>
-
-                            {item.type === "custom" && (
-                              <InlineStack gap="300">
-                                <div style={{ flex: 1 }}>
-                                  <TextField
-                                    label="Item name"
-                                    value={String(item.title)}
-                                    onChange={(value) =>
-                                      updateItem(index, "title", value)
-                                    }
-                                    autoComplete="off"
-                                  />
-                                </div>
-
-                                <div style={{ width: 180 }}>
-                                  <TextField
-                                    label="SKU"
-                                    value={String(item.sku)}
-                                    onChange={(value) =>
-                                      updateItem(index, "sku", value)
-                                    }
-                                    autoComplete="off"
-                                  />
-                                </div>
-                              </InlineStack>
-                            )}
-
-                            <InlineStack gap="300">
-                              <div style={{ width: 120 }}>
-                                <TextField
-                                  label="Qty"
-                                  value={String(item.quantity)}
-                                  onChange={(value) =>
-                                    updateItem(index, "quantity", value)
-                                  }
-                                  autoComplete="off"
-                                  type="number"
-                                />
-                              </div>
-
-                              <div style={{ width: 160 }}>
-                                <TextField
-                                  label="Unit price"
-                                  value={String(item.unitPrice)}
-                                  onChange={(value) =>
-                                    updateItem(index, "unitPrice", value)
-                                  }
-                                  autoComplete="off"
-                                  type="number"
-                                  prefix="£"
-                                />
-                              </div>
-
-                              <div style={{ width: 160 }}>
-                                <TextField
-                                  label="Discount"
-                                  value={String(item.discount)}
-                                  onChange={(value) =>
-                                    updateItem(index, "discount", value)
-                                  }
-                                  autoComplete="off"
-                                  type="number"
-                                  prefix="£"
-                                />
-                              </div>
-
-                              <div style={{ paddingTop: 28 }}>
-                                <Text as="p" fontWeight="bold">
-                                  {money(
-                                    Number(item.unitPrice) *
-                                      Number(item.quantity) -
-                                      Number(item.discount || 0),
-                                  )}
-                                </Text>
-                              </div>
-                            </InlineStack>
-                          </BlockStack>
-                        </Card>
-                      ))}
-                    </BlockStack>
+                  {variants.length === 0 && (
+                    <Text as="p" tone="subdued">
+                      No products found.
+                    </Text>
                   )}
                 </BlockStack>
               </Card>
-            </BlockStack>
-          </Layout.Section>
+            )}
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
 
-          <Layout.Section variant="oneThird">
-            <div style={{ position: "sticky", top: 16 }}>
-              <Card>
-                <BlockStack gap="400">
-                  <InlineStack align="space-between" blockAlign="center">
+      <div style={{ marginTop: 16 }}>
+        <Form method="post">
+          <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
+          <input type="hidden" name="customerId" value={customerId} />
+
+          <Layout>
+            <Layout.Section>
+              <BlockStack gap="400">
+                <Card>
+                  <BlockStack gap="400">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h2" variant="headingMd">
+                        Customer details
+                      </Text>
+
+                      {customerId && (
+                        <Button
+                          onClick={(event) => {
+                            event.preventDefault();
+                            clearSelectedCustomer();
+                          }}
+                        >
+                          Clear selected customer
+                        </Button>
+                      )}
+                    </InlineStack>
+
+                    {customerId && (
+                      <Text as="p" tone="success">
+                        Existing Shopify customer selected.
+                      </Text>
+                    )}
+
+                    {!customerId && (
+                      <Text as="p" tone="subdued">
+                        If no existing customer is selected, a new Shopify
+                        customer will be created when email or phone is provided.
+                      </Text>
+                    )}
+
+                    <InlineStack gap="300">
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Customer name"
+                          name="customerName"
+                          value={customerName}
+                          onChange={setCustomerName}
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Customer email"
+                          name="customerEmail"
+                          value={customerEmail}
+                          onChange={setCustomerEmail}
+                          autoComplete="off"
+                        />
+                      </div>
+                    </InlineStack>
+
+                    <InlineStack gap="300">
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Customer phone"
+                          name="customerPhone"
+                          value={customerPhone}
+                          onChange={setCustomerPhone}
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="VAT number"
+                          name="customerVatNumber"
+                          value={customerVatNumber}
+                          onChange={setCustomerVatNumber}
+                          autoComplete="off"
+                          placeholder="Leave blank to charge 20% VAT"
+                        />
+                      </div>
+                    </InlineStack>
+
+                    <Button
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setShowAddress((open) => !open);
+                      }}
+                    >
+                      {showAddress ? "Hide address" : "Edit shipping address"}
+                    </Button>
+
+                    {showAddress && (
+                      <BlockStack gap="300">
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Address line 1"
+                              name="address1"
+                              value={address1}
+                              onChange={setAddress1}
+                              autoComplete="off"
+                            />
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Address line 2"
+                              name="address2"
+                              value={address2}
+                              onChange={setAddress2}
+                              autoComplete="off"
+                            />
+                          </div>
+                        </InlineStack>
+
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Town / City"
+                              name="city"
+                              value={city}
+                              onChange={setCity}
+                              autoComplete="off"
+                            />
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="County"
+                              name="county"
+                              value={county}
+                              onChange={setCounty}
+                              autoComplete="off"
+                            />
+                          </div>
+                        </InlineStack>
+
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Postcode"
+                              name="postcode"
+                              value={postcode}
+                              onChange={setPostcode}
+                              autoComplete="off"
+                            />
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Country"
+                              name="country"
+                              value={country}
+                              onChange={setCountry}
+                              autoComplete="off"
+                              placeholder="United Kingdom"
+                            />
+                          </div>
+                        </InlineStack>
+                      </BlockStack>
+                    )}
+                  </BlockStack>
+                </Card>
+
+                <Card>
+                  <BlockStack gap="400">
                     <Text as="h2" variant="headingMd">
-                      Summary
+                      Invoice details
                     </Text>
 
-                    <Badge
-                      tone={
-                        totals.paymentStatus === "Paid"
-                          ? "success"
-                          : totals.paymentStatus === "Partially Paid"
-                            ? "attention"
-                            : "critical"
-                      }
-                    >
-                      {totals.paymentStatus}
-                    </Badge>
-                  </InlineStack>
+                    <InlineStack gap="300">
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          label="Account / Salesperson"
+                          name="staffId"
+                          options={staffOptions}
+                          value={staffId}
+                          onChange={setStaffId}
+                        />
+                      </div>
 
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="p">Subtotal</Text>
-                      <Text as="p">{money(totals.subtotal)}</Text>
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          label="Payment method"
+                          name="paymentMethod"
+                          options={paymentOptions}
+                          value={paymentMethod}
+                          onChange={setPaymentMethod}
+                        />
+                      </div>
                     </InlineStack>
 
-                    <InlineStack align="space-between">
-                      <Text as="p">Discount</Text>
-                      <Text as="p">{money(totals.discount)}</Text>
+                    <TextField
+                      label="Reference"
+                      name="reference"
+                      value={reference}
+                      onChange={setReference}
+                      autoComplete="off"
+                      placeholder="Customer PO, job ref, or note"
+                    />
+                  </BlockStack>
+                </Card>
+
+                <Card>
+                  <BlockStack gap="400">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h2" variant="headingMd">
+                        Invoice lines
+                      </Text>
+
+                      <Button
+                        onClick={(event) => {
+                          event.preventDefault();
+                          addCustomItem();
+                        }}
+                      >
+                        Add custom item
+                      </Button>
                     </InlineStack>
 
-                    <InlineStack align="space-between">
-                      <Text as="p">VAT</Text>
-                      <Text as="p">{money(totals.vatAmount)}</Text>
+                    <Divider />
+
+                    {items.length === 0 ? (
+                      <Box paddingBlock="400">
+                        <Text as="p" tone="subdued">
+                          No items added yet. Search for a Shopify product or
+                          add a custom item.
+                        </Text>
+                      </Box>
+                    ) : (
+                      <BlockStack gap="300">
+                        {items.map((item, index) => (
+                          <Card key={item.id || index}>
+                            <BlockStack gap="300">
+                              <InlineStack
+                                align="space-between"
+                                blockAlign="center"
+                              >
+                                <InlineStack gap="200" blockAlign="center">
+                                  <Text as="p" fontWeight="bold">
+                                    {item.title}
+                                  </Text>
+
+                                  {item.type === "custom" && (
+                                    <Badge tone="info">Custom</Badge>
+                                  )}
+                                </InlineStack>
+
+                                <Button
+                                  tone="critical"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    removeItem(index);
+                                  }}
+                                >
+                                  Remove
+                                </Button>
+                              </InlineStack>
+
+                              {item.type === "custom" && (
+                                <InlineStack gap="300">
+                                  <div style={{ flex: 1 }}>
+                                    <TextField
+                                      label="Item name"
+                                      value={String(item.title)}
+                                      onChange={(value) =>
+                                        updateItem(index, "title", value)
+                                      }
+                                      autoComplete="off"
+                                    />
+                                  </div>
+
+                                  <div style={{ width: 180 }}>
+                                    <TextField
+                                      label="SKU"
+                                      value={String(item.sku)}
+                                      onChange={(value) =>
+                                        updateItem(index, "sku", value)
+                                      }
+                                      autoComplete="off"
+                                    />
+                                  </div>
+                                </InlineStack>
+                              )}
+
+                              <InlineStack gap="300">
+                                <div style={{ width: 120 }}>
+                                  <TextField
+                                    label="Qty"
+                                    value={String(item.quantity)}
+                                    onChange={(value) =>
+                                      updateItem(index, "quantity", value)
+                                    }
+                                    autoComplete="off"
+                                    type="number"
+                                  />
+                                </div>
+
+                                <div style={{ width: 160 }}>
+                                  <TextField
+                                    label="Unit price"
+                                    value={String(item.unitPrice)}
+                                    onChange={(value) =>
+                                      updateItem(index, "unitPrice", value)
+                                    }
+                                    autoComplete="off"
+                                    type="number"
+                                    prefix="£"
+                                  />
+                                </div>
+
+                                <div style={{ width: 160 }}>
+                                  <TextField
+                                    label="Discount"
+                                    value={String(item.discount)}
+                                    onChange={(value) =>
+                                      updateItem(index, "discount", value)
+                                    }
+                                    autoComplete="off"
+                                    type="number"
+                                    prefix="£"
+                                  />
+                                </div>
+
+                                <div style={{ paddingTop: 28 }}>
+                                  <Text as="p" fontWeight="bold">
+                                    {money(
+                                      Number(item.unitPrice) *
+                                        Number(item.quantity) -
+                                        Number(item.discount || 0),
+                                    )}
+                                  </Text>
+                                </div>
+                              </InlineStack>
+                            </BlockStack>
+                          </Card>
+                        ))}
+                      </BlockStack>
+                    )}
+                  </BlockStack>
+                </Card>
+              </BlockStack>
+            </Layout.Section>
+
+            <Layout.Section variant="oneThird">
+              <div style={{ position: "sticky", top: 16 }}>
+                <Card>
+                  <BlockStack gap="400">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h2" variant="headingMd">
+                        Summary
+                      </Text>
+
+                      <Badge
+                        tone={
+                          totals.paymentStatus === "Paid"
+                            ? "success"
+                            : totals.paymentStatus === "Partially Paid"
+                              ? "attention"
+                              : "critical"
+                        }
+                      >
+                        {totals.paymentStatus}
+                      </Badge>
                     </InlineStack>
+
+                    <BlockStack gap="200">
+                      <InlineStack align="space-between">
+                        <Text as="p">Subtotal</Text>
+                        <Text as="p">{money(totals.subtotal)}</Text>
+                      </InlineStack>
+
+                      <InlineStack align="space-between">
+                        <Text as="p">Discount</Text>
+                        <Text as="p">{money(totals.discount)}</Text>
+                      </InlineStack>
+
+                      <InlineStack align="space-between">
+                        <Text as="p">VAT</Text>
+                        <Text as="p">{money(totals.vatAmount)}</Text>
+                      </InlineStack>
+
+                      <Divider />
+
+                      <InlineStack align="space-between">
+                        <Text as="p" fontWeight="bold">
+                          Total
+                        </Text>
+                        <Text as="p" fontWeight="bold">
+                          {money(totals.total)}
+                        </Text>
+                      </InlineStack>
+                    </BlockStack>
+
+                    <Divider />
+
+                    <BlockStack gap="300">
+                      <TextField
+                        label="Amount paid"
+                        name="amountPaid"
+                        value={amountPaid}
+                        onChange={setAmountPaid}
+                        autoComplete="off"
+                        type="number"
+                        prefix="£"
+                      />
+
+                      <Checkbox
+                        label="Deposit paid"
+                        name="depositPaid"
+                        checked={depositPaid}
+                        onChange={setDepositPaid}
+                      />
+
+                      {depositPaid && <Badge tone="success">Deposit Paid</Badge>}
+                    </BlockStack>
 
                     <Divider />
 
                     <InlineStack align="space-between">
                       <Text as="p" fontWeight="bold">
-                        Total
+                        Balance due
                       </Text>
                       <Text as="p" fontWeight="bold">
-                        {money(totals.total)}
+                        {money(totals.balanceDue)}
                       </Text>
                     </InlineStack>
+
+                    <Button submit variant="primary" fullWidth>
+                      Save Invoice
+                    </Button>
                   </BlockStack>
-
-                  <Divider />
-
-                  <BlockStack gap="300">
-                    <TextField
-                      label="Amount paid"
-                      name="amountPaid"
-                      value={amountPaid}
-                      onChange={setAmountPaid}
-                      autoComplete="off"
-                      type="number"
-                      prefix="£"
-                    />
-
-                    <Checkbox
-                      label="Deposit paid"
-                      name="depositPaid"
-                      checked={depositPaid}
-                      onChange={setDepositPaid}
-                    />
-
-                    {depositPaid && <Badge tone="success">Deposit Paid</Badge>}
-                  </BlockStack>
-
-                  <Divider />
-
-                  <InlineStack align="space-between">
-                    <Text as="p" fontWeight="bold">
-                      Balance due
-                    </Text>
-                    <Text as="p" fontWeight="bold">
-                      {money(totals.balanceDue)}
-                    </Text>
-                  </InlineStack>
-
-                  <Button submit variant="primary" fullWidth>
-                    Save Invoice
-                  </Button>
-                </BlockStack>
-              </Card>
-            </div>
-          </Layout.Section>
-        </Layout>
-      </Form>
+                </Card>
+              </div>
+            </Layout.Section>
+          </Layout>
+        </Form>
+      </div>
     </Page>
   );
 }

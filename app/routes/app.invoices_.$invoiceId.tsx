@@ -1,1180 +1,716 @@
-import { Form, useLoaderData, redirect } from "react-router";
 import { useMemo, useState } from "react";
-import {
-  Page,
-  Layout,
-  Card,
-  TextField,
-  Button,
-  Select,
-  BlockStack,
-  InlineStack,
-  IndexTable,
-  Text,
-  Divider,
-  Badge,
-  Checkbox,
-  Box,
-} from "@shopify/polaris";
-
+import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-const money = (value: number) => `£${Number(value || 0).toFixed(2)}`;
+export async function loader({
+  request,
+  params,
+}: {
+  request: Request;
+  params: { invoiceId: string };
+}) {
+  await authenticate.admin(request);
 
-export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
-
-  const url = new URL(request.url);
-  const productSearch = url.searchParams.get("productSearch") || "";
-  const customerSearch = url.searchParams.get("customerSearch") || "";
-
-  const staff = await prisma.staff.findMany({
-    orderBy: { name: "asc" },
+  const invoice = await prisma.sale.findUnique({
+    where: { id: Number(params.invoiceId) },
+    include: {
+      staff: true,
+      lineItems: true,
+    },
   });
 
-  let variants: any[] = [];
-  let customers: any[] = [];
-
-  if (productSearch.trim()) {
-    const productsResponse = await admin.graphql(
-      `
-        query ProductVariants($query: String) {
-          productVariants(first: 25, query: $query) {
-            edges {
-              node {
-                id
-                title
-                sku
-                price
-                product {
-                  title
-                }
-              }
-            }
-          }
-        }
-      `,
-      { variables: { query: productSearch } },
-    );
-
-    const productsJson = await productsResponse.json();
-
-    variants =
-      productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
-      [];
-  }
-
-  if (customerSearch.trim()) {
-    try {
-      const customersResponse = await admin.graphql(
-        `
-          query Customers($query: String!) {
-            customers(first: 10, query: $query) {
-              edges {
-                node {
-                  id
-                  displayName
-                  email
-                  phone
-                  defaultAddress {
-                    address1
-                    address2
-                    city
-                    province
-                    zip
-                    country
-                    phone
-                  }
-                }
-              }
-            }
-          }
-        `,
-        {
-          variables: {
-            query: customerSearch,
-          },
-        },
-      );
-
-      const customersJson = await customersResponse.json();
-
-      if (customersJson.errors) {
-        console.error(
-          "Customer search GraphQL errors:",
-          JSON.stringify(customersJson.errors, null, 2),
-        );
-      }
-
-      customers =
-        customersJson.data?.customers?.edges?.map((edge: any) => edge.node) ||
-        [];
-    } catch (error) {
-      console.error("Customer search failed:", error);
-      customers = [];
-    }
+  if (!invoice) {
+    throw new Response("Invoice not found", { status: 404 });
   }
 
   return {
-    staff,
-    variants,
-    productSearch,
-    customers,
-    customerSearch,
+    invoice,
+    logoUrl: process.env.BUSINESS_LOGO_URL || "",
   };
 }
 
-export async function action({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
+type CustomItem = {
+  id: number;
+  title: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+};
 
-  const staffId = Number(formData.get("staffId"));
-  const selectedCustomerId = String(formData.get("customerId") || "").trim();
+export default function PrintInvoicePage() {
+  const { invoice, logoUrl } = useLoaderData<typeof loader>();
 
-  const customerName =
-    String(formData.get("customerName") || "").trim() || "Walk-in customer";
-  const customerEmail = String(formData.get("customerEmail") || "").trim();
-  const customerVatNumber = String(
-    formData.get("customerVatNumber") || "",
-  ).trim();
-
-  let customerPhone = String(formData.get("customerPhone") || "").trim();
-
-  if (customerPhone) {
-    customerPhone = customerPhone.replace(/\s+/g, "");
-
-    if (customerPhone.startsWith("07")) {
-      customerPhone = "+44" + customerPhone.slice(1);
-    }
-
-    if (customerPhone.startsWith("08")) {
-      customerPhone = "+353" + customerPhone.slice(1);
-    }
-
-    if (!customerPhone.startsWith("+")) {
-      customerPhone = "";
-    }
-  }
-
-  const address1 = String(formData.get("address1") || "").trim();
-  const address2 = String(formData.get("address2") || "").trim();
-  const city = String(formData.get("city") || "").trim();
-  const county = String(formData.get("county") || "").trim();
-  const postcode = String(formData.get("postcode") || "").trim();
-  const country = String(formData.get("country") || "").trim();
-
-  const reference = String(formData.get("reference") || "").trim();
-  const paymentMethod = String(formData.get("paymentMethod") || "");
-  const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
-
-  const amountPaid = Math.max(
-    0,
-    Number(String(formData.get("amountPaid") || "0").replace(/,/g, "")),
-  );
-
-  const depositPaid = String(formData.get("depositPaid") || "") === "on";
-
-  let shopifyCustomerId = selectedCustomerId || null;
-
-  if (!shopifyCustomerId && (customerEmail || customerPhone)) {
-    const [firstName, ...rest] = customerName.split(" ");
-    const lastName = rest.join(" ");
-
-    const createCustomerResponse = await admin.graphql(
-      `
-        mutation CustomerCreate($input: CustomerInput!) {
-          customerCreate(input: $input) {
-            customer {
-              id
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-      `,
-      {
-        variables: {
-          input: {
-            firstName: firstName || customerName,
-            lastName: lastName || undefined,
-            email: customerEmail || undefined,
-            phone: customerPhone || undefined,
-            taxExempt: customerVatNumber ? true : false,
-            addresses:
-              address1 || city || postcode || country
-                ? [
-                    {
-                      address1,
-                      address2,
-                      city,
-                      province: county,
-                      zip: postcode,
-                      country,
-                      phone: customerPhone || undefined,
-                    },
-                  ]
-                : undefined,
-          },
-        },
-      },
-    );
-
-    const createCustomerJson = await createCustomerResponse.json();
-    const customerErrors =
-      createCustomerJson.data?.customerCreate?.userErrors || [];
-
-    if (customerErrors.length > 0) {
-      throw new Response(customerErrors.map((e: any) => e.message).join(", "), {
-        status: 400,
-      });
-    }
-
-    shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
-  }
-
-  const subtotal = lineItems.reduce(
-    (sum: number, item: any) =>
-      sum + Number(item.unitPrice) * Number(item.quantity),
-    0,
-  );
-
-  const discountTotal = lineItems.reduce(
-    (sum: number, item: any) => sum + Number(item.discount || 0),
-    0,
-  );
-
-  const netTotal = subtotal - discountTotal;
-  const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
-  const total = netTotal + vatAmount;
-  const balanceDue = Math.max(total - amountPaid, 0);
-
-  const paymentStatus =
-    amountPaid <= 0
-      ? "Unpaid"
-      : amountPaid < total
-        ? "Partially Paid"
-        : "Paid";
-
-  const hasManualShippingAddress =
-    address1 || address2 || city || county || postcode || country;
-
-  const tags = [
-    "Invoice App",
-    paymentMethod,
-    paymentStatus,
-    depositPaid ? "Deposit Paid" : null,
-  ].filter(Boolean) as string[];
-
-  const draftOrderInput = {
-    customerId: shopifyCustomerId || undefined,
-    email: customerEmail || undefined,
-    phone: customerPhone || undefined,
-    taxExempt: customerVatNumber ? true : false,
-    note: reference || undefined,
-    tags,
-    customAttributes: [
-      { key: "Payment Method", value: paymentMethod },
-      { key: "Payment Status", value: paymentStatus },
-      { key: "Amount Paid", value: money(amountPaid) },
-      { key: "Balance Due", value: money(balanceDue) },
-      { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
-      { key: "Reference", value: reference || "-" },
-      { key: "Salesperson ID", value: String(staffId) },
-      { key: "VAT Number", value: customerVatNumber || "-" },
-    ],
-    shippingAddress: hasManualShippingAddress
-      ? {
-          firstName: customerName,
-          address1,
-          address2,
-          city,
-          province: county,
-          zip: postcode,
-          country,
-          phone: customerPhone || undefined,
-        }
-      : undefined,
-    lineItems: lineItems.map((item: any) => {
-      const base = {
-        quantity: Number(item.quantity),
-        originalUnitPrice: String(Number(item.unitPrice)),
-        appliedDiscount: Number(item.discount || 0)
-          ? {
-              value: Number(item.discount || 0),
-              valueType: "FIXED_AMOUNT",
-              title: "Manual discount",
-            }
-          : null,
-      };
-
-      if (item.type === "custom") {
-        return {
-          ...base,
-          title: item.title || "Custom item",
-          sku: item.sku || undefined,
-        };
-      }
-
-      return {
-        ...base,
-        variantId: item.id,
-      };
-    }),
-  };
-
-  const createDraftResponse = await admin.graphql(
-    `
-      mutation CreateDraftOrder($input: DraftOrderInput!) {
-        draftOrderCreate(input: $input) {
-          draftOrder {
-            id
-            name
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `,
-    { variables: { input: draftOrderInput } },
-  );
-
-  const createDraftJson = await createDraftResponse.json();
-  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
-
-  if (createErrors.length > 0) {
-    throw new Response(createErrors.map((e: any) => e.message).join(", "), {
-      status: 400,
-    });
-  }
-
-  const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
-
-  const completeDraftResponse = await admin.graphql(
-    `
-      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
-        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
-          draftOrder {
-            id
-            order {
-              id
-              name
-            }
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `,
-    {
-      variables: {
-        id: draftOrderId,
-        paymentPending: paymentStatus !== "Paid",
-      },
-    },
-  );
-
-  const completeDraftJson = await completeDraftResponse.json();
-  const completeErrors =
-    completeDraftJson.data?.draftOrderComplete?.userErrors || [];
-
-  if (completeErrors.length > 0) {
-    throw new Response(completeErrors.map((e: any) => e.message).join(", "), {
-      status: 400,
-    });
-  }
-
-  const shopifyOrder =
-    completeDraftJson.data.draftOrderComplete.draftOrder.order;
-
-  await prisma.sale.create({
-    data: {
-      shopifyOrderId: shopifyOrder?.id || null,
-      shopifyOrderName: shopifyOrder?.name || null,
-      customerId: shopifyCustomerId,
-      customerName,
-      customerEmail,
-      customerVatNumber,
-      customerPhone,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      reference,
-      paymentMethod,
-      subtotal,
-      discountTotal,
-      vatAmount,
-      total,
-      amountPaid,
-      balanceDue,
-      paymentStatus,
-      depositPaid,
-      staffId,
-      lineItems: {
-        create: lineItems.map((item: any) => ({
-          shopifyVariantId: item.type === "custom" ? null : item.id,
-          title: item.title,
-          sku: item.sku,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          discount: Number(item.discount || 0),
-          lineTotal:
-            Number(item.unitPrice) * Number(item.quantity) -
-            Number(item.discount || 0),
-          isCustom: item.type === "custom",
-        })),
-      },
-    },
-  });
-
-  return redirect("/app/invoices?success=1");
-}
-
-export default function InvoicePage() {
-  const { staff, variants, productSearch, customers, customerSearch } =
-    useLoaderData<typeof loader>();
-
-  const [searchTerm, setSearchTerm] = useState(productSearch || "");
-  const [customerSearchTerm, setCustomerSearchTerm] = useState(
-    customerSearch || "",
-  );
-
-  const [customerId, setCustomerId] = useState("");
-  const [staffId, setStaffId] = useState(
-    staff[0]?.id ? String(staff[0].id) : "",
-  );
-
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerVatNumber, setCustomerVatNumber] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-
-  const [address1, setAddress1] = useState("");
-  const [address2, setAddress2] = useState("");
-  const [city, setCity] = useState("");
-  const [county, setCounty] = useState("");
-  const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("");
-
-  const [reference, setReference] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
-  const [items, setItems] = useState<any[]>([]);
-  const [amountPaid, setAmountPaid] = useState("0");
+  const [amountPaid, setAmountPaid] = useState(0);
   const [depositPaid, setDepositPaid] = useState(false);
-  const [showAddress, setShowAddress] = useState(false);
 
-  const staffOptions = staff.map((person: any) => ({
-    label: person.name,
-    value: String(person.id),
-  }));
+  const [customItems, setCustomItems] = useState<CustomItem[]>([]);
+  const [customTitle, setCustomTitle] = useState("");
+  const [customSku, setCustomSku] = useState("");
+  const [customQty, setCustomQty] = useState(1);
+  const [customUnitPrice, setCustomUnitPrice] = useState(0);
+  const [customDiscount, setCustomDiscount] = useState(0);
 
-  const paymentOptions = [
-    { label: "Cash", value: "Cash" },
-    { label: "Worldpay", value: "Worldpay" },
-    { label: "MyPos", value: "MyPos" },
-    { label: "Bank Transfer", value: "Bank Transfer" },
-  ];
+  const customItemsTotal = useMemo(() => {
+    return customItems.reduce((sum, item) => {
+      return sum + item.quantity * item.unitPrice - item.discount;
+    }, 0);
+  }, [customItems]);
 
-  function selectCustomer(customer: any) {
-    const address = customer.defaultAddress || {};
+  const adjustedSubtotal = Number(invoice.subtotal) + customItemsTotal;
+  const adjustedTotal = Number(invoice.total) + customItemsTotal;
+  const remainingBalance = Math.max(adjustedTotal - amountPaid, 0);
 
-    setCustomerId(customer.id);
-    setCustomerName(customer.displayName || "");
-    setCustomerEmail(customer.email || "");
-    setCustomerPhone(customer.phone || address.phone || "");
-
-    setAddress1(address.address1 || "");
-    setAddress2(address.address2 || "");
-    setCity(address.city || "");
-    setCounty(address.province || "");
-    setPostcode(address.zip || "");
-    setCountry(address.country || "");
+  function money(value: number | string) {
+    return `£${Number(value || 0).toFixed(2)}`;
   }
 
-  function clearSelectedCustomer() {
-    setCustomerId("");
-    setCustomerName("");
-    setCustomerEmail("");
-    setCustomerVatNumber("");
-    setCustomerPhone("");
-    setAddress1("");
-    setAddress2("");
-    setCity("");
-    setCounty("");
-    setPostcode("");
-    setCountry("");
-  }
+  function addCustomItem() {
+    if (!customTitle.trim()) return;
 
-  function addItem(variant: any) {
-    setItems((current) => [
-      ...current,
+    setCustomItems((items) => [
+      ...items,
       {
-        type: "shopify",
-        id: variant.id,
-        title: `${variant.product.title} - ${variant.title}`,
-        sku: variant.sku || "",
-        quantity: 1,
-        unitPrice: Number(variant.price || 0),
-        discount: 0,
+        id: Date.now(),
+        title: customTitle,
+        sku: customSku,
+        quantity: Number(customQty || 1),
+        unitPrice: Number(customUnitPrice || 0),
+        discount: Number(customDiscount || 0),
       },
     ]);
+
+    setCustomTitle("");
+    setCustomSku("");
+    setCustomQty(1);
+    setCustomUnitPrice(0);
+    setCustomDiscount(0);
   }
 
-  function addCustomItem(event?: React.MouseEvent<HTMLButtonElement>) {
+  function removeCustomItem(id: number) {
+    setCustomItems((items) => items.filter((item) => item.id !== id));
+  }
+
+  function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
     event?.preventDefault();
+    event?.stopPropagation();
 
-    setItems((current) => [
-      ...current,
-      {
-        type: "custom",
-        id: `custom-${Date.now()}`,
-        title: "Custom item",
-        sku: "",
-        quantity: 1,
-        unitPrice: 0,
-        discount: 0,
-      },
-    ]);
+    const pdfUrl =
+      window.location.pathname.replace(/\/$/, "") +
+      "/pdf" +
+      window.location.search;
+
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = `Invoice-INV-${invoice.id}.pdf`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
-
-  function updateItem(index: number, key: string, value: string) {
-    setItems((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [key]: value } : item,
-      ),
-    );
-  }
-
-  function removeItem(index: number) {
-    setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
-  }
-
-  const totals = useMemo(() => {
-    const subtotal = items.reduce(
-      (sum, item) => sum + Number(item.unitPrice) * Number(item.quantity),
-      0,
-    );
-
-    const discount = items.reduce(
-      (sum, item) => sum + Number(item.discount || 0),
-      0,
-    );
-
-    const netTotal = subtotal - discount;
-    const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
-    const total = netTotal + vatAmount;
-    const paid = Math.max(0, Number(amountPaid || 0));
-    const balanceDue = Math.max(total - paid, 0);
-
-    const paymentStatus =
-      paid <= 0 ? "Unpaid" : paid < total ? "Partially Paid" : "Paid";
-
-    return {
-      subtotal,
-      discount,
-      vatAmount,
-      total,
-      paid,
-      balanceDue,
-      paymentStatus,
-    };
-  }, [items, customerVatNumber, amountPaid]);
 
   return (
-    <Page
-      title="Create Invoice"
-      subtitle="Add Shopify products, custom items, and track deposits or partial payments."
-    >
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <Form method="get">
-              <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">
-                  Find existing customer
-                </Text>
+    <div className="screen">
+      <style>{`
+        body {
+          margin: 0;
+          background: #eef0f3;
+          font-family: Arial, sans-serif;
+          color: #111827;
+        }
 
-                <InlineStack gap="300" blockAlign="end">
-                  <div style={{ flex: 1 }}>
-                    <TextField
-                      label="Search customers"
-                      name="customerSearch"
-                      value={customerSearchTerm}
-                      onChange={setCustomerSearchTerm}
-                      autoComplete="off"
-                      placeholder="Search by customer name"
-                    />
-                  </div>
+        .screen {
+          padding: 28px;
+        }
 
-                  <input type="hidden" name="productSearch" value={searchTerm} />
+        .actions {
+          max-width: 980px;
+          margin: 0 auto 20px;
+          background: white;
+          border: 1px solid #d9dee7;
+          border-radius: 14px;
+          padding: 18px;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+        }
 
-                  <Button submit>Search Customer</Button>
-                </InlineStack>
-              </BlockStack>
-            </Form>
+        .action-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
 
-            {customerSearch && (
-              <div style={{ marginTop: "16px" }}>
-                <IndexTable
-                  resourceName={{ singular: "customer", plural: "customers" }}
-                  itemCount={customers.length}
-                  headings={[
-                    { title: "Customer" },
-                    { title: "Email" },
-                    { title: "Action" },
-                  ]}
-                  selectable={false}
-                >
-                  {customers.map((customer: any, index: number) => (
-                    <IndexTable.Row
-                      id={customer.id}
-                      key={customer.id}
-                      position={index}
-                    >
-                      <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
-                      <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Button onClick={() => selectCustomer(customer)}>
-                          Use customer
-                        </Button>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
+        button {
+          padding: 10px 16px;
+          cursor: pointer;
+          border: 1px solid #111827;
+          background: #111827;
+          color: white;
+          border-radius: 8px;
+          font-weight: 700;
+        }
 
-                {customers.length === 0 && (
-                  <div style={{ marginTop: "12px" }}>
-                    <Text as="p" tone="subdued">
-                      No customers found. Enter customer details below to create
-                      a new customer.
-                    </Text>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-        </Layout.Section>
+        button.secondary {
+          background: white;
+          color: #111827;
+        }
 
-        <Layout.Section>
-          <Card>
-            <Form method="get">
-              <InlineStack gap="300" blockAlign="end">
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label="Search products"
-                    name="productSearch"
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    autoComplete="off"
-                    placeholder="Search by product name or SKU"
-                  />
-                </div>
+        button.danger {
+          background: #7f1d1d;
+          border-color: #7f1d1d;
+        }
 
-                <input
-                  type="hidden"
-                  name="customerSearch"
-                  value={customerSearchTerm}
-                />
+        .controls-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+        }
 
-                <Button submit>Search Product</Button>
-              </InlineStack>
-            </Form>
-          </Card>
-        </Layout.Section>
+        .control-card {
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 14px;
+          background: #fafafa;
+        }
 
-        {productSearch && (
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">
-                  Product search results
-                </Text>
+        .control-card h3 {
+          margin: 0 0 12px;
+          font-size: 15px;
+        }
 
-                <IndexTable
-                  resourceName={{ singular: "product", plural: "products" }}
-                  itemCount={variants.length}
-                  headings={[
-                    { title: "Product" },
-                    { title: "SKU" },
-                    { title: "Price" },
-                    { title: "Action" },
-                  ]}
-                  selectable={false}
-                >
-                  {variants.map((variant: any, index: number) => (
-                    <IndexTable.Row
-                      id={variant.id}
-                      key={variant.id}
-                      position={index}
-                    >
-                      <IndexTable.Cell>
-                        {variant.product.title} - {variant.title}
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                      <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Button onClick={() => addItem(variant)}>Add</Button>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
+        .form-grid {
+          display: grid;
+          grid-template-columns: 2fr 1fr 0.7fr 1fr 1fr;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
 
-                {variants.length === 0 && (
-                  <Text as="p" tone="subdued">
-                    No products found.
-                  </Text>
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        )}
-      </Layout>
+        input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 9px;
+          border: 1px solid #cfd5df;
+          border-radius: 8px;
+        }
 
-      <div style={{ marginTop: 16 }}>
-        <Form method="post">
-          <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
-          <input type="hidden" name="customerId" value={customerId} />
+        label {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          font-size: 14px;
+        }
 
-          <Layout>
-            <Layout.Section>
-              <BlockStack gap="400">
-                <Card>
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h2" variant="headingMd">
-                        Customer details
-                      </Text>
+        label input {
+          width: auto;
+        }
 
-                      {customerId && (
-                        <Button
-                          onClick={(event) => {
-                            event.preventDefault();
-                            clearSelectedCustomer();
-                          }}
-                        >
-                          Clear selected customer
-                        </Button>
-                      )}
-                    </InlineStack>
+        .invoice {
+          max-width: 980px;
+          margin: 0 auto;
+          background: white;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.12);
+        }
 
-                    {customerId && (
-                      <Text as="p" tone="success">
-                        Existing Shopify customer selected. Shopify will use the
-                        customer profile/default address unless you manually
-                        enter address details below.
-                      </Text>
-                    )}
+        .topbar {
+          background: #111827;
+          color: white;
+          padding: 34px 42px;
+          display: flex;
+          justify-content: space-between;
+          gap: 30px;
+        }
 
-                    {!customerId && (
-                      <Text as="p" tone="subdued">
-                        If no existing customer is selected, a new Shopify
-                        customer will be created when email or phone is provided.
-                      </Text>
-                    )}
+        .invoice-title h1 {
+          margin: 0;
+          font-size: 38px;
+          letter-spacing: 1px;
+        }
 
-                    <InlineStack gap="300">
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Customer name"
-                          name="customerName"
-                          value={customerName}
-                          onChange={setCustomerName}
-                          autoComplete="off"
-                        />
-                      </div>
+        .invoice-title p {
+          margin: 8px 0 0;
+          color: #d1d5db;
+        }
 
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Customer email"
-                          name="customerEmail"
-                          value={customerEmail}
-                          onChange={setCustomerEmail}
-                          autoComplete="off"
-                        />
-                      </div>
-                    </InlineStack>
+        .business {
+          text-align: right;
+          max-width: 310px;
+        }
 
-                    <InlineStack gap="300">
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="VAT number"
-                          name="customerVatNumber"
-                          value={customerVatNumber}
-                          onChange={setCustomerVatNumber}
-                          autoComplete="off"
-                          placeholder="Leave blank to charge 20% VAT"
-                        />
-                      </div>
+        .logo {
+          max-width: 190px;
+          max-height: 80px;
+          object-fit: contain;
+          margin-bottom: 12px;
+          background: white;
+          padding: 8px;
+          border-radius: 8px;
+        }
 
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Customer phone"
-                          name="customerPhone"
-                          value={customerPhone}
-                          onChange={setCustomerPhone}
-                          autoComplete="off"
-                        />
-                      </div>
-                    </InlineStack>
+        .business h2 {
+          margin: 0 0 8px;
+        }
 
-                    <Button
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setShowAddress((open) => !open);
-                      }}
-                    >
-                      {showAddress ? "Hide shipping address" : "Edit shipping address"}
-                    </Button>
+        .business p,
+        .meta p,
+        .box p {
+          margin: 4px 0;
+        }
 
-                    {showAddress && (
-                      <BlockStack gap="300">
-                        <InlineStack gap="300">
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="Address line 1"
-                              name="address1"
-                              value={address1}
-                              onChange={setAddress1}
-                              autoComplete="off"
-                            />
-                          </div>
+        .content {
+          padding: 38px 42px;
+        }
 
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="Address line 2"
-                              name="address2"
-                              value={address2}
-                              onChange={setAddress2}
-                              autoComplete="off"
-                            />
-                          </div>
-                        </InlineStack>
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          border: 1px solid #e5e7eb;
+          border-radius: 14px;
+          overflow: hidden;
+          margin-bottom: 28px;
+        }
 
-                        <InlineStack gap="300">
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="Town / City"
-                              name="city"
-                              value={city}
-                              onChange={setCity}
-                              autoComplete="off"
-                            />
-                          </div>
+        .summary-item {
+          padding: 16px;
+          border-right: 1px solid #e5e7eb;
+          background: #f9fafb;
+        }
 
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="County"
-                              name="county"
-                              value={county}
-                              onChange={setCounty}
-                              autoComplete="off"
-                            />
-                          </div>
-                        </InlineStack>
+        .summary-item:last-child {
+          border-right: 0;
+        }
 
-                        <InlineStack gap="300">
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="Postcode"
-                              name="postcode"
-                              value={postcode}
-                              onChange={setPostcode}
-                              autoComplete="off"
-                            />
-                          </div>
+        .label {
+          display: block;
+          color: #6b7280;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+          margin-bottom: 6px;
+        }
 
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="Country"
-                              name="country"
-                              value={country}
-                              onChange={setCountry}
-                              autoComplete="off"
-                              placeholder="United Kingdom"
-                            />
-                          </div>
-                        </InlineStack>
-                      </BlockStack>
-                    )}
-                  </BlockStack>
-                </Card>
+        .value {
+          font-weight: 700;
+        }
 
-                <Card>
-                  <BlockStack gap="400">
-                    <Text as="h2" variant="headingMd">
-                      Invoice details
-                    </Text>
+        .paid {
+          color: #166534;
+        }
 
-                    <InlineStack gap="300">
-                      <div style={{ flex: 1 }}>
-                        <Select
-                          label="Account / Salesperson"
-                          name="staffId"
-                          options={staffOptions}
-                          value={staffId}
-                          onChange={setStaffId}
-                        />
-                      </div>
+        .due {
+          color: #991b1b;
+        }
 
-                      <div style={{ flex: 1 }}>
-                        <Select
-                          label="Payment method"
-                          name="paymentMethod"
-                          options={paymentOptions}
-                          value={paymentMethod}
-                          onChange={setPaymentMethod}
-                        />
-                      </div>
-                    </InlineStack>
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 22px;
+          margin-bottom: 30px;
+        }
 
-                    <TextField
-                      label="Reference"
-                      name="reference"
-                      value={reference}
-                      onChange={setReference}
-                      autoComplete="off"
-                      placeholder="Customer PO, job ref, or note"
-                    />
-                  </BlockStack>
-                </Card>
+        .box {
+          border: 1px solid #e5e7eb;
+          padding: 20px;
+          border-radius: 14px;
+        }
 
-                <Card>
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h2" variant="headingMd">
-                        Invoice lines
-                      </Text>
+        .box h3 {
+          margin: 0 0 14px;
+          font-size: 14px;
+          color: #374151;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
 
-                      <Button onClick={addCustomItem}>Add custom item</Button>
-                    </InlineStack>
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 18px;
+        }
 
-                    <Divider />
+        th {
+          background: #111827;
+          color: white;
+          text-align: left;
+          padding: 13px;
+          font-size: 13px;
+        }
 
-                    {items.length === 0 ? (
-                      <Box paddingBlock="400">
-                        <Text as="p" tone="subdued">
-                          No items added yet. Search for a Shopify product or add
-                          a custom item.
-                        </Text>
-                      </Box>
-                    ) : (
-                      <BlockStack gap="300">
-                        {items.map((item, index) => (
-                          <Card key={item.id || index}>
-                            <BlockStack gap="300">
-                              <InlineStack
-                                align="space-between"
-                                blockAlign="center"
-                              >
-                                <InlineStack gap="200" blockAlign="center">
-                                  <Text as="p" fontWeight="bold">
-                                    {item.title}
-                                  </Text>
+        td {
+          padding: 14px 13px;
+          border-bottom: 1px solid #e5e7eb;
+          vertical-align: top;
+        }
 
-                                  {item.type === "custom" && (
-                                    <Badge tone="info">Custom</Badge>
-                                  )}
-                                </InlineStack>
+        .right {
+          text-align: right;
+        }
 
-                                <Button
-                                  tone="critical"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    removeItem(index);
-                                  }}
-                                >
-                                  Remove
-                                </Button>
-                              </InlineStack>
+        .item-title {
+          font-weight: 700;
+        }
 
-                              {item.type === "custom" && (
-                                <InlineStack gap="300">
-                                  <div style={{ flex: 1 }}>
-                                    <TextField
-                                      label="Item name"
-                                      value={String(item.title)}
-                                      onChange={(value) =>
-                                        updateItem(index, "title", value)
-                                      }
-                                      autoComplete="off"
-                                    />
-                                  </div>
+        .custom-badge {
+          display: inline-block;
+          margin-left: 8px;
+          padding: 2px 7px;
+          border-radius: 999px;
+          background: #e0f2fe;
+          color: #075985;
+          font-size: 11px;
+          font-weight: 700;
+        }
 
-                                  <div style={{ width: 180 }}>
-                                    <TextField
-                                      label="SKU"
-                                      value={String(item.sku)}
-                                      onChange={(value) =>
-                                        updateItem(index, "sku", value)
-                                      }
-                                      autoComplete="off"
-                                    />
-                                  </div>
-                                </InlineStack>
-                              )}
+        .totals-wrap {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 30px;
+        }
 
-                              <InlineStack gap="300">
-                                <div style={{ width: 120 }}>
-                                  <TextField
-                                    label="Qty"
-                                    value={String(item.quantity)}
-                                    onChange={(value) =>
-                                      updateItem(index, "quantity", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                  />
-                                </div>
+        .totals {
+          width: 390px;
+          border: 1px solid #e5e7eb;
+          border-radius: 14px;
+          overflow: hidden;
+        }
 
-                                <div style={{ width: 160 }}>
-                                  <TextField
-                                    label="Unit price"
-                                    value={String(item.unitPrice)}
-                                    onChange={(value) =>
-                                      updateItem(index, "unitPrice", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                    prefix="£"
-                                  />
-                                </div>
+        .totals-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid #e5e7eb;
+        }
 
-                                <div style={{ width: 160 }}>
-                                  <TextField
-                                    label="Discount"
-                                    value={String(item.discount)}
-                                    onChange={(value) =>
-                                      updateItem(index, "discount", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                    prefix="£"
-                                  />
-                                </div>
+        .totals-row:last-child {
+          border-bottom: 0;
+        }
 
-                                <div style={{ paddingTop: 28 }}>
-                                  <Text as="p" fontWeight="bold">
-                                    {money(
-                                      Number(item.unitPrice) *
-                                        Number(item.quantity) -
-                                        Number(item.discount || 0),
-                                    )}
-                                  </Text>
-                                </div>
-                              </InlineStack>
-                            </BlockStack>
-                          </Card>
-                        ))}
-                      </BlockStack>
-                    )}
-                  </BlockStack>
-                </Card>
-              </BlockStack>
-            </Layout.Section>
+        .grand-total {
+          background: #111827;
+          color: white;
+          font-weight: bold;
+          font-size: 19px;
+        }
 
-            <Layout.Section variant="oneThird">
-              <div style={{ position: "sticky", top: 16 }}>
-                <Card>
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h2" variant="headingMd">
-                        Summary
-                      </Text>
+        .balance {
+          background: #fef2f2;
+          color: #991b1b;
+          font-weight: 800;
+        }
 
-                      <Badge
-                        tone={
-                          totals.paymentStatus === "Paid"
-                            ? "success"
-                            : totals.paymentStatus === "Partially Paid"
-                              ? "attention"
-                              : "critical"
-                        }
-                      >
-                        {totals.paymentStatus}
-                      </Badge>
-                    </InlineStack>
+        .footer {
+          margin-top: 48px;
+          border-top: 1px solid #e5e7eb;
+          padding-top: 18px;
+          display: flex;
+          justify-content: space-between;
+          gap: 20px;
+          color: #6b7280;
+          font-size: 13px;
+        }
 
-                    <BlockStack gap="200">
-                      <InlineStack align="space-between">
-                        <Text as="p">Subtotal</Text>
-                        <Text as="p">{money(totals.subtotal)}</Text>
-                      </InlineStack>
+        @media print {
+          body {
+            background: white;
+          }
 
-                      <InlineStack align="space-between">
-                        <Text as="p">Discount</Text>
-                        <Text as="p">{money(totals.discount)}</Text>
-                      </InlineStack>
+          .screen {
+            padding: 0;
+          }
 
-                      <InlineStack align="space-between">
-                        <Text as="p">VAT</Text>
-                        <Text as="p">{money(totals.vatAmount)}</Text>
-                      </InlineStack>
+          .actions {
+            display: none;
+          }
 
-                      <Divider />
+          .invoice {
+            box-shadow: none;
+            border-radius: 0;
+            max-width: none;
+          }
 
-                      <InlineStack align="space-between">
-                        <Text as="p" fontWeight="bold">
-                          Total
-                        </Text>
-                        <Text as="p" fontWeight="bold">
-                          {money(totals.total)}
-                        </Text>
-                      </InlineStack>
-                    </BlockStack>
+          .custom-remove {
+            display: none;
+          }
+        }
+      `}</style>
 
-                    <Divider />
+      <div className="actions">
+        <div className="action-row">
+          <button type="button" onClick={() => window.print()}>
+            Print Invoice
+          </button>
 
-                    <BlockStack gap="300">
-                      <TextField
-                        label="Amount paid"
-                        name="amountPaid"
-                        value={amountPaid}
-                        onChange={setAmountPaid}
-                        autoComplete="off"
-                        type="number"
-                        prefix="£"
-                      />
+          <button type="button" onClick={downloadPdf}>
+            Download PDF
+          </button>
 
-                      <Checkbox
-                        label="Deposit paid"
-                        name="depositPaid"
-                        checked={depositPaid}
-                        onChange={setDepositPaid}
-                      />
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => window.history.back()}
+          >
+            Back
+          </button>
+        </div>
 
-                      {depositPaid && <Badge tone="success">Deposit Paid</Badge>}
-                    </BlockStack>
+        <div className="controls-grid">
+          <div className="control-card">
+            <h3>Payment Details</h3>
 
-                    <Divider />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={amountPaid}
+              onChange={(event) => setAmountPaid(Number(event.target.value))}
+              placeholder="Amount paid"
+            />
 
-                    <InlineStack align="space-between">
-                      <Text as="p" fontWeight="bold">
-                        Balance due
-                      </Text>
-                      <Text as="p" fontWeight="bold">
-                        {money(totals.balanceDue)}
-                      </Text>
-                    </InlineStack>
+            <br />
+            <br />
 
-                    <Button submit variant="primary" fullWidth>
-                      Save Invoice
-                    </Button>
-                  </BlockStack>
-                </Card>
-              </div>
-            </Layout.Section>
-          </Layout>
-        </Form>
+            <label>
+              <input
+                type="checkbox"
+                checked={depositPaid}
+                onChange={(event) => setDepositPaid(event.target.checked)}
+              />
+              Mark deposit as paid
+            </label>
+          </div>
+
+          <div className="control-card">
+            <h3>Add Custom Invoice Item</h3>
+
+            <div className="form-grid">
+              <input
+                value={customTitle}
+                onChange={(event) => setCustomTitle(event.target.value)}
+                placeholder="Item name"
+              />
+
+              <input
+                value={customSku}
+                onChange={(event) => setCustomSku(event.target.value)}
+                placeholder="SKU"
+              />
+
+              <input
+                type="number"
+                min="1"
+                value={customQty}
+                onChange={(event) => setCustomQty(Number(event.target.value))}
+                placeholder="Qty"
+              />
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={customUnitPrice}
+                onChange={(event) =>
+                  setCustomUnitPrice(Number(event.target.value))
+                }
+                placeholder="Unit"
+              />
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={customDiscount}
+                onChange={(event) =>
+                  setCustomDiscount(Number(event.target.value))
+                }
+                placeholder="Discount"
+              />
+            </div>
+
+            <button type="button" onClick={addCustomItem}>
+              Add Custom Item
+            </button>
+          </div>
+        </div>
       </div>
-    </Page>
+
+      <div className="invoice">
+        <div className="topbar">
+          <div className="invoice-title">
+            <h1>INVOICE</h1>
+            <p>INV-{invoice.id}</p>
+          </div>
+
+          <div className="business">
+            {logoUrl && (
+              <img
+                src={logoUrl}
+                alt="NII Clean Products logo"
+                className="logo"
+              />
+            )}
+
+            <h2>NII Clean Products</h2>
+            <p>96 Bushmills Road</p>
+            <p>Coleraine / BT52 2BT</p>
+            <p>sales@niicleanproducts.com</p>
+            <p>VAT No: 369865135</p>
+          </div>
+        </div>
+
+        <div className="content">
+          <div className="summary-strip">
+            <div className="summary-item">
+              <span className="label">Invoice Date</span>
+              <span className="value">
+                {new Date(invoice.createdAt).toLocaleString("en-GB")}
+              </span>
+            </div>
+
+            <div className="summary-item">
+              <span className="label">Salesperson</span>
+              <span className="value">{invoice.staff?.name || "-"}</span>
+            </div>
+
+            <div className="summary-item">
+              <span className="label">Payment Method</span>
+              <span className="value">{invoice.paymentMethod || "-"}</span>
+            </div>
+
+            <div className="summary-item">
+              <span className="label">Payment Status</span>
+              <span className={remainingBalance <= 0 ? "value paid" : "value due"}>
+                {remainingBalance <= 0
+                  ? "Paid"
+                  : depositPaid
+                    ? "Deposit Paid"
+                    : "Balance Due"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid">
+            <div className="box">
+              <h3>Bill To</h3>
+              <p><strong>{invoice.customerName}</strong></p>
+              <p>{invoice.customerEmail || ""}</p>
+              <p>{invoice.customerPhone || ""}</p>
+              <p>VAT Number: {invoice.customerVatNumber || "-"}</p>
+            </div>
+
+            <div className="box">
+              <h3>Shipping Address</h3>
+              <p>{invoice.address1 || ""}</p>
+              <p>{invoice.address2 || ""}</p>
+              <p>
+                {invoice.city || ""} {invoice.county || ""}
+              </p>
+              <p>{invoice.postcode || ""}</p>
+              <p>{invoice.country || ""}</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item Description</th>
+                <th>SKU</th>
+                <th className="right">Qty</th>
+                <th className="right">Unit Price</th>
+                <th className="right">Discount</th>
+                <th className="right">Line Total</th>
+                <th className="custom-remove"></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {invoice.lineItems.map((item: any) => (
+                <tr key={item.id}>
+                  <td>
+                    <span className="item-title">{item.title}</span>
+                  </td>
+                  <td>{item.sku || "-"}</td>
+                  <td className="right">{item.quantity}</td>
+                  <td className="right">{money(item.unitPrice)}</td>
+                  <td className="right">{money(item.discount)}</td>
+                  <td className="right">{money(item.lineTotal)}</td>
+                  <td className="custom-remove"></td>
+                </tr>
+              ))}
+
+              {customItems.map((item) => {
+                const lineTotal =
+                  item.quantity * item.unitPrice - item.discount;
+
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <span className="item-title">{item.title}</span>
+                      <span className="custom-badge">Custom</span>
+                    </td>
+                    <td>{item.sku || "-"}</td>
+                    <td className="right">{item.quantity}</td>
+                    <td className="right">{money(item.unitPrice)}</td>
+                    <td className="right">{money(item.discount)}</td>
+                    <td className="right">{money(lineTotal)}</td>
+                    <td className="right custom-remove">
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => removeCustomItem(item.id)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="totals-wrap">
+            <div className="totals">
+              <div className="totals-row">
+                <span>Subtotal</span>
+                <span>{money(adjustedSubtotal)}</span>
+              </div>
+
+              <div className="totals-row">
+                <span>Discount</span>
+                <span>{money(invoice.discountTotal)}</span>
+              </div>
+
+              <div className="totals-row">
+                <span>VAT</span>
+                <span>{money(invoice.vatAmount)}</span>
+              </div>
+
+              <div className="totals-row grand-total">
+                <span>Total</span>
+                <span>{money(adjustedTotal)}</span>
+              </div>
+
+              <div className="totals-row">
+                <span>Amount Paid</span>
+                <span>{money(amountPaid)}</span>
+              </div>
+
+              <div className="totals-row balance">
+                <span>Balance Remaining</span>
+                <span>{money(remainingBalance)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="footer">
+            <span>Thank you for your business.</span>
+            <span>Reference: {invoice.reference || "-"}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
