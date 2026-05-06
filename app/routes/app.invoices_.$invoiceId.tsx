@@ -2,6 +2,10 @@ import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
+function money(value: any) {
+  return `£${Number(value || 0).toFixed(2)}`;
+}
+
 export async function loader({
   request,
   params,
@@ -31,6 +35,20 @@ export async function loader({
 
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
+
+  const amountPaid = Number(invoice.amountPaid || 0);
+  const balanceDue =
+    invoice.balanceDue !== null && invoice.balanceDue !== undefined
+      ? Number(invoice.balanceDue)
+      : Math.max(Number(invoice.total || 0) - amountPaid, 0);
+
+  const paymentStatus =
+    invoice.paymentStatus ||
+    (amountPaid <= 0
+      ? "Unpaid"
+      : amountPaid < Number(invoice.total || 0)
+        ? "Partially Paid"
+        : "Paid");
 
   function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
     event?.preventDefault();
@@ -78,8 +96,8 @@ export default function PrintInvoicePage() {
           padding: 9px 15px;
           margin-right: 8px;
           cursor: pointer;
-          border: 1px solid #111;
-          background: #111;
+          border: 1px solid #111827;
+          background: #111827;
           color: white;
           border-radius: 6px;
           font-weight: 600;
@@ -87,91 +105,144 @@ export default function PrintInvoicePage() {
 
         button.secondary {
           background: white;
-          color: #111;
+          color: #111827;
         }
 
-        /* ✅ FIXED HEADER (WHITE, NO BLACK BAR) */
         .header {
           display: flex;
           justify-content: space-between;
           gap: 30px;
           background: white;
           color: #111;
-          border-bottom: 3px solid #111;
+          border-bottom: 3px solid #111827;
           padding-bottom: 25px;
-          margin-bottom: 30px;
+          margin-bottom: 25px;
         }
 
-        .header * {
-          color: #111;
+        .invoice-title {
+          font-size: 36px;
+          letter-spacing: 1px;
+          margin: 0;
+          color: #111827;
+          font-weight: 700;
+          text-transform: uppercase;
+        }
+
+        .invoice-number {
+          margin-top: 2px;
+          font-size: 13px;
+          color: #111827;
         }
 
         .business {
           text-align: right;
           min-width: 260px;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .business h2 {
+          font-size: 14px;
+          margin: 8px 0 6px;
         }
 
         .logo {
           max-width: 190px;
           max-height: 90px;
           object-fit: contain;
+          margin-bottom: 8px;
+        }
+
+        .meta-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          border: 1px solid #dfe3e8;
+          border-radius: 12px;
+          overflow: hidden;
+          margin-bottom: 28px;
+        }
+
+        .meta-cell {
+          padding: 18px;
+          border-right: 1px solid #dfe3e8;
+          min-height: 58px;
+        }
+
+        .meta-cell:last-child {
+          border-right: none;
+        }
+
+        .label {
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: #4b5870;
+          font-size: 13px;
           margin-bottom: 12px;
         }
 
-        h1 {
-          font-size: 34px;
-          margin: 0 0 10px;
-          color: #111;
+        .value {
+          font-weight: 700;
+          font-size: 14px;
         }
 
-        h2 {
-          margin: 0 0 10px;
+        .status-paid {
+          color: #007a3d;
+        }
+
+        .status-partial {
+          color: #a35f00;
+        }
+
+        .status-unpaid {
+          color: #b00020;
+        }
+
+        .address-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24px;
+          margin-bottom: 28px;
+        }
+
+        .address-box {
+          border: 1px solid #dfe3e8;
+          border-radius: 12px;
+          padding: 22px;
+          min-height: 105px;
+        }
+
+        .address-title {
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          color: #111827;
+          font-size: 15px;
+          margin-bottom: 18px;
         }
 
         p {
-          margin: 4px 0;
-        }
-
-        .muted {
-          color: #555;
-        }
-
-        .grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 30px;
-          margin-bottom: 30px;
-        }
-
-        .box {
-          border: 1px solid #ddd;
-          padding: 18px;
-          border-radius: 8px;
-        }
-
-        .box h3 {
-          margin-top: 0;
-          border-bottom: 1px solid #eee;
-          padding-bottom: 8px;
+          margin: 5px 0;
+          font-size: 14px;
         }
 
         table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 25px;
+          margin-top: 20px;
         }
 
         th {
-          background: #f1f1f1;
+          background: #111827;
+          color: white;
           text-align: left;
           padding: 12px;
-          font-size: 14px;
+          font-size: 13px;
         }
 
         td {
-          padding: 12px;
-          border-bottom: 1px solid #e5e5e5;
+          padding: 13px 12px;
+          border-bottom: 1px solid #dfe3e8;
           vertical-align: top;
+          font-size: 13px;
         }
 
         .right {
@@ -179,26 +250,42 @@ export default function PrintInvoicePage() {
         }
 
         .totals {
-          width: 340px;
+          width: 390px;
           margin-left: auto;
-          margin-top: 30px;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          padding: 15px;
+          margin-top: 28px;
+          border: 1px solid #dfe3e8;
+          border-radius: 12px;
+          overflow: hidden;
         }
 
         .totals-row {
           display: flex;
           justify-content: space-between;
-          padding: 7px 0;
+          padding: 14px 18px;
+          border-bottom: 1px solid #dfe3e8;
+          font-size: 14px;
         }
 
-        .grand-total {
-          border-top: 2px solid #111;
-          margin-top: 8px;
-          padding-top: 12px;
-          font-weight: bold;
+        .totals-row:last-child {
+          border-bottom: none;
+        }
+
+        .total-row {
+          background: #111827;
+          color: white;
+          font-weight: 700;
           font-size: 20px;
+        }
+
+        .paid-row {
+          background: white;
+        }
+
+        .balance-row {
+          background: #fff1f1;
+          color: #9b0000;
+          font-weight: 700;
+          font-size: 16px;
         }
 
         .footer {
@@ -248,42 +335,73 @@ export default function PrintInvoicePage() {
 
       <div className="header">
         <div>
-          <h1>Invoice INV-{invoice.id}</h1>
-          <p className="muted">
-            Date: {new Date(invoice.createdAt).toLocaleString("en-GB")}
-          </p>
-          <p>Salesperson: {invoice.staff?.name || "-"}</p>
-          <p>Payment method: {invoice.paymentMethod}</p>
-          <p>Reference: {invoice.reference || "-"}</p>
+          <h1 className="invoice-title">Invoice</h1>
+          <div className="invoice-number">INV-{invoice.id}</div>
         </div>
 
         <div className="business">
-          {logoUrl && (
-            <img src={logoUrl} alt="Logo" className="logo" />
-          )}
+          {logoUrl && <img src={logoUrl} alt="Logo" className="logo" />}
 
           <h2>NII Clean Products</h2>
           <p>96 Bushmills Road</p>
           <p>Coleraine / BT52 2BT</p>
-          <p>Email: sales@niicleanproducts.com</p>
+          <p>sales@niicleanproducts.com</p>
           <p>VAT No: 369865135</p>
         </div>
       </div>
 
-      <div className="grid">
-        <div className="box">
-          <h3>Customer</h3>
-          <p>{invoice.customerName}</p>
+      <div className="meta-grid">
+        <div className="meta-cell">
+          <div className="label">Invoice Date</div>
+          <div className="value">
+            {new Date(invoice.createdAt).toLocaleString("en-GB")}
+          </div>
+        </div>
+
+        <div className="meta-cell">
+          <div className="label">Salesperson</div>
+          <div className="value">{invoice.staff?.name || "-"}</div>
+        </div>
+
+        <div className="meta-cell">
+          <div className="label">Payment Method</div>
+          <div className="value">{invoice.paymentMethod}</div>
+        </div>
+
+        <div className="meta-cell">
+          <div className="label">Payment Status</div>
+          <div
+            className={`value ${
+              paymentStatus === "Paid"
+                ? "status-paid"
+                : paymentStatus === "Partially Paid"
+                  ? "status-partial"
+                  : "status-unpaid"
+            }`}
+          >
+            {paymentStatus}
+          </div>
+        </div>
+      </div>
+
+      <div className="address-grid">
+        <div className="address-box">
+          <div className="address-title">Bill To</div>
+          <p>
+            <strong>{invoice.customerName}</strong>
+          </p>
           <p>{invoice.customerEmail || ""}</p>
           <p>{invoice.customerPhone || ""}</p>
           <p>VAT Number: {invoice.customerVatNumber || "-"}</p>
         </div>
 
-        <div className="box">
-          <h3>Shipping Address</h3>
+        <div className="address-box">
+          <div className="address-title">Shipping Address</div>
           <p>{invoice.address1 || ""}</p>
           <p>{invoice.address2 || ""}</p>
-          <p>{invoice.city || ""} {invoice.county || ""}</p>
+          <p>
+            {invoice.city || ""} {invoice.county || ""}
+          </p>
           <p>{invoice.postcode || ""}</p>
           <p>{invoice.country || ""}</p>
         </div>
@@ -292,12 +410,12 @@ export default function PrintInvoicePage() {
       <table>
         <thead>
           <tr>
-            <th>Item</th>
+            <th>Item Description</th>
             <th>SKU</th>
             <th className="right">Qty</th>
-            <th className="right">Unit</th>
+            <th className="right">Unit Price</th>
             <th className="right">Discount</th>
-            <th className="right">Total</th>
+            <th className="right">Line Total</th>
           </tr>
         </thead>
 
@@ -307,9 +425,9 @@ export default function PrintInvoicePage() {
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
-              <td className="right">£{Number(item.discount).toFixed(2)}</td>
-              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
+              <td className="right">{money(item.unitPrice)}</td>
+              <td className="right">{money(item.discount)}</td>
+              <td className="right">{money(item.lineTotal)}</td>
             </tr>
           ))}
         </tbody>
@@ -318,22 +436,32 @@ export default function PrintInvoicePage() {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(invoice.subtotal).toFixed(2)}</span>
+          <span>{money(invoice.subtotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(invoice.discountTotal).toFixed(2)}</span>
+          <span>{money(invoice.discountTotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(invoice.vatAmount).toFixed(2)}</span>
+          <span>{money(invoice.vatAmount)}</span>
         </div>
 
-        <div className="totals-row grand-total">
+        <div className="totals-row total-row">
           <span>Total</span>
-          <span>£{Number(invoice.total).toFixed(2)}</span>
+          <span>{money(invoice.total)}</span>
+        </div>
+
+        <div className="totals-row paid-row">
+          <span>Amount Paid</span>
+          <span>{money(amountPaid)}</span>
+        </div>
+
+        <div className="totals-row balance-row">
+          <span>Balance Remaining</span>
+          <span>{money(balanceDue)}</span>
         </div>
       </div>
 
