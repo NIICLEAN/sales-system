@@ -140,8 +140,9 @@ export default function SchedulePage() {
         "Selected staff";
 
   return (
-    <Page
-      title="Works Calendar"
+  <Page
+  fullWidth
+  title="Works Calendar"
       primaryAction={{
         content: "Schedule Works",
         onAction: () => setModalOpen(true),
@@ -434,9 +435,9 @@ export default function SchedulePage() {
             align-items: flex-end;
           }
 
-          .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(150px, 1fr));
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
             border: 1px solid #dfe3e8;
             border-radius: 14px;
             overflow: hidden;
@@ -445,6 +446,7 @@ export default function SchedulePage() {
 
           .calendar-day {
             min-height: 240px;
+            min-width: 0;
             border-right: 1px solid #dfe3e8;
             border-bottom: 1px solid #dfe3e8;
             padding: 12px;
