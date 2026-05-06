@@ -39,12 +39,18 @@ function getPaymentStatus(total: any, amountPaid: any) {
 
 function getShopifyUnitPrice(item: any, isVatExempt: boolean) {
   const netUnitPrice = Number(item.unitPrice || 0);
-  return isVatExempt ? roundMoney(netUnitPrice) : roundMoney(netUnitPrice * (1 + VAT_RATE));
+
+  return isVatExempt
+    ? roundMoney(netUnitPrice)
+    : roundMoney(netUnitPrice * (1 + VAT_RATE));
 }
 
 function getShopifyDiscount(item: any, isVatExempt: boolean) {
   const netDiscount = Number(item.discount || 0);
-  return isVatExempt ? roundMoney(netDiscount) : roundMoney(netDiscount * (1 + VAT_RATE));
+
+  return isVatExempt
+    ? roundMoney(netDiscount)
+    : roundMoney(netDiscount * (1 + VAT_RATE));
 }
 
 export async function loader({ request }: { request: Request }) {
@@ -124,7 +130,11 @@ export async function loader({ request }: { request: Request }) {
             }
           }
         `,
-        { variables: { query: customerSearch } },
+        {
+          variables: {
+            query: customerSearch,
+          },
+        },
       );
 
       const customersJson = await customersResponse.json();
@@ -163,7 +173,9 @@ export async function action({ request }: { request: Request }) {
 
   const customerName =
     String(formData.get("customerName") || "").trim() || "Walk-in customer";
+
   const customerEmail = String(formData.get("customerEmail") || "").trim();
+
   const customerVatNumber = String(
     formData.get("customerVatNumber") || "",
   ).trim();
@@ -197,6 +209,7 @@ export async function action({ request }: { request: Request }) {
 
   const reference = String(formData.get("reference") || "").trim();
   const paymentMethod = String(formData.get("paymentMethod") || "");
+
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
 
   const amountPaid = roundMoney(
@@ -256,6 +269,7 @@ export async function action({ request }: { request: Request }) {
     );
 
     const createCustomerJson = await createCustomerResponse.json();
+
     const customerErrors =
       createCustomerJson.data?.customerCreate?.userErrors || [];
 
@@ -315,7 +329,10 @@ export async function action({ request }: { request: Request }) {
       { key: "Reference", value: reference || "-" },
       { key: "Salesperson ID", value: String(staffId) },
       { key: "VAT Number", value: customerVatNumber || "-" },
-      { key: "Pricing Basis", value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT" },
+      {
+        key: "Pricing Basis",
+        value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT",
+      },
     ],
     shippingAddress: hasManualShippingAddress
       ? {
@@ -330,10 +347,6 @@ export async function action({ request }: { request: Request }) {
         }
       : undefined,
 
-    // IMPORTANT:
-    // Shopify draft orders treat originalUnitPrice as the final line price in store currency.
-    // Your invoice app prices are net, so for VAT customers we send gross price to Shopify
-    // to make Shopify order totals match invoice total.
     lineItems: lineItems.map((item: any) => {
       const shopifyUnitPrice = getShopifyUnitPrice(item, isVatExempt);
       const shopifyDiscount = getShopifyDiscount(item, isVatExempt);
@@ -385,6 +398,7 @@ export async function action({ request }: { request: Request }) {
   );
 
   const createDraftJson = await createDraftResponse.json();
+
   const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
 
   if (createErrors.length > 0) {
@@ -422,6 +436,7 @@ export async function action({ request }: { request: Request }) {
   );
 
   const completeDraftJson = await completeDraftResponse.json();
+
   const completeErrors =
     completeDraftJson.data?.draftOrderComplete?.userErrors || [];
 
@@ -486,11 +501,13 @@ export default function InvoicePage() {
     useLoaderData<typeof loader>();
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
+
   const [customerSearchTerm, setCustomerSearchTerm] = useState(
     customerSearch || "",
   );
 
   const [customerId, setCustomerId] = useState("");
+
   const [staffId, setStaffId] = useState(
     staff[0]?.id ? String(staff[0].id) : "",
   );
@@ -509,6 +526,7 @@ export default function InvoicePage() {
 
   const [reference, setReference] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
+
   const [items, setItems] = useState<any[]>([]);
   const [amountPaid, setAmountPaid] = useState("0");
   const [depositPaid, setDepositPaid] = useState(false);
@@ -572,7 +590,9 @@ export default function InvoicePage() {
     ]);
   }
 
-  function addCustomItem() {
+  function addCustomItem(event?: React.MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
+
     setItems((current) => [
       ...current,
       {
@@ -613,15 +633,21 @@ export default function InvoicePage() {
     );
 
     const netTotal = roundMoney(subtotal - discount);
+
     const vatAmount = customerVatNumber ? 0 : roundMoney(netTotal * VAT_RATE);
+
     const total = roundMoney(netTotal + vatAmount);
+
     const paid = roundMoney(Math.max(0, Number(amountPaid || 0)));
+
     const balanceDue = roundMoney(Math.max(total - paid, 0));
+
     const paymentStatus = getPaymentStatus(total, paid);
 
     return {
       subtotal,
       discount,
+      netTotal,
       vatAmount,
       total,
       paid,
@@ -633,7 +659,7 @@ export default function InvoicePage() {
   return (
     <Page
       title="Create Invoice"
-      subtitle="Search products on the left, build the invoice on the right."
+      subtitle="Search products, add invoice lines, then complete the customer and payment details."
     >
       <Layout>
         <Layout.Section>
@@ -692,9 +718,11 @@ export default function InvoicePage() {
                         <IndexTable.Cell>
                           {customer.displayName}
                         </IndexTable.Cell>
+
                         <IndexTable.Cell>
                           {customer.email || "-"}
                         </IndexTable.Cell>
+
                         <IndexTable.Cell>
                           <Button onClick={() => selectCustomer(customer)}>
                             Use customer
@@ -771,7 +799,8 @@ export default function InvoicePage() {
                   >
                     {variants.map((variant: any, index: number) => {
                       const imageUrl =
-                        variant.image?.url || variant.product?.featuredImage?.url;
+                        variant.image?.url ||
+                        variant.product?.featuredImage?.url;
 
                       const imageAlt =
                         variant.image?.altText ||
@@ -822,11 +851,16 @@ export default function InvoicePage() {
                             {variant.product.title} - {variant.title}
                           </IndexTable.Cell>
 
-                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {variant.sku || "-"}
+                          </IndexTable.Cell>
+
                           <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
 
                           <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>Add</Button>
+                            <Button onClick={() => addItem(variant)}>
+                              Add
+                            </Button>
                           </IndexTable.Cell>
                         </IndexTable.Row>
                       );
@@ -841,11 +875,7 @@ export default function InvoicePage() {
                 </BlockStack>
               </Card>
             )}
-          </BlockStack>
-        </Layout.Section>
 
-        <Layout.Section variant="oneThird">
-          <div style={{ position: "sticky", top: 16 }}>
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="center">
@@ -861,7 +891,8 @@ export default function InvoicePage() {
                 {items.length === 0 ? (
                   <Box paddingBlock="400">
                     <Text as="p" tone="subdued">
-                      No items added yet.
+                      No items added yet. Search for a Shopify product or add a
+                      custom item.
                     </Text>
                   </Box>
                 ) : (
@@ -870,14 +901,14 @@ export default function InvoicePage() {
                       <Card key={item.id || index}>
                         <BlockStack gap="300">
                           <InlineStack align="space-between" blockAlign="start">
-                            <InlineStack gap="200" blockAlign="center">
+                            <InlineStack gap="300" blockAlign="center">
                               {item.imageUrl && (
                                 <img
                                   src={item.imageUrl}
                                   alt={item.title}
                                   style={{
-                                    width: 42,
-                                    height: 42,
+                                    width: 52,
+                                    height: 52,
                                     objectFit: "cover",
                                     borderRadius: 8,
                                     border: "1px solid #ddd",
@@ -885,14 +916,19 @@ export default function InvoicePage() {
                                 />
                               )}
 
-                              <div style={{ maxWidth: 210 }}>
+                              <div>
                                 <Text as="p" fontWeight="bold">
                                   {item.title}
                                 </Text>
+
                                 {item.sku && (
                                   <Text as="p" tone="subdued">
                                     SKU: {item.sku}
                                   </Text>
+                                )}
+
+                                {item.type === "custom" && (
+                                  <Badge tone="info">Custom</Badge>
                                 )}
                               </div>
                             </InlineStack>
@@ -909,29 +945,33 @@ export default function InvoicePage() {
                           </InlineStack>
 
                           {item.type === "custom" && (
-                            <BlockStack gap="300">
-                              <TextField
-                                label="Item name"
-                                value={String(item.title)}
-                                onChange={(value) =>
-                                  updateItem(index, "title", value)
-                                }
-                                autoComplete="off"
-                              />
+                            <InlineStack gap="300">
+                              <div style={{ flex: 1 }}>
+                                <TextField
+                                  label="Item name"
+                                  value={String(item.title)}
+                                  onChange={(value) =>
+                                    updateItem(index, "title", value)
+                                  }
+                                  autoComplete="off"
+                                />
+                              </div>
 
-                              <TextField
-                                label="SKU"
-                                value={String(item.sku)}
-                                onChange={(value) =>
-                                  updateItem(index, "sku", value)
-                                }
-                                autoComplete="off"
-                              />
-                            </BlockStack>
+                              <div style={{ width: 180 }}>
+                                <TextField
+                                  label="SKU"
+                                  value={String(item.sku)}
+                                  onChange={(value) =>
+                                    updateItem(index, "sku", value)
+                                  }
+                                  autoComplete="off"
+                                />
+                              </div>
+                            </InlineStack>
                           )}
 
-                          <InlineStack gap="200">
-                            <div style={{ width: 75 }}>
+                          <InlineStack gap="300">
+                            <div style={{ width: 120 }}>
                               <TextField
                                 label="Qty"
                                 value={String(item.quantity)}
@@ -943,7 +983,7 @@ export default function InvoicePage() {
                               />
                             </div>
 
-                            <div style={{ width: 115 }}>
+                            <div style={{ width: 160 }}>
                               <TextField
                                 label="Net price"
                                 value={String(item.unitPrice)}
@@ -956,7 +996,7 @@ export default function InvoicePage() {
                               />
                             </div>
 
-                            <div style={{ width: 115 }}>
+                            <div style={{ width: 160 }}>
                               <TextField
                                 label="Discount"
                                 value={String(item.discount)}
@@ -968,17 +1008,20 @@ export default function InvoicePage() {
                                 prefix="£"
                               />
                             </div>
-                          </InlineStack>
 
-                          <Text as="p" fontWeight="bold">
-                            Net line total:{" "}
-                            {money(
-                              roundMoney(
-                                Number(item.unitPrice) * Number(item.quantity) -
-                                  Number(item.discount || 0),
-                              ),
-                            )}
-                          </Text>
+                            <div style={{ paddingTop: 28 }}>
+                              <Text as="p" fontWeight="bold">
+                                Net line total:{" "}
+                                {money(
+                                  roundMoney(
+                                    Number(item.unitPrice) *
+                                      Number(item.quantity) -
+                                      Number(item.discount || 0),
+                                  ),
+                                )}
+                              </Text>
+                            </div>
+                          </InlineStack>
                         </BlockStack>
                       </Card>
                     ))}
@@ -986,7 +1029,7 @@ export default function InvoicePage() {
                 )}
               </BlockStack>
             </Card>
-          </div>
+          </BlockStack>
         </Layout.Section>
       </Layout>
 
@@ -1229,6 +1272,11 @@ export default function InvoicePage() {
                       <InlineStack align="space-between">
                         <Text as="p">Discount</Text>
                         <Text as="p">{money(totals.discount)}</Text>
+                      </InlineStack>
+
+                      <InlineStack align="space-between">
+                        <Text as="p">Net total</Text>
+                        <Text as="p">{money(totals.netTotal)}</Text>
                       </InlineStack>
 
                       <InlineStack align="space-between">
