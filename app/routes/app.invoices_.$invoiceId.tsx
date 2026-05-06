@@ -480,7 +480,36 @@ export default function InvoicePage() {
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
 
-  function selectCustomer(customer: any) {
+  function runSearch(
+    event: React.MouseEvent<HTMLButtonElement>,
+    type: "customer" | "product",
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const url = new URL(window.location.href);
+
+    url.searchParams.set("customerSearch", customerSearchTerm || "");
+    url.searchParams.set("productSearch", searchTerm || "");
+
+    if (type === "customer") {
+      url.searchParams.set("customerSearch", customerSearchTerm || "");
+    }
+
+    if (type === "product") {
+      url.searchParams.set("productSearch", searchTerm || "");
+    }
+
+    window.location.assign(url.toString());
+  }
+
+  function selectCustomer(
+    event: React.MouseEvent<HTMLButtonElement>,
+    customer: any,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
     const address = customer.defaultAddress || {};
 
     setCustomerId(customer.id);
@@ -496,7 +525,10 @@ export default function InvoicePage() {
     setCountry(address.country || "");
   }
 
-  function clearSelectedCustomer() {
+  function clearSelectedCustomer(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
     setCustomerId("");
     setCustomerName("");
     setCustomerEmail("");
@@ -510,7 +542,10 @@ export default function InvoicePage() {
     setCountry("");
   }
 
-  function addItem(variant: any) {
+  function addItem(event: React.MouseEvent<HTMLButtonElement>, variant: any) {
+    event.preventDefault();
+    event.stopPropagation();
+
     setItems((current) => [
       ...current,
       {
@@ -525,7 +560,10 @@ export default function InvoicePage() {
     ]);
   }
 
-  function addCustomItem() {
+  function addCustomItem(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
     setItems((current) => [
       ...current,
       {
@@ -548,7 +586,10 @@ export default function InvoicePage() {
     );
   }
 
-  function removeItem(index: number) {
+  function removeItem(event: React.MouseEvent<HTMLButtonElement>, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+
     setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
@@ -592,112 +633,101 @@ export default function InvoicePage() {
         <Layout.Section>
           <BlockStack gap="400">
             <Card>
-              <Form method="get">
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    Find existing customer
-                  </Text>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Find existing customer
+                </Text>
 
-                  <InlineStack gap="300" blockAlign="end">
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="Search customers"
-                        name="customerSearch"
-                        value={customerSearchTerm}
-                        onChange={setCustomerSearchTerm}
-                        autoComplete="off"
-                        placeholder="Search by customer name, email, or phone"
-                      />
-                    </div>
-
-                    <input
-                      type="hidden"
-                      name="productSearch"
-                      value={searchTerm}
+                <InlineStack gap="300" blockAlign="end">
+                  <div style={{ flex: 1 }}>
+                    <TextField
+                      label="Search customers"
+                      value={customerSearchTerm}
+                      onChange={setCustomerSearchTerm}
+                      autoComplete="off"
+                      placeholder="Search by customer name, email, or phone"
                     />
+                  </div>
 
-                    <Button submit>Search Customer</Button>
-                  </InlineStack>
-                </BlockStack>
-              </Form>
+                  <Button onClick={(event) => runSearch(event, "customer")}>
+                    Search Customer
+                  </Button>
+                </InlineStack>
 
-              {customerSearch && (
-                <div style={{ marginTop: 16 }}>
-                  <IndexTable
-                    resourceName={{
-                      singular: "customer",
-                      plural: "customers",
-                    }}
-                    itemCount={customers.length}
-                    headings={[
-                      { title: "Customer" },
-                      { title: "Email" },
-                      { title: "Action" },
-                    ]}
-                    selectable={false}
-                  >
-                    {customers.map((customer: any, index: number) => (
-                      <IndexTable.Row
-                        id={customer.id}
-                        key={customer.id}
-                        position={index}
-                      >
-                        <IndexTable.Cell>
-                          {customer.displayName}
-                        </IndexTable.Cell>
-                        <IndexTable.Cell>
-                          {customer.email || "-"}
-                        </IndexTable.Cell>
-                        <IndexTable.Cell>
-                          <Button onClick={() => selectCustomer(customer)}>
-                            Use customer
-                          </Button>
-                        </IndexTable.Cell>
-                      </IndexTable.Row>
-                    ))}
-                  </IndexTable>
+                {customerSearch && (
+                  <div style={{ marginTop: 16 }}>
+                    <IndexTable
+                      resourceName={{
+                        singular: "customer",
+                        plural: "customers",
+                      }}
+                      itemCount={customers.length}
+                      headings={[
+                        { title: "Customer" },
+                        { title: "Email" },
+                        { title: "Action" },
+                      ]}
+                      selectable={false}
+                    >
+                      {customers.map((customer: any, index: number) => (
+                        <IndexTable.Row
+                          id={customer.id}
+                          key={customer.id}
+                          position={index}
+                        >
+                          <IndexTable.Cell>
+                            {customer.displayName}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {customer.email || "-"}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Button
+                              onClick={(event) =>
+                                selectCustomer(event, customer)
+                              }
+                            >
+                              Use customer
+                            </Button>
+                          </IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
 
-                  {customers.length === 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <Text as="p" tone="subdued">
-                        No customers found. Enter customer details below to
-                        create a new customer.
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              )}
+                    {customers.length === 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <Text as="p" tone="subdued">
+                          No customers found.
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </BlockStack>
             </Card>
 
             <Card>
-              <Form method="get">
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    Search products
-                  </Text>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Search products
+                </Text>
 
-                  <InlineStack gap="300" blockAlign="end">
-                    <div style={{ flex: 1 }}>
-                      <TextField
-                        label="Product name or SKU"
-                        name="productSearch"
-                        value={searchTerm}
-                        onChange={setSearchTerm}
-                        autoComplete="off"
-                        placeholder="Search by product name or SKU"
-                      />
-                    </div>
-
-                    <input
-                      type="hidden"
-                      name="customerSearch"
-                      value={customerSearchTerm}
+                <InlineStack gap="300" blockAlign="end">
+                  <div style={{ flex: 1 }}>
+                    <TextField
+                      label="Product name or SKU"
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      autoComplete="off"
+                      placeholder="Search by product name or SKU"
                     />
+                  </div>
 
-                    <Button submit>Search Product</Button>
-                  </InlineStack>
-                </BlockStack>
-              </Form>
+                  <Button onClick={(event) => runSearch(event, "product")}>
+                    Search Product
+                  </Button>
+                </InlineStack>
+              </BlockStack>
             </Card>
 
             {productSearch && (
@@ -733,7 +763,9 @@ export default function InvoicePage() {
                         <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Button onClick={() => addItem(variant)}>Add</Button>
+                          <Button onClick={(event) => addItem(event, variant)}>
+                            Add
+                          </Button>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -767,12 +799,7 @@ export default function InvoicePage() {
                       </Text>
 
                       {customerId && (
-                        <Button
-                          onClick={(event) => {
-                            event.preventDefault();
-                            clearSelectedCustomer();
-                          }}
-                        >
+                        <Button onClick={clearSelectedCustomer}>
                           Clear selected customer
                         </Button>
                       )}
@@ -839,6 +866,7 @@ export default function InvoicePage() {
                     <Button
                       onClick={(event) => {
                         event.preventDefault();
+                        event.stopPropagation();
                         setShowAddress((open) => !open);
                       }}
                     >
@@ -964,14 +992,7 @@ export default function InvoicePage() {
                         Invoice lines
                       </Text>
 
-                      <Button
-                        onClick={(event) => {
-                          event.preventDefault();
-                          addCustomItem();
-                        }}
-                      >
-                        Add custom item
-                      </Button>
+                      <Button onClick={addCustomItem}>Add custom item</Button>
                     </InlineStack>
 
                     <Divider />
@@ -1004,10 +1025,9 @@ export default function InvoicePage() {
 
                                 <Button
                                   tone="critical"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    removeItem(index);
-                                  }}
+                                  onClick={(event) =>
+                                    removeItem(event, index)
+                                  }
                                 >
                                   Remove
                                 </Button>
