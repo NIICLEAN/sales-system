@@ -11,8 +11,6 @@ import {
   Select,
   TextField,
   Modal,
-  Box,
-  Badge,
 } from "@shopify/polaris";
 import { useMemo, useState } from "react";
 import db from "../db.server";
@@ -40,6 +38,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "create");
+
+  if (intent === "delete") {
+    await db.workSchedule.delete({
+      where: {
+        id: Number(formData.get("scheduleId")),
+      },
+    });
+
+    return redirect("/app/schedule");
+  }
 
   await db.workSchedule.create({
     data: {
@@ -66,6 +75,18 @@ function addDays(date: Date, days: number) {
 
 function sameDay(a: Date, b: Date) {
   return a.toDateString() === b.toDateString();
+}
+
+function workTypeLabel(workType: string) {
+  if (workType === "CustomBuilds") return "Custom Builds";
+  return workType;
+}
+
+function workTypeClass(workType: string) {
+  if (workType === "Repairs") return "job-repairs";
+  if (workType === "Fitting") return "job-fitting";
+  if (workType === "CustomBuilds") return "job-custom";
+  return "job-default";
 }
 
 export default function SchedulePage() {
@@ -112,6 +133,12 @@ export default function SchedulePage() {
     return String(item.assignedStaffId) === viewStaffId;
   });
 
+  const viewingStaffName =
+    viewStaffId === "all"
+      ? "All staff"
+      : staff.find((person) => String(person.id) === viewStaffId)?.name ||
+        "Selected staff";
+
   return (
     <Page
       title="Works Calendar"
@@ -130,7 +157,7 @@ export default function SchedulePage() {
         <Layout>
           <Layout.Section>
             <Card>
-              <BlockStack gap="400">
+              <BlockStack gap="500">
                 <InlineStack gap="400" align="space-between" blockAlign="end">
                   <div style={{ minWidth: 260 }}>
                     <Select
@@ -152,19 +179,18 @@ export default function SchedulePage() {
                   </div>
                 </InlineStack>
 
-                <Text as="h2" variant="headingLg">
-                  2 Week Works Rota
-                </Text>
+                <div className="calendar-heading">
+                  <div>
+                    <Text as="h2" variant="headingLg">
+                      2 Week Works Rota
+                    </Text>
+                    <Text as="p" tone="subdued">
+                      Viewing: {viewingStaffName}
+                    </Text>
+                  </div>
+                </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
-                    border: "1px solid #ddd",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                  }}
-                >
+                <div className="calendar-grid">
                   {calendarDays.map((day) => {
                     const daySchedules = visibleSchedules.filter((item) =>
                       sameDay(new Date(item.scheduledDate), day),
@@ -173,63 +199,85 @@ export default function SchedulePage() {
                     return (
                       <div
                         key={day.toISOString()}
-                        style={{
-                          minHeight: 170,
-                          borderRight: "1px solid #ddd",
-                          borderBottom: "1px solid #ddd",
-                          padding: 10,
-                          background: sameDay(day, today)
-                            ? "#f4f6f8"
-                            : "white",
-                        }}
+                        className={`calendar-day ${
+                          sameDay(day, today) ? "calendar-day-today" : ""
+                        }`}
                       >
-                        <BlockStack gap="200">
-                          <Text as="p" variant="headingSm">
+                        <div className="calendar-date">
+                          <span>
                             {day.toLocaleDateString("en-GB", {
                               weekday: "short",
+                            })}
+                          </span>
+                          <strong>
+                            {day.toLocaleDateString("en-GB", {
                               day: "2-digit",
                               month: "2-digit",
                             })}
-                          </Text>
+                          </strong>
+                        </div>
 
+                        <div className="calendar-jobs">
                           {daySchedules.map((item) => (
-                            <Box
+                            <div
                               key={item.id}
-                              padding="200"
-                              background="bg-surface-secondary"
-                              borderRadius="200"
+                              className={`job-card ${workTypeClass(
+                                item.workType,
+                              )}`}
                             >
-                              <BlockStack gap="100">
-                                <InlineStack gap="100">
-                                  <Badge>
-                                    {item.workType === "CustomBuilds"
-                                      ? "Custom"
-                                      : item.workType}
-                                  </Badge>
-                                </InlineStack>
+                              <div className="job-top">
+                                <span className="job-pill">
+                                  {workTypeLabel(item.workType)}
+                                </span>
 
-                                <Text as="p" variant="bodySm" fontWeight="bold">
-                                  {item.sale.shopifyOrderName ||
-                                    `Invoice #${item.sale.id}`}
-                                </Text>
+                                <Form method="post">
+                                  <input
+                                    type="hidden"
+                                    name="_intent"
+                                    value="delete"
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="scheduleId"
+                                    value={item.id}
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="delete-job"
+                                    onClick={(event) => {
+                                      if (
+                                        !confirm(
+                                          "Delete this scheduled work item?",
+                                        )
+                                      ) {
+                                        event.preventDefault();
+                                      }
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </Form>
+                              </div>
 
-                                <Text as="p" variant="bodySm">
-                                  {item.sale.customerName}
-                                </Text>
+                              <div className="job-invoice">
+                                {item.sale.shopifyOrderName ||
+                                  `Invoice #${item.sale.id}`}
+                              </div>
 
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  {item.assignedStaff.name}
-                                </Text>
+                              <div className="job-customer">
+                                {item.sale.customerName}
+                              </div>
 
-                                {item.note ? (
-                                  <Text as="p" variant="bodySm">
-                                    {item.note}
-                                  </Text>
-                                ) : null}
-                              </BlockStack>
-                            </Box>
+                              <div className="job-staff">
+                                {item.assignedStaff.name}
+                              </div>
+
+                              {item.note ? (
+                                <div className="job-note">{item.note}</div>
+                              ) : null}
+                            </div>
                           ))}
-                        </BlockStack>
+                        </div>
                       </div>
                     );
                   })}
@@ -244,15 +292,7 @@ export default function SchedulePage() {
         <div className="print-header">
           <div>
             <h1 className="print-title">NCP Sales — 2 Week Works Rota</h1>
-
-            <div className="print-subtitle">
-              Staff:{" "}
-              {viewStaffId === "all"
-                ? "All staff"
-                : staff.find((person) => String(person.id) === viewStaffId)
-                    ?.name}
-            </div>
-
+            <div className="print-subtitle">Staff: {viewingStaffName}</div>
             <div className="print-subtitle">
               From {new Date(calendarStartDate).toLocaleDateString("en-GB")} to{" "}
               {addDays(new Date(calendarStartDate), 13).toLocaleDateString(
@@ -283,18 +323,20 @@ export default function SchedulePage() {
                 </div>
 
                 {daySchedules.map((item) => (
-                  <div className="print-job" key={`print-job-${item.id}`}>
+                  <div
+                    className={`print-job ${workTypeClass(item.workType)}`}
+                    key={`print-job-${item.id}`}
+                  >
+                    <div className="print-pill">
+                      {workTypeLabel(item.workType)}
+                    </div>
                     <strong>
                       {item.sale.shopifyOrderName || `Invoice #${item.sale.id}`}
                     </strong>
                     <br />
                     {item.sale.customerName}
                     <br />
-                    {item.workType === "CustomBuilds"
-                      ? "Custom Builds"
-                      : item.workType}
-                    {" — "}
-                    {item.assignedStaff.name}
+                    Assigned: {item.assignedStaff.name}
                     {item.note ? (
                       <div className="print-note">{item.note}</div>
                     ) : null}
@@ -318,6 +360,7 @@ export default function SchedulePage() {
         <Modal.Section>
           <Form method="post">
             <BlockStack gap="400">
+              <input type="hidden" name="_intent" value="create" />
               <input type="hidden" name="saleId" value={saleId} />
               <input type="hidden" name="workType" value={workType} />
               <input type="hidden" name="scheduledDate" value={scheduledDate} />
@@ -385,10 +428,160 @@ export default function SchedulePage() {
             display: none;
           }
 
+          .calendar-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+          }
+
+          .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(150px, 1fr));
+            border: 1px solid #dfe3e8;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #fff;
+          }
+
+          .calendar-day {
+            min-height: 240px;
+            border-right: 1px solid #dfe3e8;
+            border-bottom: 1px solid #dfe3e8;
+            padding: 12px;
+            background: #ffffff;
+          }
+
+          .calendar-day:nth-child(7n) {
+            border-right: 0;
+          }
+
+          .calendar-day-today {
+            background: #f1f8ff;
+          }
+
+          .calendar-date {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            color: #202223;
+          }
+
+          .calendar-date span {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6d7175;
+          }
+
+          .calendar-date strong {
+            font-size: 14px;
+            font-weight: 800;
+          }
+
+          .calendar-jobs {
+            display: grid;
+            gap: 8px;
+          }
+
+          .job-card {
+            border-radius: 12px;
+            padding: 10px;
+            border: 1px solid #dfe3e8;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+          }
+
+          .job-repairs {
+            background: #fff4e5;
+            border-color: #ffc453;
+          }
+
+          .job-fitting {
+            background: #eaf4ff;
+            border-color: #8ac3ff;
+          }
+
+          .job-custom {
+            background: #f3e8ff;
+            border-color: #c084fc;
+          }
+
+          .job-default {
+            background: #f6f6f7;
+          }
+
+          .job-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 7px;
+          }
+
+          .job-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 3px 8px;
+            background: rgba(255,255,255,0.75);
+            font-size: 11px;
+            font-weight: 800;
+            color: #202223;
+          }
+
+          .delete-job {
+            width: 22px;
+            height: 22px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.12);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 18px;
+            font-weight: 700;
+          }
+
+          .delete-job:hover {
+            background: #d72c0d;
+            color: white;
+          }
+
+          .job-invoice {
+            font-size: 14px;
+            font-weight: 800;
+            color: #202223;
+            margin-bottom: 3px;
+          }
+
+          .job-customer {
+            font-size: 13px;
+            font-weight: 600;
+            color: #202223;
+          }
+
+          .job-staff {
+            display: inline-flex;
+            margin-top: 6px;
+            border-radius: 999px;
+            padding: 3px 8px;
+            background: rgba(255,255,255,0.8);
+            font-size: 12px;
+            font-weight: 700;
+            color: #42474c;
+          }
+
+          .job-note {
+            margin-top: 8px;
+            padding-top: 7px;
+            border-top: 1px solid rgba(0,0,0,0.12);
+            font-size: 12px;
+            line-height: 1.4;
+            color: #202223;
+          }
+
           @media print {
             @page {
               size: A4 landscape;
-              margin: 10mm;
+              margin: 8mm;
             }
 
             body {
@@ -422,60 +615,88 @@ export default function SchedulePage() {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
-              border-bottom: 2px solid #111;
+              border-bottom: 3px solid #111;
               padding-bottom: 8px;
-              margin-bottom: 12px;
+              margin-bottom: 10px;
             }
 
             .print-title {
-              font-size: 22px;
-              font-weight: 700;
+              font-size: 24px;
+              font-weight: 800;
               margin: 0;
             }
 
             .print-subtitle {
-              font-size: 12px;
+              font-size: 13px;
               margin-top: 4px;
             }
 
             .print-grid {
               display: grid;
               grid-template-columns: repeat(7, 1fr);
-              border-top: 1px solid #222;
-              border-left: 1px solid #222;
+              border-top: 1.5px solid #222;
+              border-left: 1.5px solid #222;
+              width: 100%;
             }
 
             .print-day {
-              min-height: 92px;
-              border-right: 1px solid #222;
-              border-bottom: 1px solid #222;
-              padding: 6px;
+              min-height: 150px;
+              border-right: 1.5px solid #222;
+              border-bottom: 1.5px solid #222;
+              padding: 7px;
               page-break-inside: avoid;
             }
 
             .print-date {
-              font-size: 11px;
-              font-weight: 700;
-              border-bottom: 1px solid #ddd;
-              padding-bottom: 4px;
-              margin-bottom: 5px;
+              font-size: 13px;
+              font-weight: 800;
+              border-bottom: 1px solid #bbb;
+              padding-bottom: 5px;
+              margin-bottom: 6px;
             }
 
             .print-job {
-              font-size: 10px;
+              font-size: 12px;
               line-height: 1.35;
-              margin-bottom: 6px;
-              padding-bottom: 5px;
-              border-bottom: 1px dotted #aaa;
+              margin-bottom: 7px;
+              padding: 6px;
+              border-radius: 6px;
+              border: 1px solid #999;
+              page-break-inside: avoid;
             }
 
             .print-job strong {
+              font-size: 12px;
+            }
+
+            .print-pill {
+              display: inline-block;
+              border-radius: 999px;
+              padding: 2px 7px;
               font-size: 10px;
+              font-weight: 800;
+              background: white;
+              border: 1px solid #777;
+              margin-bottom: 4px;
             }
 
             .print-note {
-              margin-top: 2px;
+              margin-top: 4px;
+              padding-top: 4px;
+              border-top: 1px dotted #777;
               font-style: italic;
+            }
+
+            .print-job.job-repairs {
+              background: #fff4e5 !important;
+            }
+
+            .print-job.job-fitting {
+              background: #eaf4ff !important;
+            }
+
+            .print-job.job-custom {
+              background: #f3e8ff !important;
             }
           }
         `}
