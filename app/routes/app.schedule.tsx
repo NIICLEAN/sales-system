@@ -1,19 +1,19 @@
-import { json, redirect } from "@remix-run/node";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { Form, useLoaderData } from "@remix-run/react";
-import { prisma } from "~/db.server";
+import { redirect } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { Form, useLoaderData } from "react-router";
+import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const sales = await prisma.sale.findMany({
+  const sales = await db.sale.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
   });
 
-  const staff = await prisma.staff.findMany({
+  const staff = await db.staff.findMany({
     orderBy: { name: "asc" },
   });
 
-  const schedules = await prisma.workSchedule.findMany({
+  const schedules = await db.workSchedule.findMany({
     include: {
       sale: true,
       assignedStaff: true,
@@ -21,13 +21,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { scheduledDate: "asc" },
   });
 
-  return json({ sales, staff, schedules });
+return { sales, staff, schedules };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
 
-  await prisma.workSchedule.create({
+  await db.workSchedule.create({
     data: {
       saleId: Number(formData.get("saleId")),
       workType: String(formData.get("workType")) as any,
