@@ -74,11 +74,9 @@ export default function SchedulePage() {
   const today = new Date();
 
   const [modalOpen, setModalOpen] = useState(false);
-
   const [calendarStartDate, setCalendarStartDate] = useState(
     toDateInputValue(today),
   );
-
   const [viewStaffId, setViewStaffId] = useState("all");
 
   const [saleId, setSaleId] = useState(String(sales[0]?.id || ""));
@@ -128,117 +126,185 @@ export default function SchedulePage() {
         },
       ]}
     >
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack gap="400" align="space-between" blockAlign="end">
-                <div style={{ minWidth: 260 }}>
-                  <Select
-                    label="View staff calendar"
-                    options={viewStaffOptions}
-                    value={viewStaffId}
-                    onChange={setViewStaffId}
-                  />
-                </div>
+      <div className="screen-only">
+        <Layout>
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack gap="400" align="space-between" blockAlign="end">
+                  <div style={{ minWidth: 260 }}>
+                    <Select
+                      label="View staff calendar"
+                      options={viewStaffOptions}
+                      value={viewStaffId}
+                      onChange={setViewStaffId}
+                    />
+                  </div>
 
-                <div style={{ minWidth: 220 }}>
-                  <TextField
-                    label="Calendar start date"
-                    type="date"
-                    value={calendarStartDate}
-                    onChange={setCalendarStartDate}
-                    autoComplete="off"
-                  />
-                </div>
-              </InlineStack>
+                  <div style={{ minWidth: 220 }}>
+                    <TextField
+                      label="Calendar start date"
+                      type="date"
+                      value={calendarStartDate}
+                      onChange={setCalendarStartDate}
+                      autoComplete="off"
+                    />
+                  </div>
+                </InlineStack>
 
-              <div className="print-title">
                 <Text as="h2" variant="headingLg">
                   2 Week Works Rota
                 </Text>
-              </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
-                  border: "1px solid #ddd",
-                  borderRadius: 12,
-                  overflow: "hidden",
-                }}
-              >
-                {calendarDays.map((day) => {
-                  const daySchedules = visibleSchedules.filter((item) =>
-                    sameDay(new Date(item.scheduledDate), day),
-                  );
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
+                    border: "1px solid #ddd",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                  }}
+                >
+                  {calendarDays.map((day) => {
+                    const daySchedules = visibleSchedules.filter((item) =>
+                      sameDay(new Date(item.scheduledDate), day),
+                    );
 
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      style={{
-                        minHeight: 170,
-                        borderRight: "1px solid #ddd",
-                        borderBottom: "1px solid #ddd",
-                        padding: 10,
-                        background: sameDay(day, today) ? "#f4f6f8" : "white",
-                      }}
-                    >
-                      <BlockStack gap="200">
-                        <Text as="p" variant="headingSm">
-                          {day.toLocaleDateString("en-GB", {
-                            weekday: "short",
-                            day: "2-digit",
-                            month: "2-digit",
-                          })}
-                        </Text>
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        style={{
+                          minHeight: 170,
+                          borderRight: "1px solid #ddd",
+                          borderBottom: "1px solid #ddd",
+                          padding: 10,
+                          background: sameDay(day, today)
+                            ? "#f4f6f8"
+                            : "white",
+                        }}
+                      >
+                        <BlockStack gap="200">
+                          <Text as="p" variant="headingSm">
+                            {day.toLocaleDateString("en-GB", {
+                              weekday: "short",
+                              day: "2-digit",
+                              month: "2-digit",
+                            })}
+                          </Text>
 
-                        {daySchedules.map((item) => (
-                          <Box
-                            key={item.id}
-                            padding="200"
-                            background="bg-surface-secondary"
-                            borderRadius="200"
-                          >
-                            <BlockStack gap="100">
-                              <InlineStack gap="100">
-                                <Badge>
-                                  {item.workType === "CustomBuilds"
-                                    ? "Custom"
-                                    : item.workType}
-                                </Badge>
-                              </InlineStack>
+                          {daySchedules.map((item) => (
+                            <Box
+                              key={item.id}
+                              padding="200"
+                              background="bg-surface-secondary"
+                              borderRadius="200"
+                            >
+                              <BlockStack gap="100">
+                                <InlineStack gap="100">
+                                  <Badge>
+                                    {item.workType === "CustomBuilds"
+                                      ? "Custom"
+                                      : item.workType}
+                                  </Badge>
+                                </InlineStack>
 
-                              <Text as="p" variant="bodySm" fontWeight="bold">
-                                {item.sale.shopifyOrderName ||
-                                  `Invoice #${item.sale.id}`}
-                              </Text>
-
-                              <Text as="p" variant="bodySm">
-                                {item.sale.customerName}
-                              </Text>
-
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {item.assignedStaff.name}
-                              </Text>
-
-                              {item.note ? (
-                                <Text as="p" variant="bodySm">
-                                  {item.note}
+                                <Text as="p" variant="bodySm" fontWeight="bold">
+                                  {item.sale.shopifyOrderName ||
+                                    `Invoice #${item.sale.id}`}
                                 </Text>
-                              ) : null}
-                            </BlockStack>
-                          </Box>
-                        ))}
-                      </BlockStack>
-                    </div>
-                  );
-                })}
+
+                                <Text as="p" variant="bodySm">
+                                  {item.sale.customerName}
+                                </Text>
+
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  {item.assignedStaff.name}
+                                </Text>
+
+                                {item.note ? (
+                                  <Text as="p" variant="bodySm">
+                                    {item.note}
+                                  </Text>
+                                ) : null}
+                              </BlockStack>
+                            </Box>
+                          ))}
+                        </BlockStack>
+                      </div>
+                    );
+                  })}
+                </div>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </div>
+
+      <div className="print-only">
+        <div className="print-header">
+          <div>
+            <h1 className="print-title">NCP Sales — 2 Week Works Rota</h1>
+
+            <div className="print-subtitle">
+              Staff:{" "}
+              {viewStaffId === "all"
+                ? "All staff"
+                : staff.find((person) => String(person.id) === viewStaffId)
+                    ?.name}
+            </div>
+
+            <div className="print-subtitle">
+              From {new Date(calendarStartDate).toLocaleDateString("en-GB")} to{" "}
+              {addDays(new Date(calendarStartDate), 13).toLocaleDateString(
+                "en-GB",
+              )}
+            </div>
+          </div>
+
+          <div className="print-subtitle">
+            Printed: {new Date().toLocaleDateString("en-GB")}
+          </div>
+        </div>
+
+        <div className="print-grid">
+          {calendarDays.map((day) => {
+            const daySchedules = visibleSchedules.filter((item) =>
+              sameDay(new Date(item.scheduledDate), day),
+            );
+
+            return (
+              <div className="print-day" key={`print-${day.toISOString()}`}>
+                <div className="print-date">
+                  {day.toLocaleDateString("en-GB", {
+                    weekday: "long",
+                    day: "2-digit",
+                    month: "2-digit",
+                  })}
+                </div>
+
+                {daySchedules.map((item) => (
+                  <div className="print-job" key={`print-job-${item.id}`}>
+                    <strong>
+                      {item.sale.shopifyOrderName || `Invoice #${item.sale.id}`}
+                    </strong>
+                    <br />
+                    {item.sale.customerName}
+                    <br />
+                    {item.workType === "CustomBuilds"
+                      ? "Custom Builds"
+                      : item.workType}
+                    {" — "}
+                    {item.assignedStaff.name}
+                    {item.note ? (
+                      <div className="print-note">{item.note}</div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
-            </BlockStack>
-          </Card>
-        </Layout.Section>
-      </Layout>
+            );
+          })}
+        </div>
+      </div>
 
       <Modal
         open={modalOpen}
@@ -315,29 +381,101 @@ export default function SchedulePage() {
 
       <style>
         {`
+          .print-only {
+            display: none;
+          }
+
           @media print {
+            @page {
+              size: A4 landscape;
+              margin: 10mm;
+            }
+
+            body {
+              background: white !important;
+            }
+
             body * {
               visibility: hidden;
             }
 
-            .Polaris-Page,
-            .Polaris-Page * {
+            .print-only,
+            .print-only * {
               visibility: visible;
             }
 
-            button,
-            select,
-            input,
-            .Polaris-Modal-Dialog__Container,
+            .print-only {
+              display: block !important;
+              position: absolute;
+              inset: 0;
+              padding: 0;
+              color: #111;
+              font-family: Arial, sans-serif;
+            }
+
+            .screen-only,
             .Polaris-Page-Header__RightAlign {
               display: none !important;
             }
 
-            .Polaris-Page {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 100%;
+            .print-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #111;
+              padding-bottom: 8px;
+              margin-bottom: 12px;
+            }
+
+            .print-title {
+              font-size: 22px;
+              font-weight: 700;
+              margin: 0;
+            }
+
+            .print-subtitle {
+              font-size: 12px;
+              margin-top: 4px;
+            }
+
+            .print-grid {
+              display: grid;
+              grid-template-columns: repeat(7, 1fr);
+              border-top: 1px solid #222;
+              border-left: 1px solid #222;
+            }
+
+            .print-day {
+              min-height: 92px;
+              border-right: 1px solid #222;
+              border-bottom: 1px solid #222;
+              padding: 6px;
+              page-break-inside: avoid;
+            }
+
+            .print-date {
+              font-size: 11px;
+              font-weight: 700;
+              border-bottom: 1px solid #ddd;
+              padding-bottom: 4px;
+              margin-bottom: 5px;
+            }
+
+            .print-job {
+              font-size: 10px;
+              line-height: 1.35;
+              margin-bottom: 6px;
+              padding-bottom: 5px;
+              border-bottom: 1px dotted #aaa;
+            }
+
+            .print-job strong {
+              font-size: 10px;
+            }
+
+            .print-note {
+              margin-top: 2px;
+              font-style: italic;
             }
           }
         `}
