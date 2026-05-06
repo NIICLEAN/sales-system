@@ -11,10 +11,16 @@ import {
   InlineStack,
   IndexTable,
   Text,
+  Divider,
+  Badge,
+  Checkbox,
+  Box,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+
+const money = (value: number) => `£${Number(value || 0).toFixed(2)}`;
 
 export async function loader({ request }: { request: Request }) {
   const { admin } = await authenticate.admin(request);
@@ -61,36 +67,36 @@ export async function loader({ request }: { request: Request }) {
 
   if (customerSearch.trim()) {
     try {
-    const customersResponse = await admin.graphql(
-  `
-    query Customers($query: String!) {
-      customers(first: 10, query: $query) {
-        edges {
-          node {
-            id
-            displayName
-            email
-            phone
-            defaultAddress {
-              address1
-              address2
-              city
-              province
-              zip
-              country
-              phone
+      const customersResponse = await admin.graphql(
+        `
+          query Customers($query: String!) {
+            customers(first: 10, query: $query) {
+              edges {
+                node {
+                  id
+                  displayName
+                  email
+                  phone
+                  defaultAddress {
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                    phone
+                  }
+                }
+              }
             }
           }
-        }
-      }
-    }
-  `,
-  {
-    variables: {
-      query: customerSearch,
-    },
-  },
-);
+        `,
+        {
+          variables: {
+            query: customerSearch,
+          },
+        },
+      );
 
       const customersJson = await customersResponse.json();
 
@@ -161,6 +167,13 @@ export async function action({ request }: { request: Request }) {
   const reference = String(formData.get("reference") || "").trim();
   const paymentMethod = String(formData.get("paymentMethod") || "");
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
+
+  const amountPaid = Math.max(
+    0,
+    Number(String(formData.get("amountPaid") || "0").replace(/,/g, "")),
+  );
+
+  const depositPaid = String(formData.get("depositPaid") || "") === "on";
 
   let shopifyCustomerId = selectedCustomerId || null;
 
@@ -236,9 +249,24 @@ export async function action({ request }: { request: Request }) {
   const netTotal = subtotal - discountTotal;
   const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
+  const balanceDue = Math.max(total - amountPaid, 0);
+
+  const paymentStatus =
+    amountPaid <= 0
+      ? "Unpaid"
+      : amountPaid < total
+        ? "Partially Paid"
+        : "Paid";
 
   const hasManualShippingAddress =
     address1 || address2 || city || county || postcode || country;
+
+  const tags = [
+    "Invoice App",
+    paymentMethod,
+    paymentStatus,
+    depositPaid ? "Deposit Paid" : null,
+  ].filter(Boolean) as string[];
 
   const draftOrderInput = {
     customerId: shopifyCustomerId || undefined,
@@ -246,9 +274,13 @@ export async function action({ request }: { request: Request }) {
     phone: customerPhone || undefined,
     taxExempt: customerVatNumber ? true : false,
     note: reference || undefined,
-    tags: ["Invoice App", paymentMethod],
+    tags,
     customAttributes: [
       { key: "Payment Method", value: paymentMethod },
+      { key: "Payment Status", value: paymentStatus },
+      { key: "Amount Paid", value: money(amountPaid) },
+      { key: "Balance Due", value: money(balanceDue) },
+      { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
       { key: "Reference", value: reference || "-" },
       { key: "Salesperson ID", value: String(staffId) },
       { key: "VAT Number", value: customerVatNumber || "-" },
@@ -265,18 +297,32 @@ export async function action({ request }: { request: Request }) {
           phone: customerPhone || undefined,
         }
       : undefined,
-    lineItems: lineItems.map((item: any) => ({
-      variantId: item.id,
-      quantity: Number(item.quantity),
-      originalUnitPrice: String(Number(item.unitPrice)),
-      appliedDiscount: Number(item.discount || 0)
-        ? {
-            value: Number(item.discount || 0),
-            valueType: "FIXED_AMOUNT",
-            title: "Manual discount",
-          }
-        : null,
-    })),
+    lineItems: lineItems.map((item: any) => {
+      const base = {
+        quantity: Number(item.quantity),
+        originalUnitPrice: String(Number(item.unitPrice)),
+        appliedDiscount: Number(item.discount || 0)
+          ? {
+              value: Number(item.discount || 0),
+              valueType: "FIXED_AMOUNT",
+              title: "Manual discount",
+            }
+          : null,
+      };
+
+      if (item.type === "custom") {
+        return {
+          ...base,
+          title: item.title || "Custom item",
+          sku: item.sku || undefined,
+        };
+      }
+
+      return {
+        ...base,
+        variantId: item.id,
+      };
+    }),
   };
 
   const createDraftResponse = await admin.graphql(
@@ -310,8 +356,8 @@ export async function action({ request }: { request: Request }) {
 
   const completeDraftResponse = await admin.graphql(
     `
-      mutation CompleteDraftOrder($id: ID!) {
-        draftOrderComplete(id: $id, paymentPending: false) {
+      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
+        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
           draftOrder {
             id
             order {
@@ -326,7 +372,12 @@ export async function action({ request }: { request: Request }) {
         }
       }
     `,
-    { variables: { id: draftOrderId } },
+    {
+      variables: {
+        id: draftOrderId,
+        paymentPending: paymentStatus !== "Paid",
+      },
+    },
   );
 
   const completeDraftJson = await completeDraftResponse.json();
@@ -363,10 +414,14 @@ export async function action({ request }: { request: Request }) {
       discountTotal,
       vatAmount,
       total,
+      amountPaid,
+      balanceDue,
+      paymentStatus,
+      depositPaid,
       staffId,
       lineItems: {
         create: lineItems.map((item: any) => ({
-          shopifyVariantId: item.id,
+          shopifyVariantId: item.type === "custom" ? null : item.id,
           title: item.title,
           sku: item.sku,
           quantity: Number(item.quantity),
@@ -375,6 +430,7 @@ export async function action({ request }: { request: Request }) {
           lineTotal:
             Number(item.unitPrice) * Number(item.quantity) -
             Number(item.discount || 0),
+          isCustom: item.type === "custom",
         })),
       },
     },
@@ -412,6 +468,9 @@ export default function InvoicePage() {
   const [reference, setReference] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [items, setItems] = useState<any[]>([]);
+  const [amountPaid, setAmountPaid] = useState("0");
+  const [depositPaid, setDepositPaid] = useState(false);
+  const [showAddress, setShowAddress] = useState(false);
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -425,21 +484,22 @@ export default function InvoicePage() {
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
 
-function selectCustomer(customer: any) {
-  const address = customer.defaultAddress || {};
+  function selectCustomer(customer: any) {
+    const address = customer.defaultAddress || {};
 
-  setCustomerId(customer.id);
-  setCustomerName(customer.displayName || "");
-  setCustomerEmail(customer.email || "");
-  setCustomerPhone(customer.phone || address.phone || "");
+    setCustomerId(customer.id);
+    setCustomerName(customer.displayName || "");
+    setCustomerEmail(customer.email || "");
+    setCustomerPhone(customer.phone || address.phone || "");
 
-  setAddress1(address.address1 || "");
-  setAddress2(address.address2 || "");
-  setCity(address.city || "");
-  setCounty(address.province || "");
-  setPostcode(address.zip || "");
-  setCountry(address.country || "");
-}
+    setAddress1(address.address1 || "");
+    setAddress2(address.address2 || "");
+    setCity(address.city || "");
+    setCounty(address.province || "");
+    setPostcode(address.zip || "");
+    setCountry(address.country || "");
+  }
+
   function clearSelectedCustomer() {
     setCustomerId("");
     setCustomerName("");
@@ -458,11 +518,27 @@ function selectCustomer(customer: any) {
     setItems((current) => [
       ...current,
       {
+        type: "shopify",
         id: variant.id,
         title: `${variant.product.title} - ${variant.title}`,
         sku: variant.sku || "",
         quantity: 1,
         unitPrice: Number(variant.price || 0),
+        discount: 0,
+      },
+    ]);
+  }
+
+  function addCustomItem() {
+    setItems((current) => [
+      ...current,
+      {
+        type: "custom",
+        id: `custom-${Date.now()}`,
+        title: "Custom item",
+        sku: "",
+        quantity: 1,
+        unitPrice: 0,
         discount: 0,
       },
     ]);
@@ -493,393 +569,548 @@ function selectCustomer(customer: any) {
 
     const netTotal = subtotal - discount;
     const vatAmount = customerVatNumber ? 0 : netTotal * 0.2;
+    const total = netTotal + vatAmount;
+    const paid = Math.max(0, Number(amountPaid || 0));
+    const balanceDue = Math.max(total - paid, 0);
+
+    const paymentStatus =
+      paid <= 0 ? "Unpaid" : paid < total ? "Partially Paid" : "Paid";
 
     return {
       subtotal,
       discount,
       vatAmount,
-      total: netTotal + vatAmount,
+      total,
+      paid,
+      balanceDue,
+      paymentStatus,
     };
-  }, [items, customerVatNumber]);
+  }, [items, customerVatNumber, amountPaid]);
 
   return (
-    <Page title="Create Invoice">
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <Form method="get">
-              <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">
-                  Find existing customer
-                </Text>
+    <Page
+      title="Create Invoice"
+      subtitle="Build an invoice, add products or custom items, and track partial payments."
+    >
+      <Form method="post">
+        <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
+        <input type="hidden" name="customerId" value={customerId} />
 
-                <InlineStack gap="300" blockAlign="end">
-                  <div style={{ flex: 1 }}>
-                    <TextField
-                      label="Search customers"
-                      name="customerSearch"
-                      value={customerSearchTerm}
-                      onChange={setCustomerSearchTerm}
-                      autoComplete="off"
-                      placeholder="Search by customer name"
-                    />
-                  </div>
-
-                  <input type="hidden" name="productSearch" value={searchTerm} />
-
-                  <Button submit>Search Customer</Button>
-                </InlineStack>
-              </BlockStack>
-            </Form>
-
-            {customerSearch && (
-              <div style={{ marginTop: "16px" }}>
-                <IndexTable
-                  resourceName={{ singular: "customer", plural: "customers" }}
-                  itemCount={customers.length}
-                  headings={[{ title: "Customer" }, { title: "Action" }]}
-                  selectable={false}
-                >
-                  {customers.map((customer: any, index: number) => (
-                    <IndexTable.Row
-                      id={customer.id}
-                      key={customer.id}
-                      position={index}
-                    >
-                      <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Button onClick={() => selectCustomer(customer)}>
-                          Use customer
-                        </Button>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
-
-                {customers.length === 0 && (
-                  <div style={{ marginTop: "12px" }}>
-                    <Text as="p" tone="subdued">
-                      No customers found. Enter customer details below to create
-                      a new customer.
-                    </Text>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card>
-            <Form method="get">
-              <InlineStack gap="300" blockAlign="end">
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label="Search products"
-                    name="productSearch"
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    autoComplete="off"
-                    placeholder="Search by product name or SKU"
-                  />
-                </div>
-
-                <input
-                  type="hidden"
-                  name="customerSearch"
-                  value={customerSearchTerm}
-                />
-
-                <Button submit>Search Product</Button>
-              </InlineStack>
-            </Form>
-          </Card>
-        </Layout.Section>
-
-        {productSearch && (
+        <Layout>
           <Layout.Section>
-            <Card>
-              <Text as="h2" variant="headingMd">
-                Product search results
-              </Text>
+            <BlockStack gap="400">
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Customer
+                    </Text>
 
-              <IndexTable
-                resourceName={{ singular: "product", plural: "products" }}
-                itemCount={variants.length}
-                headings={[
-                  { title: "Product" },
-                  { title: "SKU" },
-                  { title: "Price" },
-                  { title: "Action" },
-                ]}
-                selectable={false}
-              >
-                {variants.map((variant: any, index: number) => (
-                  <IndexTable.Row
-                    id={variant.id}
-                    key={variant.id}
-                    position={index}
-                  >
-                    <IndexTable.Cell>
-                      {variant.product.title} - {variant.title}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                    <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <Button onClick={() => addItem(variant)}>Add</Button>
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            </Card>
-          </Layout.Section>
-        )}
+                    {customerId && (
+                      <Button onClick={clearSelectedCustomer}>
+                        Clear selected customer
+                      </Button>
+                    )}
+                  </InlineStack>
 
-        <Layout.Section>
-          <Card>
-            <Form method="post">
-              <input
-                type="hidden"
-                name="lineItems"
-                value={JSON.stringify(items)}
-              />
-              <input type="hidden" name="customerId" value={customerId} />
+                  <Form method="get">
+                    <InlineStack gap="300" blockAlign="end">
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Find existing customer"
+                          name="customerSearch"
+                          value={customerSearchTerm}
+                          onChange={setCustomerSearchTerm}
+                          autoComplete="off"
+                          placeholder="Search by customer name, email, or phone"
+                        />
+                      </div>
 
-              <BlockStack gap="400">
-                <Select
-                  label="Account / Salesperson"
-                  name="staffId"
-                  options={staffOptions}
-                  value={staffId}
-                  onChange={setStaffId}
-                />
+                      <input
+                        type="hidden"
+                        name="productSearch"
+                        value={searchTerm}
+                      />
 
-                <InlineStack gap="300" blockAlign="center">
-                  <Text as="h2" variant="headingMd">
-                    Customer details
-                  </Text>
+                      <Button submit>Search</Button>
+                    </InlineStack>
+                  </Form>
 
-                  {customerId && (
-                    <Button onClick={clearSelectedCustomer}>
-                      Clear selected customer
-                    </Button>
+                  {customerSearch && (
+                    <IndexTable
+                      resourceName={{
+                        singular: "customer",
+                        plural: "customers",
+                      }}
+                      itemCount={customers.length}
+                      headings={[
+                        { title: "Customer" },
+                        { title: "Email" },
+                        { title: "Action" },
+                      ]}
+                      selectable={false}
+                    >
+                      {customers.map((customer: any, index: number) => (
+                        <IndexTable.Row
+                          id={customer.id}
+                          key={customer.id}
+                          position={index}
+                        >
+                          <IndexTable.Cell>
+                            {customer.displayName}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {customer.email || "-"}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Button onClick={() => selectCustomer(customer)}>
+                              Use
+                            </Button>
+                          </IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
                   )}
-                </InlineStack>
 
-                {customerId && (
-                  <Text as="p" tone="success">
-                    Existing Shopify customer selected. Shopify will use the
-                    customer profile/default address unless you manually enter
-                    address details below.
-                  </Text>
-                )}
+                  <InlineStack gap="300">
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Customer name"
+                        name="customerName"
+                        value={customerName}
+                        onChange={setCustomerName}
+                        autoComplete="off"
+                      />
+                    </div>
 
-                {!customerId && (
-                  <Text as="p" tone="subdued">
-                    If no existing customer is selected, a new Shopify customer
-                    will be created when email or phone is provided.
-                  </Text>
-                )}
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Customer email"
+                        name="customerEmail"
+                        value={customerEmail}
+                        onChange={setCustomerEmail}
+                        autoComplete="off"
+                      />
+                    </div>
+                  </InlineStack>
 
-                <TextField
-                  label="Customer name"
-                  name="customerName"
-                  value={customerName}
-                  onChange={setCustomerName}
-                  autoComplete="off"
-                />
+                  <InlineStack gap="300">
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Customer phone"
+                        name="customerPhone"
+                        value={customerPhone}
+                        onChange={setCustomerPhone}
+                        autoComplete="off"
+                      />
+                    </div>
 
-                <TextField
-                  label="Customer email"
-                  name="customerEmail"
-                  value={customerEmail}
-                  onChange={setCustomerEmail}
-                  autoComplete="off"
-                  helpText={
-                    customerId
-                      ? "Optional. Leave blank to use Shopify customer details."
-                      : undefined
-                  }
-                />
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="VAT number"
+                        name="customerVatNumber"
+                        value={customerVatNumber}
+                        onChange={setCustomerVatNumber}
+                        autoComplete="off"
+                        placeholder="Leave blank to charge 20% VAT"
+                      />
+                    </div>
+                  </InlineStack>
 
-                <TextField
-                  label="VAT number"
-                  name="customerVatNumber"
-                  value={customerVatNumber}
-                  onChange={setCustomerVatNumber}
-                  autoComplete="off"
-                  placeholder="Leave blank to charge 20% VAT"
-                />
+                  <Button onClick={() => setShowAddress((open) => !open)}>
+                    {showAddress ? "Hide address" : "Edit shipping address"}
+                  </Button>
 
-                <TextField
-                  label="Customer phone"
-                  name="customerPhone"
-                  value={customerPhone}
-                  onChange={setCustomerPhone}
-                  autoComplete="off"
-                  helpText={
-                    customerId
-                      ? "Optional. Leave blank to use Shopify customer details."
-                      : undefined
-                  }
-                />
-
-                <Text as="h2" variant="headingMd">
-                  Shipping address
-                </Text>
-
-                {customerId && (
-                  <Text as="p" tone="subdued">
-                    Leave address fields blank to use the customer’s saved
-                    Shopify address.
-                  </Text>
-                )}
-
-                <TextField
-                  label="Address line 1"
-                  name="address1"
-                  value={address1}
-                  onChange={setAddress1}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Address line 2"
-                  name="address2"
-                  value={address2}
-                  onChange={setAddress2}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Town / City"
-                  name="city"
-                  value={city}
-                  onChange={setCity}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="County"
-                  name="county"
-                  value={county}
-                  onChange={setCounty}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Postcode"
-                  name="postcode"
-                  value={postcode}
-                  onChange={setPostcode}
-                  autoComplete="off"
-                />
-
-                <TextField
-                  label="Country"
-                  name="country"
-                  value={country}
-                  onChange={setCountry}
-                  autoComplete="off"
-                  placeholder="United Kingdom"
-                />
-
-                <TextField
-                  label="Reference"
-                  name="reference"
-                  value={reference}
-                  onChange={setReference}
-                  autoComplete="off"
-                  placeholder="Customer PO, job ref, or note"
-                />
-
-                <Select
-                  label="Payment method"
-                  name="paymentMethod"
-                  options={paymentOptions}
-                  value={paymentMethod}
-                  onChange={setPaymentMethod}
-                />
-
-                <Text as="h2" variant="headingMd">
-                  Invoice lines
-                </Text>
-
-                {items.map((item, index) => (
-                  <Card key={index}>
+                  {showAddress && (
                     <BlockStack gap="300">
-                      <Text as="p" fontWeight="bold">
-                        {item.title}
-                      </Text>
+                      <InlineStack gap="300">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Address line 1"
+                            name="address1"
+                            value={address1}
+                            onChange={setAddress1}
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Address line 2"
+                            name="address2"
+                            value={address2}
+                            onChange={setAddress2}
+                            autoComplete="off"
+                          />
+                        </div>
+                      </InlineStack>
 
                       <InlineStack gap="300">
-                        <div style={{ width: "120px" }}>
+                        <div style={{ flex: 1 }}>
                           <TextField
-                            label="Qty"
-                            value={String(item.quantity)}
-                            onChange={(value) =>
-                              updateItem(index, "quantity", value)
-                            }
+                            label="Town / City"
+                            name="city"
+                            value={city}
+                            onChange={setCity}
                             autoComplete="off"
-                            type="number"
                           />
                         </div>
 
-                        <div style={{ width: "160px" }}>
+                        <div style={{ flex: 1 }}>
                           <TextField
-                            label="Unit price"
-                            value={String(item.unitPrice)}
-                            onChange={(value) =>
-                              updateItem(index, "unitPrice", value)
-                            }
+                            label="County"
+                            name="county"
+                            value={county}
+                            onChange={setCounty}
                             autoComplete="off"
-                            type="number"
-                            prefix="£"
+                          />
+                        </div>
+                      </InlineStack>
+
+                      <InlineStack gap="300">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Postcode"
+                            name="postcode"
+                            value={postcode}
+                            onChange={setPostcode}
+                            autoComplete="off"
                           />
                         </div>
 
-                        <div style={{ width: "160px" }}>
+                        <div style={{ flex: 1 }}>
                           <TextField
-                            label="Discount"
-                            value={String(item.discount)}
-                            onChange={(value) =>
-                              updateItem(index, "discount", value)
-                            }
+                            label="Country"
+                            name="country"
+                            value={country}
+                            onChange={setCountry}
                             autoComplete="off"
-                            type="number"
-                            prefix="£"
+                            placeholder="United Kingdom"
                           />
-                        </div>
-
-                        <div style={{ paddingTop: "28px" }}>
-                          <Button
-                            tone="critical"
-                            onClick={() => removeItem(index)}
-                          >
-                            Remove
-                          </Button>
                         </div>
                       </InlineStack>
                     </BlockStack>
-                  </Card>
-                ))}
+                  )}
+                </BlockStack>
+              </Card>
 
-                <Text as="p">Subtotal: £{totals.subtotal.toFixed(2)}</Text>
-                <Text as="p">Discount: £{totals.discount.toFixed(2)}</Text>
-                <Text as="p">VAT: £{totals.vatAmount.toFixed(2)}</Text>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">
+                    Invoice details
+                  </Text>
 
-                <Text as="p" fontWeight="bold">
-                  Total: £{totals.total.toFixed(2)}
-                </Text>
+                  <InlineStack gap="300">
+                    <div style={{ flex: 1 }}>
+                      <Select
+                        label="Account / Salesperson"
+                        name="staffId"
+                        options={staffOptions}
+                        value={staffId}
+                        onChange={setStaffId}
+                      />
+                    </div>
 
-                <Button submit variant="primary">
-                  Save Invoice
-                </Button>
-              </BlockStack>
-            </Form>
-          </Card>
-        </Layout.Section>
-      </Layout>
+                    <div style={{ flex: 1 }}>
+                      <Select
+                        label="Payment method"
+                        name="paymentMethod"
+                        options={paymentOptions}
+                        value={paymentMethod}
+                        onChange={setPaymentMethod}
+                      />
+                    </div>
+                  </InlineStack>
+
+                  <TextField
+                    label="Reference"
+                    name="reference"
+                    value={reference}
+                    onChange={setReference}
+                    autoComplete="off"
+                    placeholder="Customer PO, job ref, or note"
+                  />
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Items
+                    </Text>
+
+                    <Button onClick={addCustomItem}>Add custom item</Button>
+                  </InlineStack>
+
+                  <Form method="get">
+                    <InlineStack gap="300" blockAlign="end">
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Search Shopify products"
+                          name="productSearch"
+                          value={searchTerm}
+                          onChange={setSearchTerm}
+                          autoComplete="off"
+                          placeholder="Search by product name or SKU"
+                        />
+                      </div>
+
+                      <input
+                        type="hidden"
+                        name="customerSearch"
+                        value={customerSearchTerm}
+                      />
+
+                      <Button submit>Search</Button>
+                    </InlineStack>
+                  </Form>
+
+                  {productSearch && (
+                    <IndexTable
+                      resourceName={{
+                        singular: "product",
+                        plural: "products",
+                      }}
+                      itemCount={variants.length}
+                      headings={[
+                        { title: "Product" },
+                        { title: "SKU" },
+                        { title: "Price" },
+                        { title: "Action" },
+                      ]}
+                      selectable={false}
+                    >
+                      {variants.map((variant: any, index: number) => (
+                        <IndexTable.Row
+                          id={variant.id}
+                          key={variant.id}
+                          position={index}
+                        >
+                          <IndexTable.Cell>
+                            {variant.product.title} - {variant.title}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                          <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Button onClick={() => addItem(variant)}>Add</Button>
+                          </IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  )}
+
+                  <Divider />
+
+                  {items.length === 0 ? (
+                    <Box paddingBlock="400">
+                      <Text as="p" tone="subdued">
+                        No items added yet. Search for a Shopify product or add a
+                        custom item.
+                      </Text>
+                    </Box>
+                  ) : (
+                    <BlockStack gap="300">
+                      {items.map((item, index) => (
+                        <Card key={item.id || index}>
+                          <BlockStack gap="300">
+                            <InlineStack align="space-between" blockAlign="center">
+                              <InlineStack gap="200" blockAlign="center">
+                                <Text as="p" fontWeight="bold">
+                                  {item.title}
+                                </Text>
+
+                                {item.type === "custom" && (
+                                  <Badge tone="info">Custom</Badge>
+                                )}
+                              </InlineStack>
+
+                              <Button
+                                tone="critical"
+                                onClick={() => removeItem(index)}
+                              >
+                                Remove
+                              </Button>
+                            </InlineStack>
+
+                            {item.type === "custom" && (
+                              <InlineStack gap="300">
+                                <div style={{ flex: 1 }}>
+                                  <TextField
+                                    label="Item name"
+                                    value={String(item.title)}
+                                    onChange={(value) =>
+                                      updateItem(index, "title", value)
+                                    }
+                                    autoComplete="off"
+                                  />
+                                </div>
+
+                                <div style={{ width: 180 }}>
+                                  <TextField
+                                    label="SKU"
+                                    value={String(item.sku)}
+                                    onChange={(value) =>
+                                      updateItem(index, "sku", value)
+                                    }
+                                    autoComplete="off"
+                                  />
+                                </div>
+                              </InlineStack>
+                            )}
+
+                            <InlineStack gap="300">
+                              <div style={{ width: 120 }}>
+                                <TextField
+                                  label="Qty"
+                                  value={String(item.quantity)}
+                                  onChange={(value) =>
+                                    updateItem(index, "quantity", value)
+                                  }
+                                  autoComplete="off"
+                                  type="number"
+                                />
+                              </div>
+
+                              <div style={{ width: 160 }}>
+                                <TextField
+                                  label="Unit price"
+                                  value={String(item.unitPrice)}
+                                  onChange={(value) =>
+                                    updateItem(index, "unitPrice", value)
+                                  }
+                                  autoComplete="off"
+                                  type="number"
+                                  prefix="£"
+                                />
+                              </div>
+
+                              <div style={{ width: 160 }}>
+                                <TextField
+                                  label="Discount"
+                                  value={String(item.discount)}
+                                  onChange={(value) =>
+                                    updateItem(index, "discount", value)
+                                  }
+                                  autoComplete="off"
+                                  type="number"
+                                  prefix="£"
+                                />
+                              </div>
+
+                              <div style={{ paddingTop: 28 }}>
+                                <Text as="p" fontWeight="bold">
+                                  {money(
+                                    Number(item.unitPrice) *
+                                      Number(item.quantity) -
+                                      Number(item.discount || 0),
+                                  )}
+                                </Text>
+                              </div>
+                            </InlineStack>
+                          </BlockStack>
+                        </Card>
+                      ))}
+                    </BlockStack>
+                  )}
+                </BlockStack>
+              </Card>
+            </BlockStack>
+          </Layout.Section>
+
+          <Layout.Section variant="oneThird">
+            <div style={{ position: "sticky", top: 16 }}>
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Summary
+                    </Text>
+
+                    <Badge
+                      tone={
+                        totals.paymentStatus === "Paid"
+                          ? "success"
+                          : totals.paymentStatus === "Partially Paid"
+                            ? "attention"
+                            : "critical"
+                      }
+                    >
+                      {totals.paymentStatus}
+                    </Badge>
+                  </InlineStack>
+
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between">
+                      <Text as="p">Subtotal</Text>
+                      <Text as="p">{money(totals.subtotal)}</Text>
+                    </InlineStack>
+
+                    <InlineStack align="space-between">
+                      <Text as="p">Discount</Text>
+                      <Text as="p">{money(totals.discount)}</Text>
+                    </InlineStack>
+
+                    <InlineStack align="space-between">
+                      <Text as="p">VAT</Text>
+                      <Text as="p">{money(totals.vatAmount)}</Text>
+                    </InlineStack>
+
+                    <Divider />
+
+                    <InlineStack align="space-between">
+                      <Text as="p" fontWeight="bold">
+                        Total
+                      </Text>
+                      <Text as="p" fontWeight="bold">
+                        {money(totals.total)}
+                      </Text>
+                    </InlineStack>
+                  </BlockStack>
+
+                  <Divider />
+
+                  <BlockStack gap="300">
+                    <TextField
+                      label="Amount paid"
+                      name="amountPaid"
+                      value={amountPaid}
+                      onChange={setAmountPaid}
+                      autoComplete="off"
+                      type="number"
+                      prefix="£"
+                    />
+
+                    <Checkbox
+                      label="Deposit paid"
+                      name="depositPaid"
+                      checked={depositPaid}
+                      onChange={setDepositPaid}
+                    />
+
+                    {depositPaid && <Badge tone="success">Deposit Paid</Badge>}
+                  </BlockStack>
+
+                  <Divider />
+
+                  <InlineStack align="space-between">
+                    <Text as="p" fontWeight="bold">
+                      Balance due
+                    </Text>
+                    <Text as="p" fontWeight="bold">
+                      {money(totals.balanceDue)}
+                    </Text>
+                  </InlineStack>
+
+                  <Button submit variant="primary" fullWidth>
+                    Save Invoice
+                  </Button>
+                </BlockStack>
+              </Card>
+            </div>
+          </Layout.Section>
+        </Layout>
+      </Form>
     </Page>
   );
 }

@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "Sale" ADD COLUMN     "amountPaid" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "balanceDue" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "depositPaid" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "paymentStatus" TEXT NOT NULL DEFAULT 'Unpaid';
+
+-- AlterTable
+ALTER TABLE "SaleLineItem" ADD COLUMN     "isCustom" BOOLEAN NOT NULL DEFAULT false;

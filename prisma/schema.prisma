@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-provider = "postgresql"
-url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Staff {
@@ -12,15 +12,15 @@ model Staff {
   name      String
   createdAt DateTime @default(now())
 
-  sales     Sale[]
-  quotes    Quote[]
+  sales  Sale[]
+  quotes Quote[]
 }
 
 model Sale {
-  id                Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  shopifyOrderId    String?
-  shopifyOrderName  String?
+  shopifyOrderId   String?
+  shopifyOrderName String?
 
   customerId        String?
   customerName      String
@@ -28,92 +28,98 @@ model Sale {
   customerVatNumber String?
   customerPhone     String?
 
-  address1          String?
-  address2          String?
-  city              String?
-  county            String?
-  postcode          String?
-  country           String?
+  address1 String?
+  address2 String?
+  city     String?
+  county   String?
+  postcode String?
+  country  String?
 
-  reference         String?
-  paymentMethod     String
+  reference     String?
+  paymentMethod String
 
-  subtotal          Float    @default(0)
-  discountTotal     Float    @default(0)
-  vatAmount         Float    @default(0)
-  total             Float    @default(0)
+  subtotal      Float   @default(0)
+  discountTotal Float   @default(0)
+  vatAmount     Float   @default(0)
+  total         Float   @default(0)
+  amountPaid    Float   @default(0)
+  balanceDue    Float   @default(0)
+  paymentStatus String  @default("Unpaid")
+  depositPaid   Boolean @default(false)
 
-  staffId           Int
-  staff             Staff    @relation(fields: [staffId], references: [id])
+  staffId Int
+  staff   Staff @relation(fields: [staffId], references: [id])
 
-  lineItems         SaleLineItem[]
+  lineItems SaleLineItem[]
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 model SaleLineItem {
-  id                Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  saleId            Int
-  sale              Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  saleId Int
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
-  shopifyVariantId  String?
-  title             String
-  sku               String?
-  quantity          Int      @default(1)
+  shopifyVariantId String?
+  title            String
+  sku              String?
+  quantity         Int     @default(1)
 
-  unitPrice         Float    @default(0)
-  discount          Float    @default(0)
-  lineTotal         Float    @default(0)
+  unitPrice Float @default(0)
+  discount  Float @default(0)
+  lineTotal Float @default(0)
 
-  createdAt         DateTime @default(now())
+  isCustom Boolean @default(false)
+
+  createdAt DateTime @default(now())
 }
 
 model Quote {
-  id                Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  customerName      String
-  customerEmail     String?
-  customerPhone     String?
+  customerName  String
+  customerEmail String?
+  customerPhone String?
 
-  address1          String?
-  address2          String?
-  city              String?
-  county            String?
-  postcode          String?
-  country           String?
+  address1 String?
+  address2 String?
+  city     String?
+  county   String?
+  postcode String?
+  country  String?
 
-  reference         String?
+  reference String?
 
-  subtotal          Float    @default(0)
-  discountTotal     Float    @default(0)
-  vatAmount         Float    @default(0)
-  total             Float    @default(0)
+  subtotal      Float @default(0)
+  discountTotal Float @default(0)
+  vatAmount     Float @default(0)
+  total         Float @default(0)
 
-  staffId           Int
-  staff             Staff    @relation(fields: [staffId], references: [id])
+  staffId Int
+  staff   Staff @relation(fields: [staffId], references: [id])
 
-  lineItems         QuoteLineItem[]
+  lineItems QuoteLineItem[]
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 model QuoteLineItem {
-  id                Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  quoteId           Int
-  quote             Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteId Int
+  quote   Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
-  shopifyVariantId  String?
-  title             String
-  sku               String?
+  shopifyVariantId String?
+  title            String
+  sku              String?
 
-  quantity          Int      @default(1)
-  unitPrice         Float    @default(0)
-  discount          Float    @default(0)
-  lineTotal         Float    @default(0)
+  quantity  Int   @default(1)
+  unitPrice Float @default(0)
+  discount  Float @default(0)
+  lineTotal Float @default(0)
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Session {
@@ -137,7 +143,7 @@ model Session {
 }
 
 model WorksOrder {
-  id                Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   customerId        String?
   customerName      String
@@ -145,61 +151,61 @@ model WorksOrder {
   customerPhone     String?
   customerVatNumber String?
 
-  address1          String?
-  address2          String?
-  city              String?
-  county            String?
-  postcode          String?
-  country           String?
+  address1 String?
+  address2 String?
+  city     String?
+  county   String?
+  postcode String?
+  country  String?
 
-  salespersonId     Int
-  assignedStaffId   Int?
+  salespersonId   Int
+  assignedStaffId Int?
 
-  serviceType       String
-  extraInfo         String?
+  serviceType String
+  extraInfo   String?
 
-  paymentMethod     String
-  paymentStatus     String   @default("unpaid")
-  amountPaid        Decimal  @default(0)
+  paymentMethod String
+  paymentStatus String  @default("unpaid")
+  amountPaid    Decimal @default(0)
 
-  subtotal          Decimal
-  discountTotal     Decimal  @default(0)
-  vatAmount         Decimal
-  total             Decimal
+  subtotal      Decimal
+  discountTotal Decimal @default(0)
+  vatAmount     Decimal
+  total         Decimal
 
-  status            String   @default("awaiting_scheduled")
-  scheduledDate     DateTime?
+  status        String    @default("awaiting_scheduled")
+  scheduledDate DateTime?
 
   xeroInvoiceId     String?
   xeroInvoiceNumber String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  lineItems         WorksOrderLineItem[]
+  lineItems WorksOrderLineItem[]
 }
 
 model WorksOrderLineItem {
-  id               Int      @id @default(autoincrement())
-  worksOrderId     Int
+  id           Int @id @default(autoincrement())
+  worksOrderId Int
 
   shopifyVariantId String?
   title            String
   sku              String?
   quantity         Int
   unitPrice        Decimal
-  discount         Decimal  @default(0)
+  discount         Decimal @default(0)
   lineTotal        Decimal
 
-  worksOrder       WorksOrder @relation(fields: [worksOrderId], references: [id])
+  worksOrder WorksOrder @relation(fields: [worksOrderId], references: [id])
 }
 
 model XeroConnection {
-  id           Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  tenantId     String
-  tokenSet     Json
+  tenantId String
+  tokenSet Json
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
