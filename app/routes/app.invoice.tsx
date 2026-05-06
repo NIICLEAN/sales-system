@@ -596,7 +596,7 @@ export default function InvoicePage() {
   return (
     <Page
       title="Create Invoice"
-      subtitle="Build an invoice, add products or custom items, and track partial payments."
+      subtitle="Search products on the left, build the invoice on the right."
     >
       <Layout>
         <Layout.Section>
@@ -785,16 +785,11 @@ export default function InvoicePage() {
                             {variant.product.title} - {variant.title}
                           </IndexTable.Cell>
 
-                          <IndexTable.Cell>
-                            {variant.sku || "-"}
-                          </IndexTable.Cell>
-
+                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
                           <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
 
                           <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>
-                              Add
-                            </Button>
+                            <Button onClick={() => addItem(variant)}>Add</Button>
                           </IndexTable.Cell>
                         </IndexTable.Row>
                       );
@@ -810,6 +805,149 @@ export default function InvoicePage() {
               </Card>
             )}
           </BlockStack>
+        </Layout.Section>
+
+        <Layout.Section variant="oneThird">
+          <div style={{ position: "sticky", top: 16 }}>
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    Invoice lines
+                  </Text>
+
+                  <Button onClick={addCustomItem}>Add custom item</Button>
+                </InlineStack>
+
+                <Divider />
+
+                {items.length === 0 ? (
+                  <Box paddingBlock="400">
+                    <Text as="p" tone="subdued">
+                      No items added yet.
+                    </Text>
+                  </Box>
+                ) : (
+                  <BlockStack gap="300">
+                    {items.map((item, index) => (
+                      <Card key={item.id || index}>
+                        <BlockStack gap="300">
+                          <InlineStack align="space-between" blockAlign="start">
+                            <InlineStack gap="200" blockAlign="center">
+                              {item.imageUrl && (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.title}
+                                  style={{
+                                    width: 42,
+                                    height: 42,
+                                    objectFit: "cover",
+                                    borderRadius: 8,
+                                    border: "1px solid #ddd",
+                                  }}
+                                />
+                              )}
+
+                              <div style={{ maxWidth: 210 }}>
+                                <Text as="p" fontWeight="bold">
+                                  {item.title}
+                                </Text>
+                                {item.sku && (
+                                  <Text as="p" tone="subdued">
+                                    SKU: {item.sku}
+                                  </Text>
+                                )}
+                              </div>
+                            </InlineStack>
+
+                            <Button
+                              tone="critical"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                removeItem(index);
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </InlineStack>
+
+                          {item.type === "custom" && (
+                            <BlockStack gap="300">
+                              <TextField
+                                label="Item name"
+                                value={String(item.title)}
+                                onChange={(value) =>
+                                  updateItem(index, "title", value)
+                                }
+                                autoComplete="off"
+                              />
+
+                              <TextField
+                                label="SKU"
+                                value={String(item.sku)}
+                                onChange={(value) =>
+                                  updateItem(index, "sku", value)
+                                }
+                                autoComplete="off"
+                              />
+                            </BlockStack>
+                          )}
+
+                          <InlineStack gap="200">
+                            <div style={{ width: 75 }}>
+                              <TextField
+                                label="Qty"
+                                value={String(item.quantity)}
+                                onChange={(value) =>
+                                  updateItem(index, "quantity", value)
+                                }
+                                autoComplete="off"
+                                type="number"
+                              />
+                            </div>
+
+                            <div style={{ width: 115 }}>
+                              <TextField
+                                label="Price"
+                                value={String(item.unitPrice)}
+                                onChange={(value) =>
+                                  updateItem(index, "unitPrice", value)
+                                }
+                                autoComplete="off"
+                                type="number"
+                                prefix="£"
+                              />
+                            </div>
+
+                            <div style={{ width: 115 }}>
+                              <TextField
+                                label="Discount"
+                                value={String(item.discount)}
+                                onChange={(value) =>
+                                  updateItem(index, "discount", value)
+                                }
+                                autoComplete="off"
+                                type="number"
+                                prefix="£"
+                              />
+                            </div>
+                          </InlineStack>
+
+                          <Text as="p" fontWeight="bold">
+                            Line total:{" "}
+                            {money(
+                              Number(item.unitPrice) * Number(item.quantity) -
+                                Number(item.discount || 0),
+                            )}
+                          </Text>
+                        </BlockStack>
+                      </Card>
+                    ))}
+                  </BlockStack>
+                )}
+              </BlockStack>
+            </Card>
+          </div>
         </Layout.Section>
       </Layout>
 
@@ -1016,159 +1154,6 @@ export default function InvoicePage() {
                       autoComplete="off"
                       placeholder="Customer PO, job ref, or note"
                     />
-                  </BlockStack>
-                </Card>
-
-                <Card>
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h2" variant="headingMd">
-                        Invoice lines
-                      </Text>
-
-                      <Button
-                        onClick={(event) => {
-                          event.preventDefault();
-                          addCustomItem();
-                        }}
-                      >
-                        Add custom item
-                      </Button>
-                    </InlineStack>
-
-                    <Divider />
-
-                    {items.length === 0 ? (
-                      <Box paddingBlock="400">
-                        <Text as="p" tone="subdued">
-                          No items added yet. Search for a Shopify product or
-                          add a custom item.
-                        </Text>
-                      </Box>
-                    ) : (
-                      <BlockStack gap="300">
-                        {items.map((item, index) => (
-                          <Card key={item.id || index}>
-                            <BlockStack gap="300">
-                              <InlineStack
-                                align="space-between"
-                                blockAlign="center"
-                              >
-                                <InlineStack gap="200" blockAlign="center">
-                                  {item.imageUrl && (
-                                    <img
-                                      src={item.imageUrl}
-                                      alt={item.title}
-                                      style={{
-                                        width: 44,
-                                        height: 44,
-                                        objectFit: "cover",
-                                        borderRadius: 8,
-                                        border: "1px solid #ddd",
-                                      }}
-                                    />
-                                  )}
-
-                                  <Text as="p" fontWeight="bold">
-                                    {item.title}
-                                  </Text>
-
-                                  {item.type === "custom" && (
-                                    <Badge tone="info">Custom</Badge>
-                                  )}
-                                </InlineStack>
-
-                                <Button
-                                  tone="critical"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    removeItem(index);
-                                  }}
-                                >
-                                  Remove
-                                </Button>
-                              </InlineStack>
-
-                              {item.type === "custom" && (
-                                <InlineStack gap="300">
-                                  <div style={{ flex: 1 }}>
-                                    <TextField
-                                      label="Item name"
-                                      value={String(item.title)}
-                                      onChange={(value) =>
-                                        updateItem(index, "title", value)
-                                      }
-                                      autoComplete="off"
-                                    />
-                                  </div>
-
-                                  <div style={{ width: 180 }}>
-                                    <TextField
-                                      label="SKU"
-                                      value={String(item.sku)}
-                                      onChange={(value) =>
-                                        updateItem(index, "sku", value)
-                                      }
-                                      autoComplete="off"
-                                    />
-                                  </div>
-                                </InlineStack>
-                              )}
-
-                              <InlineStack gap="300">
-                                <div style={{ width: 120 }}>
-                                  <TextField
-                                    label="Qty"
-                                    value={String(item.quantity)}
-                                    onChange={(value) =>
-                                      updateItem(index, "quantity", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                  />
-                                </div>
-
-                                <div style={{ width: 160 }}>
-                                  <TextField
-                                    label="Unit price"
-                                    value={String(item.unitPrice)}
-                                    onChange={(value) =>
-                                      updateItem(index, "unitPrice", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                    prefix="£"
-                                  />
-                                </div>
-
-                                <div style={{ width: 160 }}>
-                                  <TextField
-                                    label="Discount"
-                                    value={String(item.discount)}
-                                    onChange={(value) =>
-                                      updateItem(index, "discount", value)
-                                    }
-                                    autoComplete="off"
-                                    type="number"
-                                    prefix="£"
-                                  />
-                                </div>
-
-                                <div style={{ paddingTop: 28 }}>
-                                  <Text as="p" fontWeight="bold">
-                                    {money(
-                                      Number(item.unitPrice) *
-                                        Number(item.quantity) -
-                                        Number(item.discount || 0),
-                                    )}
-                                  </Text>
-                                </div>
-                              </InlineStack>
-                            </BlockStack>
-                          </Card>
-                        ))}
-                      </BlockStack>
-                    )}
                   </BlockStack>
                 </Card>
               </BlockStack>
