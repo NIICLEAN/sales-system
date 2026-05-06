@@ -30,6 +30,7 @@ export default function App() {
           <Link to="/app/invoices">Invoices</Link>
           <Link to="/app/quote">Create Quote</Link>
           <Link to="/app/quotes">Quotes</Link>
+          <Link to="/app/schedule">Schedule</Link>
           <Link to="/app/reports">Reports</Link>
           <Link to="/app/staff">Staff</Link>
         </NavMenu>
