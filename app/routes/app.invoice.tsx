@@ -37,20 +37,9 @@ function getPaymentStatus(total: any, amountPaid: any) {
   return "Paid";
 }
 
-function getShopifyUnitPrice(item: any, isVatExempt: boolean) {
-  const netUnitPrice = Number(item.unitPrice || 0);
-
-  return isVatExempt
-    ? roundMoney(netUnitPrice)
-    : roundMoney(netUnitPrice * (1 + VAT_RATE));
-}
-
-function getShopifyDiscount(item: any, isVatExempt: boolean) {
-  const netDiscount = Number(item.discount || 0);
-
-  return isVatExempt
-    ? roundMoney(netDiscount)
-    : roundMoney(netDiscount * (1 + VAT_RATE));
+function getGrossPrice(netPrice: any, isVatExempt: boolean) {
+  const net = Number(netPrice || 0);
+  return isVatExempt ? roundMoney(net) : roundMoney(net * (1 + VAT_RATE));
 }
 
 export async function loader({ request }: { request: Request }) {
@@ -348,33 +337,22 @@ export async function action({ request }: { request: Request }) {
       : undefined,
 
     lineItems: lineItems.map((item: any) => {
-      const shopifyUnitPrice = getShopifyUnitPrice(item, isVatExempt);
-      const shopifyDiscount = getShopifyDiscount(item, isVatExempt);
+      const grossUnitPrice = getGrossPrice(item.unitPrice, isVatExempt);
+      const grossDiscount = getGrossPrice(item.discount || 0, isVatExempt);
 
-      const base = {
+      return {
         quantity: Number(item.quantity),
-        originalUnitPrice: String(shopifyUnitPrice),
+        title: item.title || "Custom item",
+        sku: item.sku || undefined,
+        originalUnitPrice: String(grossUnitPrice),
         taxable: !isVatExempt,
-        appliedDiscount: shopifyDiscount
+        appliedDiscount: grossDiscount
           ? {
-              value: shopifyDiscount,
+              value: grossDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
           : null,
-      };
-
-      if (item.type === "custom") {
-        return {
-          ...base,
-          title: item.title || "Custom item",
-          sku: item.sku || undefined,
-        };
-      }
-
-      return {
-        ...base,
-        variantId: item.id,
       };
     }),
   };
@@ -501,13 +479,11 @@ export default function InvoicePage() {
     useLoaderData<typeof loader>();
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
-
   const [customerSearchTerm, setCustomerSearchTerm] = useState(
     customerSearch || "",
   );
 
   const [customerId, setCustomerId] = useState("");
-
   const [staffId, setStaffId] = useState(
     staff[0]?.id ? String(staff[0].id) : "",
   );
@@ -633,15 +609,10 @@ export default function InvoicePage() {
     );
 
     const netTotal = roundMoney(subtotal - discount);
-
     const vatAmount = customerVatNumber ? 0 : roundMoney(netTotal * VAT_RATE);
-
     const total = roundMoney(netTotal + vatAmount);
-
     const paid = roundMoney(Math.max(0, Number(amountPaid || 0)));
-
     const balanceDue = roundMoney(Math.max(total - paid, 0));
-
     const paymentStatus = getPaymentStatus(total, paid);
 
     return {
@@ -715,14 +686,8 @@ export default function InvoicePage() {
                         key={customer.id}
                         position={index}
                       >
-                        <IndexTable.Cell>
-                          {customer.displayName}
-                        </IndexTable.Cell>
-
-                        <IndexTable.Cell>
-                          {customer.email || "-"}
-                        </IndexTable.Cell>
-
+                        <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
+                        <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>
                           <Button onClick={() => selectCustomer(customer)}>
                             Use customer
@@ -792,7 +757,7 @@ export default function InvoicePage() {
                       { title: "Image" },
                       { title: "Product" },
                       { title: "SKU" },
-                      { title: "Price" },
+                      { title: "Net Price" },
                       { title: "Action" },
                     ]}
                     selectable={false}
@@ -851,16 +816,11 @@ export default function InvoicePage() {
                             {variant.product.title} - {variant.title}
                           </IndexTable.Cell>
 
-                          <IndexTable.Cell>
-                            {variant.sku || "-"}
-                          </IndexTable.Cell>
-
+                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
                           <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
 
                           <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>
-                              Add
-                            </Button>
+                            <Button onClick={() => addItem(variant)}>Add</Button>
                           </IndexTable.Cell>
                         </IndexTable.Row>
                       );
@@ -985,7 +945,7 @@ export default function InvoicePage() {
 
                             <div style={{ width: 160 }}>
                               <TextField
-                                label="Net price"
+                                label="Net price before VAT"
                                 value={String(item.unitPrice)}
                                 onChange={(value) =>
                                   updateItem(index, "unitPrice", value)
@@ -998,7 +958,7 @@ export default function InvoicePage() {
 
                             <div style={{ width: 160 }}>
                               <TextField
-                                label="Discount"
+                                label="Net discount"
                                 value={String(item.discount)}
                                 onChange={(value) =>
                                   updateItem(index, "discount", value)
@@ -1017,6 +977,16 @@ export default function InvoicePage() {
                                     Number(item.unitPrice) *
                                       Number(item.quantity) -
                                       Number(item.discount || 0),
+                                  ),
+                                )}
+                              </Text>
+
+                              <Text as="p" tone="subdued">
+                                Shopify unit price sent:{" "}
+                                {money(
+                                  getGrossPrice(
+                                    item.unitPrice,
+                                    Boolean(customerVatNumber),
                                   ),
                                 )}
                               </Text>
