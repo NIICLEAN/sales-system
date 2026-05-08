@@ -62,8 +62,11 @@ model Sale {
 model WorkSchedule {
   id Int @id @default(autoincrement())
 
-  saleId Int
-  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  saleId Int?
+  sale   Sale? @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  customInvoiceNumber String?
+  customCustomerName  String?
 
   workType WorkType
 
