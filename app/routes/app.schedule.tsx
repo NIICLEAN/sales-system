@@ -50,9 +50,22 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect("/app/schedule");
   }
 
+  const invoiceMode = String(formData.get("invoiceMode") || "shopify");
+  const customInvoiceNumber = String(
+    formData.get("customInvoiceNumber") || "",
+  ).trim();
+  const customCustomerName = String(
+    formData.get("customCustomerName") || "",
+  ).trim();
+
   await db.workSchedule.create({
     data: {
-      saleId: Number(formData.get("saleId")),
+      saleId:
+        invoiceMode === "shopify" ? Number(formData.get("saleId")) : null,
+      customInvoiceNumber:
+        invoiceMode === "custom" ? customInvoiceNumber : null,
+      customCustomerName:
+        invoiceMode === "custom" ? customCustomerName : null,
       workType: String(formData.get("workType")) as any,
       scheduledDate: new Date(String(formData.get("scheduledDate"))),
       assignedStaffId: Number(formData.get("assignedStaffId")),
@@ -89,6 +102,22 @@ function workTypeClass(workType: string) {
   return "job-default";
 }
 
+function invoiceLabel(item: any) {
+  if (item.sale) {
+    return item.sale.shopifyOrderName || `Invoice #${item.sale.id}`;
+  }
+
+  return item.customInvoiceNumber || "Custom invoice";
+}
+
+function customerLabel(item: any) {
+  if (item.sale) {
+    return item.sale.customerName;
+  }
+
+  return item.customCustomerName || "No customer name";
+}
+
 export default function SchedulePage() {
   const { sales, staff, schedules } = useLoaderData<typeof loader>();
 
@@ -100,7 +129,11 @@ export default function SchedulePage() {
   );
   const [viewStaffId, setViewStaffId] = useState("all");
 
+  const [invoiceMode, setInvoiceMode] = useState("shopify");
   const [saleId, setSaleId] = useState(String(sales[0]?.id || ""));
+  const [customInvoiceNumber, setCustomInvoiceNumber] = useState("");
+  const [customCustomerName, setCustomCustomerName] = useState("");
+
   const [workType, setWorkType] = useState("Repairs");
   const [scheduledDate, setScheduledDate] = useState(toDateInputValue(today));
   const [assignedStaffId, setAssignedStaffId] = useState(
@@ -109,7 +142,9 @@ export default function SchedulePage() {
   const [note, setNote] = useState("");
 
   const saleOptions = sales.map((sale) => ({
-    label: `${sale.shopifyOrderName || `Invoice #${sale.id}`} — ${sale.customerName}`,
+    label: `${sale.shopifyOrderName || `Invoice #${sale.id}`} — ${
+      sale.customerName
+    }`,
     value: String(sale.id),
   }));
 
@@ -140,9 +175,9 @@ export default function SchedulePage() {
         "Selected staff";
 
   return (
-  <Page
-  fullWidth
-  title="Works Calendar"
+    <Page
+      fullWidth
+      title="Works Calendar"
       primaryAction={{
         content: "Schedule Works",
         onAction: () => setModalOpen(true),
@@ -261,12 +296,11 @@ export default function SchedulePage() {
                               </div>
 
                               <div className="job-invoice">
-                                {item.sale.shopifyOrderName ||
-                                  `Invoice #${item.sale.id}`}
+                                {invoiceLabel(item)}
                               </div>
 
                               <div className="job-customer">
-                                {item.sale.customerName}
+                                {customerLabel(item)}
                               </div>
 
                               <div className="job-staff">
@@ -331,11 +365,9 @@ export default function SchedulePage() {
                     <div className="print-pill">
                       {workTypeLabel(item.workType)}
                     </div>
-                    <strong>
-                      {item.sale.shopifyOrderName || `Invoice #${item.sale.id}`}
-                    </strong>
+                    <strong>{invoiceLabel(item)}</strong>
                     <br />
-                    {item.sale.customerName}
+                    {customerLabel(item)}
                     <br />
                     Assigned: {item.assignedStaff.name}
                     {item.note ? (
@@ -362,7 +394,18 @@ export default function SchedulePage() {
           <Form method="post">
             <BlockStack gap="400">
               <input type="hidden" name="_intent" value="create" />
+              <input type="hidden" name="invoiceMode" value={invoiceMode} />
               <input type="hidden" name="saleId" value={saleId} />
+              <input
+                type="hidden"
+                name="customInvoiceNumber"
+                value={customInvoiceNumber}
+              />
+              <input
+                type="hidden"
+                name="customCustomerName"
+                value={customCustomerName}
+              />
               <input type="hidden" name="workType" value={workType} />
               <input type="hidden" name="scheduledDate" value={scheduledDate} />
               <input
@@ -373,11 +416,40 @@ export default function SchedulePage() {
               <input type="hidden" name="note" value={note} />
 
               <Select
-                label="Invoice"
-                options={saleOptions}
-                value={saleId}
-                onChange={setSaleId}
+                label="Invoice source"
+                options={[
+                  { label: "Shopify invoice", value: "shopify" },
+                  { label: "Custom / Xero invoice", value: "custom" },
+                ]}
+                value={invoiceMode}
+                onChange={setInvoiceMode}
               />
+
+              {invoiceMode === "shopify" ? (
+                <Select
+                  label="Invoice"
+                  options={saleOptions}
+                  value={saleId}
+                  onChange={setSaleId}
+                />
+              ) : (
+                <>
+                  <TextField
+                    label="Custom invoice number"
+                    value={customInvoiceNumber}
+                    onChange={setCustomInvoiceNumber}
+                    autoComplete="off"
+                    placeholder="e.g. XERO-1042"
+                  />
+
+                  <TextField
+                    label="Customer name"
+                    value={customCustomerName}
+                    onChange={setCustomCustomerName}
+                    autoComplete="off"
+                  />
+                </>
+              )}
 
               <Select
                 label="Work type"
@@ -435,9 +507,9 @@ export default function SchedulePage() {
             align-items: flex-end;
           }
 
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+          .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             border: 1px solid #dfe3e8;
             border-radius: 14px;
             overflow: hidden;
