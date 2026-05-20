@@ -89,7 +89,8 @@ model SaleLineItem {
   shopifyVariantId String?
   title            String
   sku              String?
-  quantity         Int     @default(1)
+  imageUrl         String?
+  quantity         Int @default(1)
 
   unitPrice Float @default(0)
   discount  Float @default(0)

@@ -464,6 +464,7 @@ const sale = await prisma.sale.create({
           shopifyVariantId: item.type === "custom" ? null : item.id,
           title: item.title,
           sku: item.sku,
+          imageUrl: item.imageUrl || null,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           discount: Number(item.discount || 0),

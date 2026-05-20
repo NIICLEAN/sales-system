@@ -36,20 +36,25 @@ export async function loader({
 
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
-
   const [searchParams] = useSearchParams();
 
-useEffect(() => {
-  if (searchParams.get("autoprint") !== "1") return;
+  const fulfilmentMethod = searchParams.get("fulfilmentMethod") || "Collected";
 
-  const timer = window.setTimeout(() => {
-    window.print();
-  }, 500);
+  const shouldPrintPackingSlip =
+    fulfilmentMethod === "Collecting" || fulfilmentMethod === "Delivery";
 
-  return () => window.clearTimeout(timer);
-}, [searchParams]);
+  useEffect(() => {
+    if (searchParams.get("autoprint") !== "1") return;
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [searchParams]);
 
   const amountPaid = Number(invoice.amountPaid || 0);
+
   const balanceDue =
     invoice.balanceDue !== null && invoice.balanceDue !== undefined
       ? Number(invoice.balanceDue)
@@ -67,10 +72,7 @@ useEffect(() => {
     event?.preventDefault();
     event?.stopPropagation();
 
-    const pdfUrl =
-      window.location.pathname.replace(/\/$/, "") +
-      "/pdf" +
-      window.location.search;
+    const pdfUrl = window.location.pathname.replace(/\/$/, "") + "/pdf";
 
     const link = document.createElement("a");
     link.href = pdfUrl;
@@ -309,6 +311,87 @@ useEffect(() => {
           padding-top: 15px;
         }
 
+        .packing-slip {
+          display: none;
+        }
+
+        .packing-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 28px;
+        }
+
+        .packing-title {
+          font-size: 22px;
+          font-weight: 700;
+        }
+
+        .packing-subtitle {
+          font-size: 12px;
+          margin-top: 4px;
+          color: #555;
+        }
+
+        .packing-order {
+          text-align: right;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .packing-from {
+          font-size: 11px;
+          line-height: 1.25;
+          margin-bottom: 22px;
+        }
+
+        .packing-line {
+          border-top: 1px solid #111;
+          margin: 18px 0;
+        }
+
+        .packing-section-title {
+          font-size: 12px;
+          font-weight: 700;
+          margin-bottom: 10px;
+        }
+
+        .packing-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 11px;
+        }
+
+        .packing-table th {
+          background: white;
+          color: #111;
+          border: 1px solid #ccc;
+          padding: 8px;
+          font-size: 11px;
+        }
+
+        .packing-table td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          vertical-align: middle;
+          font-size: 11px;
+        }
+
+        .packing-img {
+          width: 58px;
+          height: 58px;
+          object-fit: contain;
+        }
+
+        .packing-item {
+          font-weight: 700;
+        }
+
+        .packing-sku {
+          font-size: 10px;
+          color: #555;
+        }
+
         @media print {
           body {
             background: white;
@@ -324,6 +407,12 @@ useEffect(() => {
           .actions,
           button {
             display: none;
+          }
+
+          .packing-slip {
+            display: block;
+            page-break-before: always;
+            padding-top: 10px;
           }
         }
       `}</style>
@@ -479,7 +568,80 @@ useEffect(() => {
       </div>
 
       <div className="footer">Thank you for your business.</div>
+
+      {shouldPrintPackingSlip && (
+        <div className="packing-slip">
+          <div className="packing-header">
+            <div>
+              <div className="packing-title">Packing Slip</div>
+              <div className="packing-subtitle">Internal use only</div>
+            </div>
+
+            <div className="packing-order">
+              <div>Order INV-{invoice.id}</div>
+              <div>{new Date(invoice.createdAt).toLocaleDateString("en-GB")}</div>
+            </div>
+          </div>
+
+          <div className="packing-from">
+            <strong>From</strong>
+            <br />
+            NII Clean Products
+            <br />
+            96 Bushmills Road
+            <br />
+            Coleraine BT52 2BT
+            <br />
+            United Kingdom
+          </div>
+
+          <div className="packing-line" />
+
+          <div className="packing-section-title">Order Details</div>
+
+          <table className="packing-table">
+            <thead>
+              <tr>
+                <th style={{ width: 55 }}>Qty</th>
+                <th style={{ width: 90 }}>Image</th>
+                <th>Item</th>
+                <th style={{ width: 120 }}>Location</th>
+                <th style={{ width: 90 }}>Picked</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {invoice.lineItems.map((item: any) => (
+                <tr key={`packing-${item.id}`}>
+                  <td style={{ textAlign: "center", fontWeight: 700 }}>
+                    {item.quantity}
+                  </td>
+
+                  <td style={{ textAlign: "center" }}>
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        className="packing-img"
+                      />
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+
+                  <td>
+                    <div className="packing-item">{item.title}</div>
+                    <div className="packing-sku">SKU: {item.sku || "-"}</div>
+                  </td>
+
+                  <td style={{ textAlign: "center" }}>—</td>
+                  <td style={{ textAlign: "center" }}>☐</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
-
