@@ -1,4 +1,5 @@
-import { useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { useLoaderData, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
@@ -35,6 +36,18 @@ export async function loader({
 
 export default function PrintInvoicePage() {
   const { invoice, logoUrl } = useLoaderData<typeof loader>();
+
+  const [searchParams] = useSearchParams();
+
+useEffect(() => {
+  if (searchParams.get("autoprint") !== "1") return;
+
+  const timer = window.setTimeout(() => {
+    window.print();
+  }, 500);
+
+  return () => window.clearTimeout(timer);
+}, [searchParams]);
 
   const amountPaid = Number(invoice.amountPaid || 0);
   const balanceDue =

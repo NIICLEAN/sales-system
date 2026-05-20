@@ -199,6 +199,10 @@ export async function action({ request }: { request: Request }) {
   const reference = String(formData.get("reference") || "").trim();
   const paymentMethod = String(formData.get("paymentMethod") || "");
 
+  const fulfilmentMethod = String(
+  formData.get("fulfilmentMethod") || "Collected",
+);
+
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
 
   const amountPaid = roundMoney(
@@ -295,12 +299,13 @@ export async function action({ request }: { request: Request }) {
   const hasManualShippingAddress =
     address1 || address2 || city || county || postcode || country;
 
-  const tags = [
-    "Invoice App",
-    paymentMethod,
-    paymentStatus,
-    depositPaid ? "Deposit Paid" : null,
-  ].filter(Boolean) as string[];
+const tags = [
+  "Invoice App",
+  paymentMethod,
+  paymentStatus,
+  fulfilmentMethod,
+  depositPaid ? "Deposit Paid" : null,
+].filter(Boolean) as string[];
 
   const draftOrderInput = {
     customerId: shopifyCustomerId || undefined,
@@ -322,6 +327,7 @@ export async function action({ request }: { request: Request }) {
         key: "Pricing Basis",
         value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT",
       },
+      { key: "Order Type", value: fulfilmentMethod },
     ],
     shippingAddress: hasManualShippingAddress
       ? {
@@ -427,8 +433,8 @@ export async function action({ request }: { request: Request }) {
   const shopifyOrder =
     completeDraftJson.data.draftOrderComplete.draftOrder.order;
 
-  await prisma.sale.create({
-    data: {
+const sale = await prisma.sale.create({
+      data: {
       shopifyOrderId: shopifyOrder?.id || null,
       shopifyOrderName: shopifyOrder?.name || null,
       customerId: shopifyCustomerId,
@@ -471,7 +477,11 @@ export async function action({ request }: { request: Request }) {
     },
   });
 
-  return redirect("/app/invoices?success=1");
+ return redirect(
+  `/app/invoices/${sale.id}?autoprint=1&fulfilmentMethod=${encodeURIComponent(
+    fulfilmentMethod,
+  )}`,
+);
 }
 
 export default function InvoicePage() {
@@ -502,6 +512,7 @@ export default function InvoicePage() {
 
   const [reference, setReference] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [fulfilmentMethod, setFulfilmentMethod] = useState("Collected");
 
   const [items, setItems] = useState<any[]>([]);
   const [amountPaid, setAmountPaid] = useState("0");
@@ -519,6 +530,12 @@ export default function InvoicePage() {
     { label: "MyPos", value: "MyPos" },
     { label: "Bank Transfer", value: "Bank Transfer" },
   ];
+
+  const fulfilmentOptions = [
+  { label: "Collected", value: "Collected" },
+  { label: "Collecting", value: "Collecting" },
+  { label: "Delivery", value: "Delivery" },
+];
 
   function selectCustomer(customer: any) {
     const address = customer.defaultAddress || {};
@@ -1194,6 +1211,16 @@ export default function InvoicePage() {
                           options={paymentOptions}
                           value={paymentMethod}
                           onChange={setPaymentMethod}
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          label="Order type"
+                          name="fulfilmentMethod"
+                          options={fulfilmentOptions}
+                          value={fulfilmentMethod}
+                          onChange={setFulfilmentMethod}
                         />
                       </div>
                     </InlineStack>
