@@ -54,16 +54,19 @@ export async function loader({
   const productSearch = url.searchParams.get("productSearch") || "";
   const customerSearch = url.searchParams.get("customerSearch") || "";
 
+  const editInvoiceId = url.searchParams.get("editInvoiceId");
+  
+
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
   });
 
   let existingInvoice = null;
 
-if (params.invoiceId) {
+if (params.invoiceId || editInvoiceId) {
   existingInvoice = await prisma.sale.findUnique({
     where: {
-      id: Number(params.invoiceId),
+      id: Number(params.invoiceId || editInvoiceId),
     },
     include: {
       lineItems: true,
@@ -1291,12 +1294,12 @@ const [showAddress, setShowAddress] = useState(
 
                     <Button
                       onClick={(event) => {
-                        event.preventDefault();
-                        setShowAddress((open) => !open);
-                      }}
-                    >
-                      {showAddress ? "Hide address" : "Edit shipping address"}
-                    </Button>
+                      event.preventDefault();
+                      setShowAddress((open) => !open);
+                    }}
+                      > 
+                    {showAddress ? "Hide address" : "Edit shipping address"}
+                  </Button>
 
                     {showAddress && (
                       <BlockStack gap="300">

@@ -104,9 +104,7 @@ export default function InvoicesPage() {
                         </Button>
 
 <Button
-  onClick={() =>
-    navigate(`/app/invoices/${invoice.id}/edit`)
-  }
+  onClick={() => navigate(`/app/invoice?editInvoiceId=${invoice.id}`)}
 >
   Edit
 </Button>
