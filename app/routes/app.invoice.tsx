@@ -307,13 +307,14 @@ const tags = [
   depositPaid ? "Deposit Paid" : null,
 ].filter(Boolean) as string[];
 
-  const draftOrderInput = {
-    customerId: shopifyCustomerId || undefined,
-    email: customerEmail || undefined,
-    phone: customerPhone || undefined,
-    taxExempt: isVatExempt,
-    note: reference || undefined,
-    tags,
+const draftOrderInput = {
+  customerId: shopifyCustomerId || undefined,
+  email: customerEmail || undefined,
+  phone: customerPhone || undefined,
+  taxExempt: isVatExempt,
+  taxesIncluded: !isVatExempt, // ADD THIS LINE
+  note: reference || undefined,
+  tags,
     customAttributes: [
       { key: "Payment Method", value: paymentMethod },
       { key: "Payment Status", value: paymentStatus },

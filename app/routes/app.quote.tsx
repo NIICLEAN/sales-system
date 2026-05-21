@@ -108,7 +108,7 @@ const { admin } = await authenticate.admin(request);
   const vatAmount = netTotal * 0.2;
   const total = netTotal + vatAmount;
 
-  await prisma.quote.create({
+ const quote = await prisma.quote.create({
     data: {
       customerName,
       customerEmail,
@@ -141,7 +141,9 @@ const { admin } = await authenticate.admin(request);
     },
   });
 
-  return redirect("/app/quotes");
+  return redirect(
+  `/app/quotes/${quote.id}?autoprint=1`
+);
 }
 
 export default function QuotePage() {

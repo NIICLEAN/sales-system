@@ -1,5 +1,8 @@
-import { useLoaderData } from "react-router";
-import { authenticate } from "../shopify.server";
+import { useEffect } from "react";
+import {
+  useLoaderData,
+  useSearchParams,
+} from "react-router";import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({
@@ -32,14 +35,31 @@ export async function loader({
 export default function PrintQuotePage() {
   const { quote, logoUrl } = useLoaderData<typeof loader>();
 
+  const [searchParams] = useSearchParams();
+
+useEffect(() => {
+  if (
+    searchParams.get("autoprint") !== "1"
+  )
+    return;
+
+  const timer = window.setTimeout(() => {
+    window.print();
+  }, 500);
+
+  return () =>
+    window.clearTimeout(timer);
+}, [searchParams]);
+
 function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
   event?.preventDefault();
   event?.stopPropagation();
 
-  const pdfUrl =
-    window.location.pathname.replace(/\/$/, "") +
-    "/pdf" +
-    window.location.search;
+const pdfUrl =
+  window.location.pathname.replace(
+    /\/$/,
+    ""
+  ) + "/pdf";
 
   const link = document.createElement("a");
   link.href = pdfUrl;
@@ -89,14 +109,16 @@ function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
           color: #111;
         }
 
-        .header {
-          display: flex;
-          justify-content: space-between;
-          gap: 30px;
-          border-bottom: 3px solid #111;
-          padding-bottom: 25px;
-          margin-bottom: 30px;
-        }
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 30px;
+  background: white;
+  color: #111;
+  border-bottom: 3px solid #111827;
+  padding-bottom: 25px;
+  margin-bottom: 25px;
+}
 
         .business {
           text-align: right;
@@ -110,10 +132,14 @@ function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
           margin-bottom: 12px;
         }
 
-        h1 {
-          font-size: 34px;
-          margin: 0 0 10px;
-        }
+h1 {
+  font-size: 36px;
+  letter-spacing: 1px;
+  margin: 0;
+  color: #111827;
+  font-weight: 700;
+  text-transform: uppercase;
+} 
 
         h2 {
           margin: 0 0 10px;
@@ -152,8 +178,9 @@ function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
           margin-top: 25px;
         }
 
-        th {
-          background: #f1f1f1;
+th {
+  background: #111827;
+  color: white;
           text-align: left;
           padding: 12px;
           font-size: 14px;
@@ -184,13 +211,15 @@ function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
           padding: 7px 0;
         }
 
-        .grand-total {
-          border-top: 2px solid #111;
-          margin-top: 8px;
-          padding-top: 12px;
-          font-weight: bold;
-          font-size: 20px;
-        }
+.grand-total {
+  background: #111827;
+  color: white;
+  border-radius: 8px;
+  margin-top: 12px;
+  padding: 14px 10px;
+  font-weight: 700;
+  font-size: 20px;
+}
 
         .footer {
           margin-top: 50px;
