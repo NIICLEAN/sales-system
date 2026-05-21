@@ -25,6 +25,8 @@ export async function sendInvoiceEmail({
 }) {
   if (!to) return;
 
+  const logoUrl = process.env.BUSINESS_LOGO_URL || "";
+
   await transporter.sendMail({
     from: `"NII Clean Products" <${process.env.OUTLOOK_EMAIL}>`,
     to,
@@ -33,15 +35,29 @@ html: `
 <div style="font-family: Arial, sans-serif; background:#f5f7fa; padding:40px 20px;">
   <div style="max-width:700px; margin:0 auto; background:#ffffff; border-radius:14px; overflow:hidden; border:1px solid #e5e7eb;">
 
-    <div style="background:#111827; padding:30px;">
-      <h1 style="margin:0; color:white; font-size:28px;">
-        NII Clean Products
-      </h1>
+<div style="background:#111827; padding:30px; text-align:center;">
 
-      <p style="margin:8px 0 0; color:#d1d5db; font-size:14px;">
-        Invoice INV-${invoiceId}
-      </p>
-    </div>
+  ${
+    logoUrl
+      ? `
+      <img
+        src="${logoUrl}"
+        alt="NII Clean Products"
+        style="
+          max-width:220px;
+          max-height:90px;
+          object-fit:contain;
+          margin-bottom:18px;
+        "
+      />
+    `
+      : ""
+  }
+
+  <p style="margin:0; color:#d1d5db; font-size:14px;">
+    Invoice INV-${invoiceId}
+  </p>
+</div>
 
     <div style="padding:35px;">
       <p style="font-size:16px; color:#111;">
