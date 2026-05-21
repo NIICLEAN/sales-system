@@ -185,10 +185,10 @@ export async function action({
 }) {
   const { admin } = await authenticate.admin(request);
 
-  const isEditMode = Boolean(params.invoiceId);
+const formData = await request.formData();
 
-  const formData = await request.formData();
-
+const editInvoiceId = String(formData.get("editInvoiceId") || "").trim();
+const isEditMode = Boolean(params.invoiceId || editInvoiceId);
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -340,8 +340,7 @@ const tags = [
 ].filter(Boolean) as string[];
 
 if (isEditMode) {
-  const invoiceId = Number(params.invoiceId);
-
+const invoiceId = Number(params.invoiceId || editInvoiceId);
   await prisma.saleLineItem.deleteMany({
     where: {
       saleId: invoiceId,
@@ -1211,6 +1210,11 @@ const [showAddress, setShowAddress] = useState(
         <Form method="post">
           <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
           <input type="hidden" name="customerId" value={customerId} />
+          <input
+  type="hidden"
+  name="editInvoiceId"
+  value={existingInvoice?.id || ""}
+/>
 
           <Layout>
             <Layout.Section>
