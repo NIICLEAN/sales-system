@@ -377,8 +377,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
 
       lineItems: {
         create: lineItems.map((item: any) => ({
-          shopifyVariantId:
-            item.type === "custom" ? null : item.id,
+          shopifyVariantId: item.type === "custom" ? null : item.id,
           title: item.title,
           sku: item.sku,
           imageUrl: item.imageUrl || null,
@@ -386,8 +385,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           unitPrice: Number(item.unitPrice),
           discount: Number(item.discount || 0),
           lineTotal: roundMoney(
-            Number(item.unitPrice) *
-              Number(item.quantity) -
+            Number(item.unitPrice) * Number(item.quantity) -
               Number(item.discount || 0),
           ),
           isCustom: item.type === "custom",
@@ -395,6 +393,83 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       },
     },
   });
+
+  const existingSale = await prisma.sale.findUnique({
+    where: { id: invoiceId },
+    select: {
+      shopifyOrderId: true,
+    },
+  });
+
+  if (existingSale?.shopifyOrderId) {
+    const updateOrderResponse = await admin.graphql(
+      `
+        mutation UpdateOrder($input: OrderInput!) {
+          orderUpdate(input: $input) {
+            order {
+              id
+              name
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          input: {
+            id: existingSale.shopifyOrderId,
+            email: customerEmail || undefined,
+            phone: customerPhone || undefined,
+            note: reference || undefined,
+            tags,
+            customAttributes: [
+              { key: "Payment Method", value: paymentMethod },
+              { key: "Payment Status", value: paymentStatus },
+              { key: "Amount Paid", value: money(amountPaid) },
+              { key: "Balance Due", value: money(balanceDue) },
+              { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
+              { key: "Reference", value: reference || "-" },
+              { key: "Salesperson ID", value: String(staffId) },
+              { key: "VAT Number", value: customerVatNumber || "-" },
+              {
+                key: "Pricing Basis",
+                value: isVatExempt
+                  ? "VAT exempt net price"
+                  : "Net price + 20% VAT",
+              },
+              { key: "Order Type", value: fulfilmentMethod },
+            ],
+            shippingAddress: hasManualShippingAddress
+              ? {
+                  firstName: customerName,
+                  address1,
+                  address2,
+                  city,
+                  province: county,
+                  zip: postcode,
+                  country,
+                  phone: customerPhone || undefined,
+                }
+              : undefined,
+          },
+        },
+      },
+    );
+
+    const updateOrderJson = await updateOrderResponse.json();
+
+    const updateErrors =
+      updateOrderJson.data?.orderUpdate?.userErrors || [];
+
+    if (updateErrors.length > 0) {
+      throw new Response(updateErrors.map((e: any) => e.message).join(", "), {
+        status: 400,
+      });
+    }
+  }
 
   return redirect(`/app/invoices/${invoiceId}`);
 }
