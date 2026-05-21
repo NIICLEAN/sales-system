@@ -14,7 +14,6 @@ import {
   Text,
   Badge,
   Divider,
-  Checkbox,
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
@@ -24,13 +23,16 @@ import prisma from "../db.server";
 export async function loader({ request }: { request: Request }) {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
+
   const productSearch = url.searchParams.get("productSearch") || "";
+  const customerSearch = url.searchParams.get("customerSearch") || "";
 
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
   });
 
   let variants: any[] = [];
+  let customers: any[] = [];
 
   if (productSearch.trim()) {
     const productsResponse = await admin.graphql(
@@ -65,10 +67,50 @@ export async function loader({ request }: { request: Request }) {
       [];
   }
 
+  if (customerSearch.trim()) {
+    const customersResponse = await admin.graphql(
+      `
+        query Customers($query: String) {
+          customers(first: 10, query: $query) {
+            edges {
+              node {
+                id
+                firstName
+                lastName
+                email
+                phone
+                defaultAddress {
+                  address1
+                  address2
+                  city
+                  province
+                  zip
+                  country
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          query: customerSearch,
+        },
+      }
+    );
+
+    const customersJson = await customersResponse.json();
+
+    customers =
+      customersJson.data.customers.edges.map((edge: any) => edge.node) || [];
+  }
+
   return {
     staff,
     variants,
+    customers,
     productSearch,
+    customerSearch,
   };
 }
 
@@ -166,9 +208,12 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function QuotePage() {
-  const { staff, variants, productSearch } = useLoaderData<typeof loader>();
+  const { staff, variants, customers, productSearch, customerSearch } =
+    useLoaderData<typeof loader>();
 
-  const [searchTerm, setSearchTerm] = useState(productSearch || "");
+  const [productSearchTerm, setProductSearchTerm] = useState(productSearch || "");
+  const [customerSearchTerm, setCustomerSearchTerm] = useState(customerSearch || "");
+
   const [staffId, setStaffId] = useState(
     staff[0]?.id ? String(staff[0].id) : ""
   );
@@ -193,6 +238,27 @@ export default function QuotePage() {
     value: String(person.id),
   }));
 
+  function selectCustomer(customer: any) {
+    const fullName = [customer.firstName, customer.lastName]
+      .filter(Boolean)
+      .join(" ");
+
+    setCustomerName(fullName || "");
+    setCustomerEmail(customer.email || "");
+    setCustomerPhone(customer.phone || "");
+
+    const address = customer.defaultAddress;
+
+    if (address) {
+      setAddress1(address.address1 || "");
+      setAddress2(address.address2 || "");
+      setCity(address.city || "");
+      setCounty(address.province || "");
+      setPostcode(address.zip || "");
+      setCountry(address.country || "United Kingdom");
+    }
+  }
+
   function addItem(variant: any) {
     setItems((current) => [
       ...current,
@@ -202,6 +268,20 @@ export default function QuotePage() {
         sku: variant.sku || "",
         quantity: 1,
         unitPrice: Number(variant.price || 0),
+        discount: 0,
+      },
+    ]);
+  }
+
+  function addCustomItem() {
+    setItems((current) => [
+      ...current,
+      {
+        id: `custom-${Date.now()}`,
+        title: "Custom item",
+        sku: "",
+        quantity: 1,
+        unitPrice: 0,
         discount: 0,
       },
     ]);
@@ -252,6 +332,82 @@ export default function QuotePage() {
                 <Form method="get">
                   <BlockStack gap="300">
                     <Text as="h2" variant="headingMd">
+                      Find existing customer
+                    </Text>
+
+                    <InlineStack gap="300" blockAlign="end">
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Search customers"
+                          labelHidden
+                          name="customerSearch"
+                          value={customerSearchTerm}
+                          onChange={setCustomerSearchTerm}
+                          autoComplete="off"
+                          placeholder="Search by customer name, email, or phone"
+                        />
+                      </div>
+
+                      <Button submit>Search Customer</Button>
+                    </InlineStack>
+                  </BlockStack>
+                </Form>
+              </Card>
+
+              {customerSearch && customers.length > 0 && (
+                <Card>
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd">
+                      Customer results
+                    </Text>
+
+                    <IndexTable
+                      resourceName={{
+                        singular: "customer",
+                        plural: "customers",
+                      }}
+                      itemCount={customers.length}
+                      headings={[
+                        { title: "Customer" },
+                        { title: "Email" },
+                        { title: "Phone" },
+                        { title: "Action" },
+                      ]}
+                      selectable={false}
+                    >
+                      {customers.map((customer: any, index: number) => {
+                        const fullName = [customer.firstName, customer.lastName]
+                          .filter(Boolean)
+                          .join(" ");
+
+                        return (
+                          <IndexTable.Row
+                            id={customer.id}
+                            key={customer.id}
+                            position={index}
+                          >
+                            <IndexTable.Cell>
+                              {fullName || "Unnamed customer"}
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
+                            <IndexTable.Cell>{customer.phone || "-"}</IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <Button onClick={() => selectCustomer(customer)}>
+                                Select
+                              </Button>
+                            </IndexTable.Cell>
+                          </IndexTable.Row>
+                        );
+                      })}
+                    </IndexTable>
+                  </BlockStack>
+                </Card>
+              )}
+
+              <Card>
+                <Form method="get">
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd">
                       Search products
                     </Text>
 
@@ -261,8 +417,8 @@ export default function QuotePage() {
                           label="Product name or SKU"
                           labelHidden
                           name="productSearch"
-                          value={searchTerm}
-                          onChange={setSearchTerm}
+                          value={productSearchTerm}
+                          onChange={setProductSearchTerm}
                           autoComplete="off"
                           placeholder="Search by product name or SKU"
                         />
@@ -323,15 +479,15 @@ export default function QuotePage() {
                       Quote lines
                     </Text>
 
-                    <Button disabled>Add custom item</Button>
+                    <Button onClick={addCustomItem}>Add custom item</Button>
                   </InlineStack>
 
                   <Divider />
 
                   {items.length === 0 ? (
                     <Text as="p" tone="subdued">
-                      No items added yet. Search for a Shopify product above to
-                      start building the quote.
+                      No items added yet. Search for a Shopify product above or
+                      add a custom item.
                     </Text>
                   ) : (
                     <IndexTable
@@ -362,8 +518,32 @@ export default function QuotePage() {
                             key={`${item.id}-${index}`}
                             position={index}
                           >
-                            <IndexTable.Cell>{item.title}</IndexTable.Cell>
-                            <IndexTable.Cell>{item.sku || "-"}</IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <TextField
+                                label="Product"
+                                labelHidden
+                                value={item.title}
+                                onChange={(value) =>
+                                  updateItem(index, "title", value)
+                                }
+                                autoComplete="off"
+                              />
+                            </IndexTable.Cell>
+
+                            <IndexTable.Cell>
+                              <div style={{ width: 100 }}>
+                                <TextField
+                                  label="SKU"
+                                  labelHidden
+                                  value={item.sku}
+                                  onChange={(value) =>
+                                    updateItem(index, "sku", value)
+                                  }
+                                  autoComplete="off"
+                                />
+                              </div>
+                            </IndexTable.Cell>
+
                             <IndexTable.Cell>
                               <div style={{ width: 80 }}>
                                 <TextField
@@ -378,6 +558,7 @@ export default function QuotePage() {
                                 />
                               </div>
                             </IndexTable.Cell>
+
                             <IndexTable.Cell>
                               <div style={{ width: 120 }}>
                                 <TextField
@@ -393,6 +574,7 @@ export default function QuotePage() {
                                 />
                               </div>
                             </IndexTable.Cell>
+
                             <IndexTable.Cell>
                               <div style={{ width: 120 }}>
                                 <TextField
@@ -408,9 +590,9 @@ export default function QuotePage() {
                                 />
                               </div>
                             </IndexTable.Cell>
-                            <IndexTable.Cell>
-                              £{lineTotal.toFixed(2)}
-                            </IndexTable.Cell>
+
+                            <IndexTable.Cell>£{lineTotal.toFixed(2)}</IndexTable.Cell>
+
                             <IndexTable.Cell>
                               <Button
                                 tone="critical"
@@ -478,7 +660,9 @@ export default function QuotePage() {
                             fullWidth
                             onClick={() => setAddressOpen(!addressOpen)}
                           >
-                            {addressOpen ? "Hide shipping address" : "Edit shipping address"}
+                            {addressOpen
+                              ? "Hide shipping address"
+                              : "Edit shipping address"}
                           </Button>
 
                           {addressOpen && (
@@ -630,7 +814,6 @@ export default function QuotePage() {
                               £{totals.total.toFixed(2)}
                             </Text>
                           </InlineStack>
-
 
                           <Button
                             submit
