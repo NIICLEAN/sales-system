@@ -478,6 +478,24 @@ const sale = await prisma.sale.create({
     },
   });
 
+  if (customerEmail) {
+  try {
+    const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+    const { sendInvoiceEmail } = await import("../utils/email.server");
+
+    const pdfBuffer = await generateInvoicePdf(sale.id);
+
+    await sendInvoiceEmail({
+      to: customerEmail,
+      customerName,
+      invoiceId: sale.id,
+      pdfBuffer,
+    });
+  } catch (error) {
+    console.error("Invoice email failed:", error);
+  }
+}
+
  return redirect(
   `/app/invoices/${sale.id}?autoprint=1&fulfilmentMethod=${encodeURIComponent(
     fulfilmentMethod,
