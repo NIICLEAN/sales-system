@@ -141,6 +141,24 @@ const { admin } = await authenticate.admin(request);
     },
   });
 
+  if (customerEmail) {
+  try {
+    const { generateQuotePdf } = await import("../utils/quote-pdf.server");
+    const { sendQuoteEmail } = await import("../utils/email.server");
+
+    const pdfBuffer = await generateQuotePdf(quote.id);
+
+    await sendQuoteEmail({
+      to: customerEmail,
+      customerName,
+      quoteId: quote.id,
+      pdfBuffer,
+    });
+  } catch (error) {
+    console.error("Quote email failed:", error);
+  }
+}
+
   return redirect(
   `/app/quotes/${quote.id}?autoprint=1`
 );
