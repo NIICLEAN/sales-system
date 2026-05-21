@@ -312,7 +312,6 @@ const draftOrderInput = {
   email: customerEmail || undefined,
   phone: customerPhone || undefined,
   taxExempt: isVatExempt,
-  taxesIncluded: !isVatExempt, // ADD THIS LINE
   note: reference || undefined,
   tags,
     customAttributes: [
@@ -344,18 +343,21 @@ const draftOrderInput = {
       : undefined,
 
     lineItems: lineItems.map((item: any) => {
-      const grossUnitPrice = getGrossPrice(item.unitPrice, isVatExempt);
-      const grossDiscount = getGrossPrice(item.discount || 0, isVatExempt);
+      const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
+      const netDiscount = roundMoney(Number(item.discount || 0));
 
       return {
         quantity: Number(item.quantity),
         title: item.title || "Custom item",
         sku: item.sku || undefined,
-        originalUnitPrice: String(grossUnitPrice),
+        originalUnitPriceWithCurrency: {
+          amount: netUnitPrice.toFixed(2),
+          currencyCode: "GBP",
+        },
         taxable: !isVatExempt,
-        appliedDiscount: grossDiscount
+        appliedDiscount: netDiscount
           ? {
-              value: grossDiscount,
+              value: netDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
@@ -1020,13 +1022,8 @@ export default function InvoicePage() {
                               </Text>
 
                               <Text as="p" tone="subdued">
-                                Shopify unit price sent:{" "}
-                                {money(
-                                  getGrossPrice(
-                                    item.unitPrice,
-                                    Boolean(customerVatNumber),
-                                  ),
-                                )}
+                                Shopify net unit price sent:{" "}
+                                {money(Number(item.unitPrice || 0))}
                               </Text>
                             </div>
                           </InlineStack>
