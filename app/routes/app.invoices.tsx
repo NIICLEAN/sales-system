@@ -103,9 +103,13 @@ export default function InvoicesPage() {
                             View
                         </Button>
 
-                      <Button onClick={() => { navigate(`/app/invoices/${invoice.id}/print`); }}>
-                         Print
-                        </Button>
+<Button
+  onClick={() =>
+    navigate(`/app/invoices/${invoice.id}/edit`)
+  }
+>
+  Edit
+</Button>
                       </InlineStack>
                     </IndexTable.Cell>
                   </IndexTable.Row>

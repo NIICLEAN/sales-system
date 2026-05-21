@@ -42,8 +42,13 @@ function getGrossPrice(netPrice: any, isVatExempt: boolean) {
   return isVatExempt ? roundMoney(net) : roundMoney(net * (1 + VAT_RATE));
 }
 
-export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
+export async function loader({
+  request,
+  params,
+}: {
+  request: Request;
+  params: { invoiceId?: string };
+}) {  const { admin } = await authenticate.admin(request);
 
   const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
@@ -52,6 +57,20 @@ export async function loader({ request }: { request: Request }) {
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
   });
+
+  let existingInvoice = null;
+
+if (params.invoiceId) {
+  existingInvoice = await prisma.sale.findUnique({
+    where: {
+      id: Number(params.invoiceId),
+    },
+    include: {
+      lineItems: true,
+      staff: true,
+    },
+  });
+}
 
   let variants: any[] = [];
   let customers: any[] = [];
@@ -144,17 +163,27 @@ export async function loader({ request }: { request: Request }) {
     }
   }
 
-  return {
-    staff,
-    variants,
-    productSearch,
-    customers,
-    customerSearch,
-  };
+return {
+  staff,
+  variants,
+  productSearch,
+  customers,
+  customerSearch,
+  existingInvoice,
+};
 }
 
-export async function action({ request }: { request: Request }) {
+export async function action({
+  request,
+  params,
+}: {
+  request: Request;
+  params: { invoiceId?: string };
+}) {
   const { admin } = await authenticate.admin(request);
+
+  const isEditMode = Boolean(params.invoiceId);
+
   const formData = await request.formData();
 
   const staffId = Number(formData.get("staffId"));
@@ -306,6 +335,67 @@ const tags = [
   fulfilmentMethod,
   depositPaid ? "Deposit Paid" : null,
 ].filter(Boolean) as string[];
+
+if (isEditMode) {
+  const invoiceId = Number(params.invoiceId);
+
+  await prisma.saleLineItem.deleteMany({
+    where: {
+      saleId: invoiceId,
+    },
+  });
+
+  await prisma.sale.update({
+    where: {
+      id: invoiceId,
+    },
+    data: {
+      customerId: shopifyCustomerId,
+      customerName,
+      customerEmail,
+      customerVatNumber,
+      customerPhone,
+      address1,
+      address2,
+      city,
+      county,
+      postcode,
+      country,
+      reference,
+      paymentMethod,
+      subtotal,
+      discountTotal,
+      vatAmount,
+      total,
+      amountPaid,
+      balanceDue,
+      paymentStatus,
+      depositPaid,
+      staffId,
+
+      lineItems: {
+        create: lineItems.map((item: any) => ({
+          shopifyVariantId:
+            item.type === "custom" ? null : item.id,
+          title: item.title,
+          sku: item.sku,
+          imageUrl: item.imageUrl || null,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+          discount: Number(item.discount || 0),
+          lineTotal: roundMoney(
+            Number(item.unitPrice) *
+              Number(item.quantity) -
+              Number(item.discount || 0),
+          ),
+          isCustom: item.type === "custom",
+        })),
+      },
+    },
+  });
+
+  return redirect(`/app/invoices/${invoiceId}`);
+}
 
 const draftOrderInput = {
   customerId: shopifyCustomerId || undefined,
@@ -508,39 +598,115 @@ await sendInvoiceEmail({
 }
 
 export default function InvoicePage() {
-  const { staff, variants, productSearch, customers, customerSearch } =
-    useLoaderData<typeof loader>();
+const {
+  staff,
+  variants,
+  productSearch,
+  customers,
+  customerSearch,
+  existingInvoice,
+} = useLoaderData<typeof loader>();
+
+const isEditMode = Boolean(existingInvoice);
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
-  const [customerSearchTerm, setCustomerSearchTerm] = useState(
-    customerSearch || "",
-  );
 
-  const [customerId, setCustomerId] = useState("");
-  const [staffId, setStaffId] = useState(
-    staff[0]?.id ? String(staff[0].id) : "",
-  );
+const [customerSearchTerm, setCustomerSearchTerm] = useState(
+  customerSearch || "",
+);
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerVatNumber, setCustomerVatNumber] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+const [customerId, setCustomerId] = useState(
+  existingInvoice?.customerId || ""
+);
 
-  const [address1, setAddress1] = useState("");
-  const [address2, setAddress2] = useState("");
-  const [city, setCity] = useState("");
-  const [county, setCounty] = useState("");
-  const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("");
+const [staffId, setStaffId] = useState(
+  existingInvoice?.staffId
+    ? String(existingInvoice.staffId)
+    : staff[0]?.id
+      ? String(staff[0].id)
+      : "",
+);
 
-  const [reference, setReference] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
-  const [fulfilmentMethod, setFulfilmentMethod] = useState("Collected");
+const [customerName, setCustomerName] = useState(
+  existingInvoice?.customerName || "",
+);
 
-  const [items, setItems] = useState<any[]>([]);
-  const [amountPaid, setAmountPaid] = useState("0");
-  const [depositPaid, setDepositPaid] = useState(false);
-  const [showAddress, setShowAddress] = useState(false);
+const [customerEmail, setCustomerEmail] = useState(
+  existingInvoice?.customerEmail || "",
+);
+
+const [customerVatNumber, setCustomerVatNumber] = useState(
+  existingInvoice?.customerVatNumber || "",
+);
+
+const [customerPhone, setCustomerPhone] = useState(
+  existingInvoice?.customerPhone || "",
+);
+
+const [address1, setAddress1] = useState(
+  existingInvoice?.address1 || "",
+);
+
+const [address2, setAddress2] = useState(
+  existingInvoice?.address2 || "",
+);
+
+const [city, setCity] = useState(
+  existingInvoice?.city || "",
+);
+
+const [county, setCounty] = useState(
+  existingInvoice?.county || "",
+);
+
+const [postcode, setPostcode] = useState(
+  existingInvoice?.postcode || "",
+);
+
+const [country, setCountry] = useState(
+  existingInvoice?.country || "",
+);
+
+const [reference, setReference] = useState(
+  existingInvoice?.reference || "",
+);
+
+const [paymentMethod, setPaymentMethod] = useState(
+  existingInvoice?.paymentMethod || "Cash",
+);
+
+// leave collected for now
+const [fulfilmentMethod, setFulfilmentMethod] =
+  useState("Collected");
+
+const [items, setItems] = useState<any[]>(
+  existingInvoice?.lineItems?.map((item: any) => ({
+    type: item.isCustom ? "custom" : "shopify",
+    id: item.shopifyVariantId || `custom-${item.id}`,
+    title: item.title,
+    sku: item.sku || "",
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    discount: item.discount || 0,
+    imageUrl: item.imageUrl || "",
+  })) || [],
+);
+
+const [amountPaid, setAmountPaid] = useState(
+  String(existingInvoice?.amountPaid || 0),
+);
+
+const [depositPaid, setDepositPaid] = useState(
+  existingInvoice?.depositPaid || false,
+);
+
+const [showAddress, setShowAddress] = useState(
+  Boolean(
+    existingInvoice?.address1 ||
+      existingInvoice?.city ||
+      existingInvoice?.postcode,
+  ),
+);
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -668,8 +834,8 @@ export default function InvoicePage() {
   }, [items, customerVatNumber, amountPaid]);
 
   return (
-    <Page
-      title="Create Invoice"
+<Page
+  title={existingInvoice ? `Edit INV-${existingInvoice.id}` : "Create Invoice"}
       subtitle="Search products, add invoice lines, then complete the customer and payment details."
     >
       <Layout>
@@ -1345,9 +1511,9 @@ export default function InvoicePage() {
                       </Text>
                     </InlineStack>
 
-                    <Button submit variant="primary" fullWidth>
-                      Save Invoice
-                    </Button>
+<Button submit variant="primary" fullWidth>
+  {isEditMode ? "Save Changes" : "Save Invoice"}
+</Button>
                   </BlockStack>
                 </Card>
               </div>
