@@ -485,12 +485,13 @@ const sale = await prisma.sale.create({
 
     const pdfBuffer = await generateInvoicePdf(sale.id);
 
-    await sendInvoiceEmail({
-      to: customerEmail,
-      customerName,
-      invoiceId: sale.id,
-      pdfBuffer,
-    });
+await sendInvoiceEmail({
+  to: customerEmail,
+  customerName,
+  invoiceId: sale.id,
+  pdfBuffer,
+  paymentStatus,
+});
   } catch (error) {
     console.error("Invoice email failed:", error);
   }
