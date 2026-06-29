@@ -766,11 +766,7 @@ export default function QuotePage() {
                                 />
 
                                 <input type="hidden" name="vatType" value={"Standard"} />
-                                ]}
-                                value="30"
-                                onChange={() => {}}
-                              />
-                            </div>
+                              </div>
                           </InlineStack>
 
                           <TextField
