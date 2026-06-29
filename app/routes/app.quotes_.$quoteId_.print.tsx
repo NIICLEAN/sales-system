@@ -330,22 +330,22 @@ th {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(quote.subtotal).toFixed(2)}</span>
+          <span>£{Number(quote.subtotal ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(quote.discountTotal).toFixed(2)}</span>
+          <span>£{Number(quote.discountTotal ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(quote.vatAmount).toFixed(2)}</span>
+          <span>£{Number(quote.vatAmount ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{Number(quote.total).toFixed(2)}</span>
+          <span>£{Number(quote.total ?? 0).toFixed(2)}</span>
         </div>
       </div>
 

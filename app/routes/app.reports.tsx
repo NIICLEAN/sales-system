@@ -88,10 +88,10 @@ export async function loader({ request }: { request: Request }) {
     },
   });
 
-  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
-  const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount), 0);
+  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total ?? 0), 0);
+  const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount ?? 0), 0);
   const totalDiscount = sales.reduce(
-    (sum, sale) => sum + Number(sale.discountTotal),
+    (sum, sale) => sum + Number(sale.discountTotal ?? 0),
     0,
   );
   const averageSale = sales.length ? totalSales / sales.length : 0;
@@ -106,7 +106,7 @@ export async function loader({ request }: { request: Request }) {
     }
 
     paymentTotals[method].count += 1;
-    paymentTotals[method].total += Number(sale.total);
+    paymentTotals[method].total += Number(sale.total ?? 0);
   }
 
   return {
@@ -196,7 +196,7 @@ export default function ReportsPage() {
         Number(sale.subtotal).toFixed(2),
         Number(sale.discountTotal).toFixed(2),
         Number(sale.vatAmount).toFixed(2),
-        Number(sale.total).toFixed(2),
+        Number(sale.total ?? 0).toFixed(2),
         new Date(sale.createdAt).toLocaleString("en-GB"),
       ]),
     ];
@@ -303,7 +303,7 @@ export default function ReportsPage() {
                     Total Sales
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{Number(summary.totalSales).toFixed(2)}
+                    £{Number(summary.totalSales ?? 0).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -316,7 +316,7 @@ export default function ReportsPage() {
                     Average Sale
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{Number(summary.averageSale).toFixed(2)}
+                    £{Number(summary.averageSale ?? 0).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -333,7 +333,7 @@ export default function ReportsPage() {
                     VAT Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{Number(summary.totalVat).toFixed(2)}
+                    £{Number(summary.totalVat ?? 0).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -346,7 +346,7 @@ export default function ReportsPage() {
                     Discount Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{Number(summary.totalDiscount).toFixed(2)}
+                    £{Number(summary.totalDiscount ?? 0).toFixed(2)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -378,7 +378,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{method}</IndexTable.Cell>
                   <IndexTable.Cell>{data.count}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(data.total).toFixed(2)}
+                    £{Number(data.total ?? 0).toFixed(2)}
                   </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
@@ -457,7 +457,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(sale.total).toFixed(2)}
+                    £{Number(sale.total ?? 0).toFixed(2)}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}

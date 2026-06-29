@@ -523,7 +523,7 @@ const draftOrderInput = {
         title: item.title || "Custom item",
         sku: item.sku || undefined,
         originalUnitPriceWithCurrency: {
-          amount: netUnitPrice.toFixed(2),
+          amount: Number(netUnitPrice ?? 0).toFixed(2),
           currencyCode: "GBP",
         },
         // note: taxable should only be true for standard VAT treatment

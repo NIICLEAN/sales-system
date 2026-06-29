@@ -80,7 +80,7 @@ export async function action({ request, params }: { request: Request; params: { 
         title: item.title || "Custom item",
         sku: item.sku || undefined,
         originalUnitPriceWithCurrency: {
-          amount: netUnitPrice.toFixed(2),
+          amount: Number(netUnitPrice ?? 0).toFixed(2),
           currencyCode: "GBP",
         },
         taxable: vatType === "Standard",

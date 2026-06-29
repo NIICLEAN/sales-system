@@ -345,27 +345,27 @@ export default function PrintWorksOrderPage() {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(worksOrder.subtotal).toFixed(2)}</span>
+          <span>£{Number(worksOrder.subtotal ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(worksOrder.discountTotal).toFixed(2)}</span>
+          <span>£{Number(worksOrder.discountTotal ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(worksOrder.vatAmount).toFixed(2)}</span>
+          <span>£{Number(worksOrder.vatAmount ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{Number(worksOrder.total).toFixed(2)}</span>
+          <span>£{Number(worksOrder.total ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
           <span>Amount paid</span>
-          <span>£{Number(worksOrder.amountPaid).toFixed(2)}</span>
+          <span>£{Number(worksOrder.amountPaid ?? 0).toFixed(2)}</span>
         </div>
 
         <div className="totals-row">
@@ -373,7 +373,7 @@ export default function PrintWorksOrderPage() {
           <span>
             £
             {(
-              Number(worksOrder.total) - Number(worksOrder.amountPaid)
+              Number(worksOrder.total ?? 0) - Number(worksOrder.amountPaid ?? 0)
             ).toFixed(2)}
           </span>
         </div>

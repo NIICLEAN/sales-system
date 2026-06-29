@@ -594,7 +594,7 @@ export default function QuotePage() {
                               </div>
                             </IndexTable.Cell>
 
-                            <IndexTable.Cell>£{lineTotal.toFixed(2)}</IndexTable.Cell>
+                            <IndexTable.Cell>£{Number(lineTotal ?? 0).toFixed(2)}</IndexTable.Cell>
 
                             <IndexTable.Cell>
                               <Button
@@ -797,22 +797,22 @@ export default function QuotePage() {
                           <BlockStack gap="200">
                             <InlineStack align="space-between">
                               <Text as="span">Net subtotal</Text>
-                              <Text as="span">£{totals.subtotal.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.subtotal ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">Discount</Text>
-                              <Text as="span">£{totals.discount.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.discount ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">Net total</Text>
-                              <Text as="span">£{totals.netTotal.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.netTotal ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">VAT</Text>
-                              <Text as="span">£{totals.vatAmount.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.vatAmount ?? 0).toFixed(2)}</Text>
                             </InlineStack>
                           </BlockStack>
 
@@ -823,7 +823,7 @@ export default function QuotePage() {
                               Total
                             </Text>
                             <Text as="span" fontWeight="bold">
-                              £{totals.total.toFixed(2)}
+                              £{Number(totals.total ?? 0).toFixed(2)}
                             </Text>
                           </InlineStack>
 
