@@ -61,6 +61,7 @@ model Sale {
 
   lineItems SaleLineItem[]
 
+  payments Payment[] @relation("SalePayments")
   workSchedules WorkSchedule[]
 
   createdAt DateTime @default(now())
@@ -179,7 +180,7 @@ model Payment {
   id Int @id @default(autoincrement())
 
   saleId Int
-  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale   Sale @relation("SalePayments", fields: [saleId], references: [id], onDelete: Cascade)
 
   amount   Float
   method   PaymentMethod
