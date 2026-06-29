@@ -90,7 +90,7 @@ export default function InvoicesPage() {
                     <IndexTable.Cell>{invoice.paymentMethod}</IndexTable.Cell>
 
                     <IndexTable.Cell>
-                      £{invoice.total.toFixed(2)}
+                      £{Number(invoice.total ?? 0).toFixed(2)}
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>

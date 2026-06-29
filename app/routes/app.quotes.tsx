@@ -75,7 +75,7 @@ export default function QuotesPage() {
 
                     <IndexTable.Cell>{quote.customerName}</IndexTable.Cell>
                     <IndexTable.Cell>{quote.staff?.name || "-"}</IndexTable.Cell>
-                    <IndexTable.Cell>£{quote.total.toFixed(2)}</IndexTable.Cell>
+                    <IndexTable.Cell>£{Number(quote.total ?? 0).toFixed(2)}</IndexTable.Cell>
                     <IndexTable.Cell>
                       {new Date(quote.createdAt).toLocaleString()}
                     </IndexTable.Cell>

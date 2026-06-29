@@ -414,7 +414,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(sale.total).toFixed(2)}
+                    £{Number(sale.total ?? 0).toFixed(2)}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}

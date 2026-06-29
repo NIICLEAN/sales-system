@@ -223,7 +223,7 @@ export default function QuotePage() {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [customerVatNumber, setCustomerVatNumber] = useState("");
+    const [customerVatNumber, setCustomerVatNumber] = useState("");
 
   const [addressOpen, setAddressOpen] = useState(false);
   const [address1, setAddress1] = useState("");
