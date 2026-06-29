@@ -15,6 +15,7 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 
 function money(value: any) {
   return `£${Number(value || 0).toFixed(2)}`;
@@ -45,6 +46,176 @@ export async function loader({
     quote,
     logoUrl: process.env.BUSINESS_LOGO_URL || "",
   };
+}
+
+export async function action({ request, params }: { request: Request; params: { quoteId: string } }) {
+  const { admin } = await authenticate.admin(request);
+
+  const quoteId = Number(params.quoteId);
+
+  const quote = await prisma.quote.findUnique({
+    where: { id: quoteId },
+    include: { lineItems: true },
+  });
+
+  if (!quote) {
+    throw new Response("Quote not found", { status: 404 });
+  }
+
+  const vatType = (quote as any).vatType || "Standard";
+  const isVatExempt = vatType === "Exempt" || vatType === "CrossBorder";
+
+  const draftOrderInput: any = {
+    customerId: undefined,
+    email: quote.customerEmail || undefined,
+    phone: quote.customerPhone || undefined,
+    taxExempt: isVatExempt,
+    note: quote.reference || undefined,
+    tags: ["Quote Converted"],
+    lineItems: quote.lineItems.map((item: any) => {
+      const netUnitPrice = Math.round(Number(item.unitPrice || 0) * 100) / 100;
+
+      return {
+        quantity: Number(item.quantity || 1),
+        title: item.title || "Custom item",
+        sku: item.sku || undefined,
+        originalUnitPriceWithCurrency: {
+          amount: netUnitPrice.toFixed(2),
+          currencyCode: "GBP",
+        },
+        taxable: vatType === "Standard",
+        appliedDiscount: Number(item.discount || 0)
+          ? {
+              value: Number(item.discount || 0),
+              valueType: "FIXED_AMOUNT",
+              title: "Manual discount",
+            }
+          : null,
+      };
+    }),
+  };
+
+  const createDraftResponse = await admin.graphql(
+    `
+      mutation CreateDraftOrder($input: DraftOrderInput!) {
+        draftOrderCreate(input: $input) {
+          draftOrder { id name }
+          userErrors { field message }
+        }
+      }
+    `,
+    { variables: { input: draftOrderInput } },
+  );
+
+  const createDraftJson = await createDraftResponse.json();
+
+  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
+
+  if (createErrors.length > 0) {
+    throw new Response(createErrors.map((e: any) => e.message).join(", "), { status: 400 });
+  }
+
+  const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
+
+  const completeDraftResponse = await admin.graphql(
+    `
+      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
+        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
+          draftOrder { id order { id name } }
+          userErrors { field message }
+        }
+      }
+    `,
+    { variables: { id: draftOrderId, paymentPending: true } },
+  );
+
+  const completeDraftJson = await completeDraftResponse.json();
+
+  const completeErrors = completeDraftJson.data?.draftOrderComplete?.userErrors || [];
+
+  if (completeErrors.length > 0) {
+    throw new Response(completeErrors.map((e: any) => e.message).join(", "), { status: 400 });
+  }
+
+  const shopifyOrder = completeDraftJson.data.draftOrderComplete.draftOrder.order;
+
+  const sale = await prisma.sale.create({
+    data: {
+      shopifyOrderId: shopifyOrder?.id || null,
+      shopifyOrderName: shopifyOrder?.name || null,
+      customerId: null,
+      customerName: quote.customerName,
+      customerEmail: quote.customerEmail,
+      customerVatNumber: (quote as any).customerVatNumber || null,
+      customerPhone: quote.customerPhone,
+      address1: quote.address1,
+      address2: quote.address2,
+      city: quote.city,
+      county: quote.county,
+      postcode: quote.postcode,
+      country: quote.country,
+      reference: quote.reference,
+      paymentMethod: "Other",
+      subtotal: quote.subtotal,
+      discountTotal: quote.discountTotal,
+      vatAmount: quote.vatAmount,
+      total: quote.total,
+      amountPaid: 0,
+      balanceDue: quote.total,
+      paymentStatus: "Unpaid",
+      depositPaid: false,
+      vatType: quote.vatType as any,
+      staffId: quote.staffId,
+      lineItems: {
+        create: quote.lineItems.map((item: any) => ({
+          shopifyVariantId: item.shopifyVariantId || null,
+          title: item.title,
+          sku: item.sku,
+          imageUrl: null,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          discount: Number(item.discount || 0),
+          lineTotal: item.lineTotal,
+          isCustom: !item.shopifyVariantId,
+        })),
+      },
+    },
+  });
+
+  // Adjust inventory for non-custom items
+  try {
+    const variantAdjustments = quote.lineItems
+      .filter((li: any) => li.shopifyVariantId)
+      .map((li: any) => ({ id: li.shopifyVariantId, quantity: Number(li.quantity) }));
+
+    if (variantAdjustments.length > 0) {
+      await adjustInventoryForLineItems(admin, variantAdjustments);
+    }
+  } catch (err) {
+    console.error("Inventory adjustment failed on quote->invoice convert:", err);
+  }
+
+  // send invoice email if customer has email
+  if (quote.customerEmail) {
+    try {
+      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+      const { sendInvoiceEmail } = await import("../utils/email.server");
+
+      const pdfBuffer = await generateInvoicePdf(sale.id);
+
+      await sendInvoiceEmail({
+        to: quote.customerEmail,
+        customerName: quote.customerName,
+        invoiceId: sale.id,
+        pdfBuffer,
+        paymentStatus: "Unpaid",
+      });
+    } catch (err) {
+      console.error("Failed to send invoice email after conversion:", err);
+    }
+  }
+
+  return redirect(`/app/invoices/${sale.id}`);
 }
 
 export default function QuoteViewPage() {
@@ -98,6 +269,23 @@ export default function QuoteViewPage() {
                   >
                     Print / Download Quote
                   </Button>
+
+                  <form method="post" style={{ display: "inline" }}>
+                    <button
+                      type="submit"
+                      style={{
+                        background: "#006aff",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        marginRight: 8,
+                      }}
+                    >
+                      Convert to Invoice
+                    </button>
+                  </form>
 
                   <Button onClick={() => navigate("/app/quotes")}>Back</Button>
                 </InlineStack>

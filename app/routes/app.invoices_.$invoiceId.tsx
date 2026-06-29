@@ -21,6 +21,8 @@ export async function loader({
     include: {
       staff: true,
       lineItems: true,
+      // include recorded payments
+      payments: true,
     },
   });
 

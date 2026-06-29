@@ -19,6 +19,7 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 
 const VAT_RATE = 0.2;
 
@@ -201,7 +202,8 @@ const isEditMode = Boolean(params.invoiceId || editInvoiceId);
     formData.get("customerVatNumber") || "",
   ).trim();
 
-  const isVatExempt = Boolean(customerVatNumber);
+  const vatType = String(formData.get("vatType") || "Standard");
+  const isVatExempt = vatType === "Exempt" || vatType === "CrossBorder";
 
   let customerPhone = String(formData.get("customerPhone") || "").trim();
 
@@ -334,6 +336,7 @@ const isEditMode = Boolean(params.invoiceId || editInvoiceId);
 const tags = [
   "Invoice App",
   paymentMethod,
+    vatType,
   paymentStatus,
   fulfilmentMethod,
   depositPaid ? "Deposit Paid" : null,
@@ -356,6 +359,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       customerName,
       customerEmail,
       customerVatNumber,
+        vatType,
       customerPhone,
       address1,
       address2,
@@ -434,6 +438,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
               { key: "Reference", value: reference || "-" },
               { key: "Salesperson ID", value: String(staffId) },
               { key: "VAT Number", value: customerVatNumber || "-" },
+              { key: "VAT Type", value: vatType || "Standard" },
               {
                 key: "Pricing Basis",
                 value: isVatExempt
@@ -521,7 +526,8 @@ const draftOrderInput = {
           amount: netUnitPrice.toFixed(2),
           currencyCode: "GBP",
         },
-        taxable: !isVatExempt,
+        // note: taxable should only be true for standard VAT treatment
+        taxable: vatType === "Standard",
         appliedDiscount: netDiscount
           ? {
               value: netDiscount,
@@ -628,6 +634,7 @@ const sale = await prisma.sale.create({
       balanceDue,
       paymentStatus,
       depositPaid,
+      vatType,
       staffId,
       lineItems: {
         create: lineItems.map((item: any) => ({
@@ -648,6 +655,19 @@ const sale = await prisma.sale.create({
     },
   });
 
+  // Adjust Shopify inventory for any non-custom line items
+  try {
+    const variantAdjustments = lineItems
+      .filter((i: any) => i.type !== "custom" && i.id)
+      .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
+
+    if (variantAdjustments.length > 0) {
+      await adjustInventoryForLineItems(admin, variantAdjustments);
+    }
+  } catch (err) {
+    console.error("Inventory adjustment failed:", err);
+  }
+
   if (customerEmail) {
   try {
     const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
@@ -665,6 +685,23 @@ await sendInvoiceEmail({
   } catch (error) {
     console.error("Invoice email failed:", error);
   }
+}
+
+// record payment if any amount was paid
+try {
+  if (amountPaid > 0) {
+    await prisma.payment.create({
+      data: {
+        saleId: sale.id,
+        amount: amountPaid,
+        method: (paymentMethod as any) || "Other",
+        provider: paymentMethod,
+        reference: reference || null,
+      },
+    });
+  }
+} catch (err) {
+  console.error("Failed to record payment:", err);
 }
 
  return redirect(
@@ -714,6 +751,10 @@ const [customerEmail, setCustomerEmail] = useState(
 
 const [customerVatNumber, setCustomerVatNumber] = useState(
   existingInvoice?.customerVatNumber || "",
+);
+
+const [vatType, setVatType] = useState(
+  (existingInvoice?.vatType as any) || "Standard",
 );
 
 const [customerPhone, setCustomerPhone] = useState(
@@ -892,7 +933,9 @@ const [showAddress, setShowAddress] = useState(
     );
 
     const netTotal = roundMoney(subtotal - discount);
-    const vatAmount = customerVatNumber ? 0 : roundMoney(netTotal * VAT_RATE);
+    const vatAmount = (vatType === "Exempt" || vatType === "CrossBorder")
+      ? 0
+      : roundMoney(netTotal * VAT_RATE);
     const total = roundMoney(netTotal + vatAmount);
     const paid = roundMoney(Math.max(0, Number(amountPaid || 0)));
     const balanceDue = roundMoney(Math.max(total - paid, 0));
@@ -908,7 +951,7 @@ const [showAddress, setShowAddress] = useState(
       balanceDue,
       paymentStatus,
     };
-  }, [items, customerVatNumber, amountPaid]);
+  }, [items, vatType, amountPaid]);
 
   return (
 <Page
@@ -1368,6 +1411,20 @@ const [showAddress, setShowAddress] = useState(
                           autoComplete="off"
                           placeholder="Leave blank to charge 20% VAT"
                         />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          label="VAT type"
+                          options={[
+                            { label: "Standard 20%", value: "Standard" },
+                            { label: "VAT exempt", value: "Exempt" },
+                            { label: "Cross-border", value: "CrossBorder" },
+                          ]}
+                          onChange={setVatType}
+                          value={vatType}
+                        />
+
+                        <input type="hidden" name="vatType" value={vatType} />
                       </div>
                     </InlineStack>
 

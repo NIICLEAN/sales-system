@@ -150,7 +150,8 @@ export async function action({ request }: { request: Request }) {
   );
 
   const netTotal = subtotal - discountTotal;
-  const vatAmount = netTotal * 0.2;
+  const vatType = String(formData.get("vatType") || "Standard");
+  const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
 
   const quote = await prisma.quote.create({
@@ -169,6 +170,7 @@ export async function action({ request }: { request: Request }) {
       discountTotal,
       vatAmount,
       total,
+      vatType: vatType as any,
       staffId,
       lineItems: {
         create: lineItems.map((item: any) => ({
@@ -744,13 +746,26 @@ export default function QuotePage() {
                             </div>
 
                             <div style={{ flex: 1 }}>
-                              <Select
-                                label="Quote valid for"
-                                options={[
-                                  { label: "7 days", value: "7" },
-                                  { label: "14 days", value: "14" },
-                                  { label: "30 days", value: "30" },
-                                  { label: "60 days", value: "60" },
+                                <TextField
+                                  label="VAT number"
+                                  name="customerVatNumber"
+                                  value={customerVatNumber}
+                                  onChange={setCustomerVatNumber}
+                                  autoComplete="off"
+                                />
+
+                                <Select
+                                  label="VAT type"
+                                  options={[
+                                    { label: "Standard 20%", value: "Standard" },
+                                    { label: "VAT exempt", value: "Exempt" },
+                                    { label: "Cross-border", value: "CrossBorder" },
+                                  ]}
+                                  onChange={() => {}}
+                                  value={"Standard"}
+                                />
+
+                                <input type="hidden" name="vatType" value={"Standard"} />
                                 ]}
                                 value="30"
                                 onChange={() => {}}
