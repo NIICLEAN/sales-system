@@ -4,6 +4,7 @@ import {
   Page,
   Layout,
   Card,
+  Banner,
   Text,
   BlockStack,
   InlineStack,
@@ -16,24 +17,34 @@ import { useMemo, useState } from "react";
 import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const sales = await db.sale.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  try {
+    const sales = await db.sale.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
 
-  const staff = await db.staff.findMany({
-    orderBy: { name: "asc" },
-  });
+    const staff = await db.staff.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  const schedules = await db.workSchedule.findMany({
-    include: {
-      sale: true,
-      assignedStaff: true,
-    },
-    orderBy: { scheduledDate: "asc" },
-  });
+    const schedules = await db.workSchedule.findMany({
+      include: {
+        sale: true,
+        assignedStaff: true,
+      },
+      orderBy: { scheduledDate: "asc" },
+    });
 
-  return { sales, staff, schedules };
+    return { sales, staff, schedules, error: null };
+  } catch (error) {
+    console.error("Failed to load schedule:", error);
+    return {
+      sales: [],
+      staff: [],
+      schedules: [],
+      error: "Schedule could not be loaded right now.",
+    };
+  }
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -119,7 +130,7 @@ function customerLabel(item: any) {
 }
 
 export default function SchedulePage() {
-  const { sales, staff, schedules } = useLoaderData<typeof loader>();
+  const { sales, staff, schedules, error } = useLoaderData<typeof loader>();
 
   const today = new Date();
 
@@ -192,6 +203,8 @@ export default function SchedulePage() {
       <div className="screen-only">
         <Layout>
           <Layout.Section>
+            {error ? <Banner tone="critical">{error}</Banner> : null}
+
             <Card>
               <BlockStack gap="500">
                 <InlineStack gap="400" align="space-between" blockAlign="end">
@@ -304,7 +317,7 @@ export default function SchedulePage() {
                               </div>
 
                               <div className="job-staff">
-                                {item.assignedStaff.name}
+                                {item.assignedStaff?.name || "Unassigned"}
                               </div>
 
                               {item.note ? (
@@ -369,7 +382,7 @@ export default function SchedulePage() {
                     <br />
                     {customerLabel(item)}
                     <br />
-                    Assigned: {item.assignedStaff.name}
+                    Assigned: {item.assignedStaff?.name || "Unassigned"}
                     {item.note ? (
                       <div className="print-note">{item.note}</div>
                     ) : null}
