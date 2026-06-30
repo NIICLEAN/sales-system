@@ -255,7 +255,13 @@ export default function QuotePage() {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-    const [customerVatNumber, setCustomerVatNumber] = useState("");
+  const [customerVatNumber, setCustomerVatNumber] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
 
   const [addressOpen, setAddressOpen] = useState(false);
   const [address1, setAddress1] = useState("");
@@ -278,9 +284,17 @@ export default function QuotePage() {
       .filter(Boolean)
       .join(" ");
 
+    const selectedName = fullName || "Unnamed customer";
+
     setCustomerName(fullName || "");
     setCustomerEmail(customer.email || "");
     setCustomerPhone(customer.phone || "");
+    setSelectedCustomer({
+      id: String(customer.id || ""),
+      name: selectedName,
+      email: customer.email || "",
+      phone: customer.phone || "",
+    });
 
     const address = customer.defaultAddress;
 
@@ -292,6 +306,10 @@ export default function QuotePage() {
       setPostcode(address.zip || "");
       setCountry(address.country || "United Kingdom");
     }
+  }
+
+  function clearSelectedCustomer() {
+    setSelectedCustomer(null);
   }
 
   function addItem(variant: any) {
@@ -707,6 +725,42 @@ export default function QuotePage() {
                           <Text as="h2" variant="headingMd">
                             Customer details
                           </Text>
+
+                          {selectedCustomer && (
+                            <div
+                              style={{
+                                padding: 12,
+                                border: "1px solid #8c9196",
+                                borderRadius: 8,
+                                background: "#f6f6f7",
+                              }}
+                            >
+                              <InlineStack align="space-between" blockAlign="center">
+                                <BlockStack gap="100">
+                                  <InlineStack gap="200" blockAlign="center">
+                                    <Badge tone="success">Selected customer</Badge>
+                                    <Text as="span" tone="subdued">
+                                      {selectedCustomer.id}
+                                    </Text>
+                                  </InlineStack>
+
+                                  <Text as="p" fontWeight="bold">
+                                    {selectedCustomer.name}
+                                  </Text>
+
+                                  <Text as="p" tone="subdued">
+                                    {selectedCustomer.email || "No email"}
+                                    {" • "}
+                                    {selectedCustomer.phone || "No phone"}
+                                  </Text>
+                                </BlockStack>
+
+                                <Button variant="plain" onClick={clearSelectedCustomer}>
+                                  Clear selection
+                                </Button>
+                              </InlineStack>
+                            </div>
+                          )}
 
                           <InlineStack gap="300">
                             <div style={{ flex: 1 }}>
