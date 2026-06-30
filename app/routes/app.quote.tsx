@@ -1,5 +1,5 @@
 import { Form, useLoaderData, redirect } from "react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AppProvider,
   Page,
@@ -273,6 +273,7 @@ export default function QuotePage() {
 
   const [reference, setReference] = useState("");
   const [items, setItems] = useState<any[]>([]);
+  const productSearchRef = useRef<HTMLDivElement | null>(null);
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -306,6 +307,14 @@ export default function QuotePage() {
       setPostcode(address.zip || "");
       setCountry(address.country || "United Kingdom");
     }
+
+    // Move the user directly to product selection after picking a customer.
+    window.setTimeout(() => {
+      productSearchRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   }
 
   function clearSelectedCustomer() {
@@ -460,6 +469,7 @@ export default function QuotePage() {
               )}
 
               <Card>
+                <div ref={productSearchRef} />
                 <Form method="get">
                   <BlockStack gap="300">
                     <Text as="h2" variant="headingMd">
