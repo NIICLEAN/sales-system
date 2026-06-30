@@ -502,82 +502,90 @@ export default function QuotePage() {
                       Search results
                     </Text>
 
-                    <IndexTable
-                      resourceName={{
-                        singular: "product",
-                        plural: "products",
+                    <div
+                      style={{
+                        maxHeight: 460,
+                        overflowY: "auto",
+                        overflowX: "auto",
                       }}
-                      itemCount={variants.length}
-                      headings={[
-                        { title: "Image" },
-                        { title: "Product" },
-                        { title: "SKU" },
-                        { title: "Price" },
-                        { title: "Action" },
-                      ]}
-                      selectable={false}
                     >
-                      {variants.map((variant: any, index: number) => (
-                        <IndexTable.Row
-                          id={variant.id}
-                          key={variant.id}
-                          position={index}
-                        >
-                          <IndexTable.Cell>
-                            {(() => {
-                              const imageUrl =
-                                variant.image?.url ||
-                                variant.product?.featuredImage?.url;
-                              const imageAlt =
-                                variant.image?.altText ||
-                                variant.product?.featuredImage?.altText ||
-                                variant.product?.title ||
-                                "Product image";
+                      <IndexTable
+                        resourceName={{
+                          singular: "product",
+                          plural: "products",
+                        }}
+                        itemCount={variants.length}
+                        headings={[
+                          { title: "Image" },
+                          { title: "Product" },
+                          { title: "SKU" },
+                          { title: "Price" },
+                          { title: "Action" },
+                        ]}
+                        selectable={false}
+                      >
+                        {variants.map((variant: any, index: number) => (
+                          <IndexTable.Row
+                            id={variant.id}
+                            key={variant.id}
+                            position={index}
+                          >
+                            <IndexTable.Cell>
+                              {(() => {
+                                const imageUrl =
+                                  variant.image?.url ||
+                                  variant.product?.featuredImage?.url;
+                                const imageAlt =
+                                  variant.image?.altText ||
+                                  variant.product?.featuredImage?.altText ||
+                                  variant.product?.title ||
+                                  "Product image";
 
-                              return imageUrl ? (
-                                <img
-                                  src={imageUrl}
-                                  alt={imageAlt}
-                                  style={{
-                                    width: 56,
-                                    height: 56,
-                                    objectFit: "cover",
-                                    borderRadius: 8,
-                                    border: "1px solid #ddd",
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    width: 56,
-                                    height: 56,
-                                    borderRadius: 8,
-                                    border: "1px solid #ddd",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: 11,
-                                    color: "#777",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  No image
-                                </div>
-                              );
-                            })()}
-                          </IndexTable.Cell>
+                                return imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt={imageAlt}
+                                    style={{
+                                      width: 56,
+                                      height: 56,
+                                      objectFit: "cover",
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 11,
+                                      color: "#777",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    No image
+                                  </div>
+                                );
+                              })()}
+                            </IndexTable.Cell>
 
-                          <IndexTable.Cell>
-                            {variant.product.title} - {variant.title}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                          <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                          <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>Add</Button>
-                          </IndexTable.Cell>
-                        </IndexTable.Row>
-                      ))}
-                    </IndexTable>
+                            <IndexTable.Cell>
+                              {variant.product.title} - {variant.title}
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                            <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <Button onClick={() => addItem(variant)}>Add</Button>
+                            </IndexTable.Cell>
+                          </IndexTable.Row>
+                        ))}
+                      </IndexTable>
+                    </div>
                   </BlockStack>
                 </Card>
               )}
