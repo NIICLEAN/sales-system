@@ -101,8 +101,8 @@ const { redirect } = await authenticate.admin(request);
   return redirect("/app/works/scheduled");
 }
 
-function openPrint() {
-  const url = `/app/works/${worksOrder.id}/print`;
+function openPrint(worksOrderId: number) {
+  const url = `/app/works/${worksOrderId}/print`;
 
   if (window.top) {
     window.top.location.href = url;
@@ -112,7 +112,7 @@ function openPrint() {
 }
 
 function formatMoney(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 function formatDate(value: Date | string | null) {
@@ -168,7 +168,7 @@ export default function WorksOrderDetailPage() {
       }}
 primaryAction={{
   content: "Print",
-  onAction: openPrint,
+  onAction: () => openPrint(worksOrder.id),
 }}
     >
       <Layout>
@@ -340,7 +340,7 @@ primaryAction={{
                   Save Schedule
                 </Button>
 
-         <Button onClick={openPrint}>Print Works Order</Button>
+         <Button onClick={() => openPrint(worksOrder.id)}>Print Works Order</Button>
               </BlockStack>
             </Form>
           </Card>

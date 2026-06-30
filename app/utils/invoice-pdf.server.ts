@@ -3,7 +3,7 @@ import puppeteer from "puppeteer-core";
 import { Buffer } from "node:buffer";
 
 function money(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 function safe(value: any) {

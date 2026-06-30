@@ -51,6 +51,10 @@ useEffect(() => {
     window.clearTimeout(timer);
 }, [searchParams]);
 
+function formatCurrency(value: any) {
+  return `£${Number(value ?? 0).toFixed(2)}`;
+}
+
 function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
   event?.preventDefault();
   event?.stopPropagation();
@@ -319,9 +323,9 @@ th {
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
-              <td className="right">£{Number(item.discount).toFixed(2)}</td>
-              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
+              <td className="right">{formatCurrency(item.unitPrice)}</td>
+              <td className="right">{formatCurrency(item.discount)}</td>
+              <td className="right">{formatCurrency(item.lineTotal)}</td>
             </tr>
           ))}
         </tbody>
@@ -330,22 +334,22 @@ th {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(quote.subtotal ?? 0).toFixed(2)}</span>
+          <span>{formatCurrency(quote.subtotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(quote.discountTotal ?? 0).toFixed(2)}</span>
+          <span>{formatCurrency(quote.discountTotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(quote.vatAmount ?? 0).toFixed(2)}</span>
+          <span>{formatCurrency(quote.vatAmount)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{Number(quote.total ?? 0).toFixed(2)}</span>
+          <span>{formatCurrency(quote.total)}</span>
         </div>
       </div>
 

@@ -23,7 +23,7 @@ import { adjustInventoryForLineItems } from "../services/shopifyInventory.server
 
 const VAT_RATE = 0.2;
 
-const money = (value: number) => `£${Number(value || 0).toFixed(2)}`;
+const money = (value: number) => `£${Number(value ?? 0).toFixed(2)}`;
 
 function roundMoney(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
@@ -149,7 +149,7 @@ if (params.invoiceId || editInvoiceId) {
         },
       );
 
-      const customersJson = await customersResponse.json();
+      const customersJson = (await customersResponse.json()) as any;
 
       if (customersJson.errors) {
         console.error(
@@ -359,7 +359,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       customerName,
       customerEmail,
       customerVatNumber,
-        vatType,
+      vatType: vatType as any,
       customerPhone,
       address1,
       address2,
@@ -634,7 +634,7 @@ const sale = await prisma.sale.create({
       balanceDue,
       paymentStatus,
       depositPaid,
-      vatType,
+      vatType: vatType as any,
       staffId,
       lineItems: {
         create: lineItems.map((item: any) => ({
@@ -1221,8 +1221,7 @@ const [showAddress, setShowAddress] = useState(
 
                             <Button
                               tone="critical"
-                              onClick={(event) => {
-                                event.preventDefault();
+                              onClick={() => {
                                 removeItem(index);
                               }}
                             >
@@ -1346,8 +1345,7 @@ const [showAddress, setShowAddress] = useState(
 
                       {customerId && (
                         <Button
-                          onClick={(event) => {
-                            event.preventDefault();
+                          onClick={() => {
                             clearSelectedCustomer();
                           }}
                         >
@@ -1429,8 +1427,7 @@ const [showAddress, setShowAddress] = useState(
                     </InlineStack>
 
                     <Button
-                      onClick={(event) => {
-                      event.preventDefault();
+                      onClick={() => {
                       setShowAddress((open) => !open);
                     }}
                       > 

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { useLoaderData, useNavigate, useSearchParams, redirect } from "react-router";
 import {
   Page,
   Layout,
@@ -18,7 +18,7 @@ import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 
 function money(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 export async function loader({

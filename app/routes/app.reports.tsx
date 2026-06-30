@@ -169,6 +169,10 @@ export default function ReportsPage() {
     return `"${stringValue.replace(/"/g, '""')}"`;
   }
 
+  function formatCurrency(value: any) {
+    return `£${Number(value ?? 0).toFixed(2)}`;
+  }
+
   function downloadCsv() {
     const rows = [
       [
@@ -193,9 +197,9 @@ export default function ReportsPage() {
         sale.paymentMethod || "",
         sale.reference || "",
         sale.staff?.name || "",
-        Number(sale.subtotal).toFixed(2),
-        Number(sale.discountTotal).toFixed(2),
-        Number(sale.vatAmount).toFixed(2),
+        Number(sale.subtotal ?? 0).toFixed(2),
+        Number(sale.discountTotal ?? 0).toFixed(2),
+        Number(sale.vatAmount ?? 0).toFixed(2),
         Number(sale.total ?? 0).toFixed(2),
         new Date(sale.createdAt).toLocaleString("en-GB"),
       ]),
@@ -303,7 +307,7 @@ export default function ReportsPage() {
                     Total Sales
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{Number(summary.totalSales ?? 0).toFixed(2)}
+                    {formatCurrency(summary.totalSales)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -316,7 +320,7 @@ export default function ReportsPage() {
                     Average Sale
                   </Text>
                   <Text as="h2" variant="headingLg">
-                    £{Number(summary.averageSale ?? 0).toFixed(2)}
+                    {formatCurrency(summary.averageSale)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -333,7 +337,7 @@ export default function ReportsPage() {
                     VAT Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{Number(summary.totalVat ?? 0).toFixed(2)}
+                    {formatCurrency(summary.totalVat)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -346,7 +350,7 @@ export default function ReportsPage() {
                     Discount Total
                   </Text>
                   <Text as="h2" variant="headingMd">
-                    £{Number(summary.totalDiscount ?? 0).toFixed(2)}
+                    {formatCurrency(summary.totalDiscount)}
                   </Text>
                 </BlockStack>
               </Card>
@@ -378,7 +382,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{method}</IndexTable.Cell>
                   <IndexTable.Cell>{data.count}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(data.total ?? 0).toFixed(2)}
+                    {formatCurrency(data.total)}
                   </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
@@ -414,7 +418,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.staff?.name || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(sale.total ?? 0).toFixed(2)}
+                    {formatCurrency(sale.total)}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}
@@ -457,7 +461,7 @@ export default function ReportsPage() {
                   <IndexTable.Cell>{sale.paymentMethod}</IndexTable.Cell>
                   <IndexTable.Cell>{sale.reference || "-"}</IndexTable.Cell>
                   <IndexTable.Cell>
-                    £{Number(sale.total ?? 0).toFixed(2)}
+                    {formatCurrency(sale.total)}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     {new Date(sale.createdAt).toLocaleString("en-GB")}

@@ -4,7 +4,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 function money(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 export async function loader({
