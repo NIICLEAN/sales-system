@@ -4,6 +4,7 @@ import {
   Page,
   Layout,
   Card,
+  Banner,
   IndexTable,
   Text,
   Button,
@@ -15,21 +16,26 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request }: { request: Request }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const invoices = await prisma.sale.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
+    const invoices = await prisma.sale.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
 
-  return { invoices };
+    return { invoices, error: null };
+  } catch (error) {
+    console.error("Failed to load invoices:", error);
+    return { invoices: [], error: "Invoices could not be loaded right now." };
+  }
 }
 
 export default function InvoicesPage() {
-  const { invoices } = useLoaderData<typeof loader>();
+  const { invoices, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   return (
@@ -54,6 +60,10 @@ export default function InvoicesPage() {
           </Layout.Section>
 
           <Layout.Section>
+            {error ? (
+              <Banner tone="critical">{error}</Banner>
+            ) : null}
+
             <Card>
               <IndexTable
                 resourceName={{ singular: "invoice", plural: "invoices" }}

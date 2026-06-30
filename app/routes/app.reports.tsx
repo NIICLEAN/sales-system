@@ -4,6 +4,7 @@ import {
   Page,
   Layout,
   Card,
+  Banner,
   Text,
   IndexTable,
   BlockStack,
@@ -49,82 +50,104 @@ function getStartDate(period: string) {
 }
 
 export async function loader({ request }: { request: Request }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const url = new URL(request.url);
-  const staffId = url.searchParams.get("staffId") || "all";
-  const period = url.searchParams.get("period") || "today";
-  const fromDate = url.searchParams.get("fromDate") || "";
-  const toDate = url.searchParams.get("toDate") || "";
+    const url = new URL(request.url);
+    const staffId = url.searchParams.get("staffId") || "all";
+    const period = url.searchParams.get("period") || "today";
+    const fromDate = url.searchParams.get("fromDate") || "";
+    const toDate = url.searchParams.get("toDate") || "";
 
-  const staff = await prisma.staff.findMany({
-    orderBy: { name: "asc" },
-  });
+    const staff = await prisma.staff.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  let dateFilter: any = {};
+    let dateFilter: any = {};
 
-  if (period === "custom" && fromDate) {
-    dateFilter.gte = new Date(`${fromDate}T00:00:00`);
-  } else {
-    const startDate = getStartDate(period);
-    if (startDate) {
-      dateFilter.gte = startDate;
-    }
-  }
-
-  if (period === "custom" && toDate) {
-    dateFilter.lte = new Date(`${toDate}T23:59:59`);
-  }
-
-  const sales = await prisma.sale.findMany({
-    where: {
-      ...(staffId !== "all" ? { staffId: Number(staffId) } : {}),
-      ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
-
-  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total ?? 0), 0);
-  const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount ?? 0), 0);
-  const totalDiscount = sales.reduce(
-    (sum, sale) => sum + Number(sale.discountTotal ?? 0),
-    0,
-  );
-  const averageSale = sales.length ? totalSales / sales.length : 0;
-
-  const paymentTotals: Record<string, { count: number; total: number }> = {};
-
-  for (const sale of sales) {
-    const method = sale.paymentMethod || "Unknown";
-
-    if (!paymentTotals[method]) {
-      paymentTotals[method] = { count: 0, total: 0 };
+    if (period === "custom" && fromDate) {
+      dateFilter.gte = new Date(`${fromDate}T00:00:00`);
+    } else {
+      const startDate = getStartDate(period);
+      if (startDate) {
+        dateFilter.gte = startDate;
+      }
     }
 
-    paymentTotals[method].count += 1;
-    paymentTotals[method].total += Number(sale.total ?? 0);
-  }
+    if (period === "custom" && toDate) {
+      dateFilter.lte = new Date(`${toDate}T23:59:59`);
+    }
 
-  return {
-    staff,
-    selectedStaffId: staffId,
-    selectedPeriod: period,
-    selectedFromDate: fromDate,
-    selectedToDate: toDate,
-    sales,
-    summary: {
-      count: sales.length,
-      totalSales,
-      totalVat,
-      totalDiscount,
-      averageSale,
-    },
-    paymentTotals: Object.entries(paymentTotals),
-  };
+    const sales = await prisma.sale.findMany({
+      where: {
+        ...(staffId !== "all" ? { staffId: Number(staffId) } : {}),
+        ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
+
+    const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total ?? 0), 0);
+    const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount ?? 0), 0);
+    const totalDiscount = sales.reduce(
+      (sum, sale) => sum + Number(sale.discountTotal ?? 0),
+      0,
+    );
+    const averageSale = sales.length ? totalSales / sales.length : 0;
+
+    const paymentTotals: Record<string, { count: number; total: number }> = {};
+
+    for (const sale of sales) {
+      const method = sale.paymentMethod || "Unknown";
+
+      if (!paymentTotals[method]) {
+        paymentTotals[method] = { count: 0, total: 0 };
+      }
+
+      paymentTotals[method].count += 1;
+      paymentTotals[method].total += Number(sale.total ?? 0);
+    }
+
+    return {
+      staff,
+      selectedStaffId: staffId,
+      selectedPeriod: period,
+      selectedFromDate: fromDate,
+      selectedToDate: toDate,
+      sales,
+      summary: {
+        count: sales.length,
+        totalSales,
+        totalVat,
+        totalDiscount,
+        averageSale,
+      },
+      paymentTotals: Object.entries(paymentTotals),
+      error: null,
+    };
+  } catch (error) {
+    console.error("Failed to load reports:", error);
+    return {
+      staff: [],
+      selectedStaffId: "all",
+      selectedPeriod: "today",
+      selectedFromDate: "",
+      selectedToDate: "",
+      sales: [],
+      summary: {
+        count: 0,
+        totalSales: 0,
+        totalVat: 0,
+        totalDiscount: 0,
+        averageSale: 0,
+      },
+      paymentTotals: [],
+      error: "Reports could not be loaded right now.",
+    };
+  }
 }
 
 export default function ReportsPage() {
@@ -137,6 +160,7 @@ export default function ReportsPage() {
     sales,
     summary,
     paymentTotals,
+    error,
   } = useLoaderData<typeof loader>();
 
   const [staffId, setStaffId] = useState(selectedStaffId);
@@ -224,6 +248,8 @@ export default function ReportsPage() {
     <Page title="Sales Reports">
       <Layout>
         <Layout.Section>
+          {error ? <Banner tone="critical">{error}</Banner> : null}
+
           <Card>
             <Form method="get">
               <BlockStack gap="400">

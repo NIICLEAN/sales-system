@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useLoaderData, useSearchParams } from "react-router";
+import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
@@ -14,31 +15,48 @@ export async function loader({
   request: Request;
   params: { invoiceId: string };
 }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const invoice = await prisma.sale.findUnique({
-    where: { id: Number(params.invoiceId) },
-    include: {
-      staff: true,
-      lineItems: true,
-      // include recorded payments
-      payments: true,
-    },
-  });
+    const invoice = await prisma.sale.findUnique({
+      where: { id: Number(params.invoiceId) },
+      include: {
+        staff: true,
+        lineItems: true,
+        // include recorded payments
+        payments: true,
+      },
+    });
 
-  if (!invoice) {
-    throw new Response("Invoice not found", { status: 404 });
+    if (!invoice) {
+      throw new Response("Invoice not found", { status: 404 });
+    }
+
+    return {
+      invoice,
+      logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load invoice:", error);
+    return {
+      invoice: null,
+      logoUrl: "",
+      error: "Invoice could not be loaded right now.",
+    };
   }
-
-  return {
-    invoice,
-    logoUrl: process.env.BUSINESS_LOGO_URL || "",
-  };
 }
 
 export default function PrintInvoicePage() {
-  const { invoice, logoUrl } = useLoaderData<typeof loader>();
+  const { invoice, logoUrl, error } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
+
+  if (error || !invoice) {
+    return <Banner tone="critical">{error || "Invoice not found."}</Banner>;
+  }
+
+  const loadedInvoice = invoice;
 
   const fulfilmentMethod = searchParams.get("fulfilmentMethod") || "Collected";
 
@@ -55,18 +73,18 @@ export default function PrintInvoicePage() {
     return () => window.clearTimeout(timer);
   }, [searchParams]);
 
-  const amountPaid = Number(invoice.amountPaid || 0);
+  const amountPaid = Number(loadedInvoice.amountPaid || 0);
 
   const balanceDue =
-    invoice.balanceDue !== null && invoice.balanceDue !== undefined
-      ? Number(invoice.balanceDue)
-      : Math.max(Number(invoice.total || 0) - amountPaid, 0);
+    loadedInvoice.balanceDue !== null && loadedInvoice.balanceDue !== undefined
+      ? Number(loadedInvoice.balanceDue)
+      : Math.max(Number(loadedInvoice.total || 0) - amountPaid, 0);
 
   const paymentStatus =
-    invoice.paymentStatus ||
+    loadedInvoice.paymentStatus ||
     (amountPaid <= 0
       ? "Unpaid"
-      : amountPaid < Number(invoice.total || 0)
+      : amountPaid < Number(loadedInvoice.total || 0)
         ? "Partially Paid"
         : "Paid");
 
@@ -80,7 +98,7 @@ export default function PrintInvoicePage() {
     link.href = pdfUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.download = `Invoice-INV-${invoice.id}.pdf`;
+    link.download = `Invoice-INV-${loadedInvoice.id}.pdf`;
 
     document.body.appendChild(link);
     link.click();

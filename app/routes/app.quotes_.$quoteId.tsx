@@ -11,6 +11,7 @@ import {
   IndexTable,
   Badge,
   Divider,
+  Banner,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
@@ -28,24 +29,35 @@ export async function loader({
   request: Request;
   params: { quoteId: string };
 }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const quote = await prisma.quote.findUnique({
-    where: { id: Number(params.quoteId) },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
+    const quote = await prisma.quote.findUnique({
+      where: { id: Number(params.quoteId) },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
 
-  if (!quote) {
-    throw new Response("Quote not found", { status: 404 });
+    if (!quote) {
+      throw new Response("Quote not found", { status: 404 });
+    }
+
+    return {
+      quote,
+      logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote:", error);
+    return {
+      quote: null,
+      logoUrl: "",
+      error: "Quote could not be loaded right now.",
+    };
   }
-
-  return {
-    quote,
-    logoUrl: process.env.BUSINESS_LOGO_URL || "",
-  };
 }
 
 export async function action({ request, params }: { request: Request; params: { quoteId: string } }) {
@@ -219,9 +231,15 @@ export async function action({ request, params }: { request: Request; params: { 
 }
 
 export default function QuoteViewPage() {
-  const { quote } = useLoaderData<typeof loader>();
+  const { quote, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const loadedQuote = quote;
+
+  if (error || !loadedQuote) {
+    return <Banner tone="critical">{error || "Quote not found."}</Banner>;
+  }
 
   useEffect(() => {
     if (searchParams.get("autoprint") !== "1") return;
@@ -231,15 +249,15 @@ export default function QuoteViewPage() {
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [searchParams, navigate, quote.id]);
+  }, [searchParams, navigate, loadedQuote.id]);
 
   return (
     <Page
-      title={`Quote QUO-${quote.id}`}
+      title={`Quote QUO-${loadedQuote.id}`}
       subtitle="Review, print, or download this customer quote."
       backAction={{
         content: "Quotes",
-        onAction: () => navigate("/app/quotes"),
+          onAction: () => navigate("/app/quotes"),
       }}
     >
       <Layout>
@@ -250,10 +268,10 @@ export default function QuoteViewPage() {
                 <InlineStack align="space-between" blockAlign="center">
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingLg">
-                      QUO-{quote.id}
+                      QUO-{loadedQuote.id}
                     </Text>
                     <Text as="p" tone="subdued">
-                      Created {new Date(quote.createdAt).toLocaleString("en-GB")}
+                      Created {new Date(loadedQuote.createdAt).toLocaleString("en-GB")}
                     </Text>
                   </BlockStack>
 
