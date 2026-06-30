@@ -52,10 +52,6 @@ model Sale {
   staffId Int
   staff   Staff @relation(fields: [staffId], references: [id])
 
-  // optional relation to a persisted Customer record
-  customerRecordId Int? 
-  customerRecord   Customer? @relation(fields: [customerRecordId], references: [id])
-
   // VAT treatment for this sale
   vatType VatType @default(Standard)
 
@@ -133,47 +129,12 @@ model Quote {
   staffId Int
   staff   Staff @relation(fields: [staffId], references: [id])
 
-  // optional relation to a persisted Customer record
-  customerRecordId Int?
-  customerRecord   Customer? @relation(fields: [customerRecordId], references: [id])
-
   // VAT treatment for this quote
   vatType VatType @default(Standard)
 
   lineItems QuoteLineItem[]
 
   createdAt DateTime @default(now())
-}
-
-model Customer {
-  id        Int      @id @default(autoincrement())
-  shopifyId String?  // Shopify customer GID if created in Shopify
-
-  companyName String?
-  name        String
-
-  billingAddress1 String?
-  billingAddress2 String?
-  billingCity     String?
-  billingCounty   String?
-  billingPostcode String?
-  billingCountry  String?
-
-  deliveryAddress1 String?
-  deliveryAddress2 String?
-  deliveryCity     String?
-  deliveryCounty   String?
-  deliveryPostcode String?
-  deliveryCountry  String?
-
-  email     String?
-  mobile    String?
-  vatNumber String?
-
-  createdAt DateTime @default(now())
-
-  quotes Quote[]
-  sales  Sale[]
 }
 
 model Payment {
