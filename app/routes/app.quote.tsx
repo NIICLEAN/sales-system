@@ -274,6 +274,7 @@ export default function QuotePage() {
   const [reference, setReference] = useState("");
   const [items, setItems] = useState<any[]>([]);
   const productSearchRef = useRef<HTMLDivElement | null>(null);
+  const quoteLinesRef = useRef<HTMLDivElement | null>(null);
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -335,6 +336,14 @@ export default function QuotePage() {
         discount: 0,
       },
     ]);
+
+    // Move straight to quote lines after adding a product.
+    window.setTimeout(() => {
+      quoteLinesRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   }
 
   function addCustomItem() {
@@ -590,6 +599,7 @@ export default function QuotePage() {
                 </Card>
               )}
 
+              <div ref={quoteLinesRef} />
               <Card>
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
