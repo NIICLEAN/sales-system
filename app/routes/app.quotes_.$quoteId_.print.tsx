@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import {
   useLoaderData,
   useSearchParams,
-} from "react-router";import { authenticate } from "../shopify.server";
+} from "react-router";
+import { Banner } from "@shopify/polaris";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({
@@ -12,28 +14,45 @@ export async function loader({
   request: Request;
   params: { quoteId: string };
 }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const quote = await prisma.quote.findUnique({
-    where: { id: Number(params.quoteId) },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
+    const quote = await prisma.quote.findUnique({
+      where: { id: Number(params.quoteId) },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
 
-  if (!quote) {
-    throw new Response("Quote not found", { status: 404 });
+    if (!quote) {
+      throw new Response("Quote not found", { status: 404 });
+    }
+
+    return {
+      quote,
+      logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote print page:", error);
+    return {
+      quote: null,
+      logoUrl: "",
+      error: "Quote could not be loaded right now.",
+    };
   }
-
-  return {
-    quote,
-    logoUrl: process.env.BUSINESS_LOGO_URL || "",
-  };
 }
 
 export default function PrintQuotePage() {
-  const { quote, logoUrl } = useLoaderData<typeof loader>();
+  const { quote, logoUrl, error } = useLoaderData<typeof loader>();
+
+  if (error || !quote) {
+    return <Banner tone="critical">{error || "Quote not found."}</Banner>;
+  }
+
+  const loadedQuote = quote;
 
   const [searchParams] = useSearchParams();
 
@@ -69,7 +88,7 @@ const pdfUrl =
   link.href = pdfUrl;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.download = `Quote-QUO-${quote.id}.pdf`;
+  link.download = `Quote-QUO-${loadedQuote.id}.pdf`;
 
   document.body.appendChild(link);
   link.click();
@@ -264,12 +283,12 @@ th {
 
       <div className="header">
         <div>
-          <h1>Quote QUO-{quote.id}</h1>
+          <h1>Quote QUO-{loadedQuote.id}</h1>
           <p className="muted">
-            Date: {new Date(quote.createdAt).toLocaleString("en-GB")}
+            Date: {new Date(loadedQuote.createdAt).toLocaleString("en-GB")}
           </p>
-          <p>Salesperson: {quote.staff?.name || "-"}</p>
-          <p>Reference: {quote.reference || "-"}</p>
+          <p>Salesperson: {loadedQuote.staff?.name || "-"}</p>
+          <p>Reference: {loadedQuote.reference || "-"}</p>
         </div>
 
         <div className="business">
@@ -288,20 +307,20 @@ th {
       <div className="grid">
         <div className="box">
           <h3>Customer</h3>
-          <p>{quote.customerName}</p>
-          <p>{quote.customerEmail || ""}</p>
-          <p>{quote.customerPhone || ""}</p>
+          <p>{loadedQuote.customerName}</p>
+          <p>{loadedQuote.customerEmail || ""}</p>
+          <p>{loadedQuote.customerPhone || ""}</p>
         </div>
 
         <div className="box">
           <h3>Address</h3>
-          <p>{quote.address1 || ""}</p>
-          <p>{quote.address2 || ""}</p>
+          <p>{loadedQuote.address1 || ""}</p>
+          <p>{loadedQuote.address2 || ""}</p>
           <p>
-            {quote.city || ""} {quote.county || ""}
+            {loadedQuote.city || ""} {loadedQuote.county || ""}
           </p>
-          <p>{quote.postcode || ""}</p>
-          <p>{quote.country || ""}</p>
+          <p>{loadedQuote.postcode || ""}</p>
+          <p>{loadedQuote.country || ""}</p>
         </div>
       </div>
 
@@ -318,7 +337,7 @@ th {
         </thead>
 
         <tbody>
-          {quote.lineItems.map((item: any) => (
+          {loadedQuote.lineItems.map((item: any) => (
             <tr key={item.id}>
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
@@ -334,22 +353,22 @@ th {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>{formatCurrency(quote.subtotal)}</span>
+          <span>{formatCurrency(loadedQuote.subtotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>{formatCurrency(quote.discountTotal)}</span>
+          <span>{formatCurrency(loadedQuote.discountTotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>{formatCurrency(quote.vatAmount)}</span>
+          <span>{formatCurrency(loadedQuote.vatAmount)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>{formatCurrency(quote.total)}</span>
+          <span>{formatCurrency(loadedQuote.total)}</span>
         </div>
       </div>
 
