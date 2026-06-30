@@ -45,8 +45,16 @@ export async function loader({ request }: { request: Request }) {
                 title
                 sku
                 price
+                image {
+                  url
+                  altText
+                }
                 product {
                   title
+                  featuredImage {
+                    url
+                    altText
+                  }
                 }
               }
             }
@@ -269,6 +277,8 @@ export default function QuotePage() {
         id: variant.id,
         title: `${variant.product.title} - ${variant.title}`,
         sku: variant.sku || "",
+        imageUrl:
+          variant.image?.url || variant.product?.featuredImage?.url || "",
         quantity: 1,
         unitPrice: Number(variant.price || 0),
         discount: 0,
@@ -447,6 +457,7 @@ export default function QuotePage() {
                       }}
                       itemCount={variants.length}
                       headings={[
+                        { title: "Image" },
                         { title: "Product" },
                         { title: "SKU" },
                         { title: "Price" },
@@ -460,6 +471,50 @@ export default function QuotePage() {
                           key={variant.id}
                           position={index}
                         >
+                          <IndexTable.Cell>
+                            {(() => {
+                              const imageUrl =
+                                variant.image?.url ||
+                                variant.product?.featuredImage?.url;
+                              const imageAlt =
+                                variant.image?.altText ||
+                                variant.product?.featuredImage?.altText ||
+                                variant.product?.title ||
+                                "Product image";
+
+                              return imageUrl ? (
+                                <img
+                                  src={imageUrl}
+                                  alt={imageAlt}
+                                  style={{
+                                    width: 56,
+                                    height: 56,
+                                    objectFit: "cover",
+                                    borderRadius: 8,
+                                    border: "1px solid #ddd",
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    width: 56,
+                                    height: 56,
+                                    borderRadius: 8,
+                                    border: "1px solid #ddd",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 11,
+                                    color: "#777",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  No image
+                                </div>
+                              );
+                            })()}
+                          </IndexTable.Cell>
+
                           <IndexTable.Cell>
                             {variant.product.title} - {variant.title}
                           </IndexTable.Cell>
