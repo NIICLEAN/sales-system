@@ -35,82 +35,106 @@ export async function loader({ request }: { request: Request }) {
   let customers: any[] = [];
 
   if (productSearch.trim()) {
-    const productsResponse = await admin.graphql(
-      `
-        query ProductVariants($query: String) {
-          productVariants(first: 25, query: $query) {
-            edges {
-              node {
-                id
-                title
-                sku
-                price
-                image {
-                  url
-                  altText
-                }
-                product {
+    try {
+      const productsResponse = await admin.graphql(
+        `
+          query ProductVariants($query: String) {
+            productVariants(first: 25, query: $query) {
+              edges {
+                node {
+                  id
                   title
-                  featuredImage {
+                  sku
+                  price
+                  image {
                     url
                     altText
+                  }
+                  product {
+                    title
+                    featuredImage {
+                      url
+                      altText
+                    }
                   }
                 }
               }
             }
           }
+        `,
+        {
+          variables: {
+            query: productSearch,
+          },
         }
-      `,
-      {
-        variables: {
-          query: productSearch,
-        },
+      );
+
+      const productsJson = (await productsResponse.json()) as any;
+
+      if (productsJson.errors) {
+        console.error(
+          "Product search GraphQL errors:",
+          JSON.stringify(productsJson.errors, null, 2),
+        );
       }
-    );
 
-    const productsJson = await productsResponse.json();
-
-    variants =
-      productsJson.data.productVariants.edges.map((edge: any) => edge.node) ||
-      [];
+      variants =
+        productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
+        [];
+    } catch (error) {
+      console.error("Product search failed:", error);
+      variants = [];
+    }
   }
 
   if (customerSearch.trim()) {
-    const customersResponse = await admin.graphql(
-      `
-        query Customers($query: String) {
-          customers(first: 10, query: $query) {
-            edges {
-              node {
-                id
-                firstName
-                lastName
-                email
-                phone
-                defaultAddress {
-                  address1
-                  address2
-                  city
-                  province
-                  zip
-                  country
+    try {
+      const customersResponse = await admin.graphql(
+        `
+          query Customers($query: String) {
+            customers(first: 10, query: $query) {
+              edges {
+                node {
+                  id
+                  firstName
+                  lastName
+                  email
+                  phone
+                  defaultAddress {
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                  }
                 }
               }
             }
           }
+        `,
+        {
+          variables: {
+            query: customerSearch,
+          },
         }
-      `,
-      {
-        variables: {
-          query: customerSearch,
-        },
+      );
+
+      const customersJson = (await customersResponse.json()) as any;
+
+      if (customersJson.errors) {
+        console.error(
+          "Customer search GraphQL errors:",
+          JSON.stringify(customersJson.errors, null, 2),
+        );
       }
-    );
 
-    const customersJson = await customersResponse.json();
-
-    customers =
-      customersJson.data.customers.edges.map((edge: any) => edge.node) || [];
+      customers =
+        customersJson.data?.customers?.edges?.map((edge: any) => edge.node) || [];
+    } catch (error) {
+      console.error("Customer search failed:", error);
+      customers = [];
+    }
   }
 
   return {
