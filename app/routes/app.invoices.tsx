@@ -690,12 +690,38 @@ export default function InvoicesPage() {
     const [pathname, queryString = ""] = path.split("?");
     const currentParams = new URLSearchParams(location.search);
     const nextParams = new URLSearchParams(queryString);
+    const storageKey = "shopifyEmbeddedParams";
+
+    let cachedParams: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      try {
+        cachedParams = JSON.parse(window.sessionStorage.getItem(storageKey) || "{}") || {};
+      } catch {
+        cachedParams = {};
+      }
+    }
+
+    let hasLiveParams = false;
 
     // Preserve Shopify embedded app context so client-side routes don't trigger re-auth.
     for (const key of ["shop", "host", "embedded", "id_token"]) {
       const value = currentParams.get(key);
-      if (value && !nextParams.has(key)) {
-        nextParams.set(key, value);
+      if (value) {
+        hasLiveParams = true;
+        cachedParams[key] = value;
+      }
+
+      const resolvedValue = value || cachedParams[key] || "";
+      if (resolvedValue && !nextParams.has(key)) {
+        nextParams.set(key, resolvedValue);
+      }
+    }
+
+    if (hasLiveParams && typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(cachedParams));
+      } catch {
+        // Ignore storage write failures and continue with live params.
       }
     }
 

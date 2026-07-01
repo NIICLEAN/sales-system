@@ -21,6 +21,48 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+    const storageKey = "shopifyEmbeddedParams";
+
+    let cachedParams: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      try {
+        cachedParams = JSON.parse(window.sessionStorage.getItem(storageKey) || "{}") || {};
+      } catch {
+        cachedParams = {};
+      }
+    }
+
+    let hasLiveParams = false;
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value) {
+        hasLiveParams = true;
+        cachedParams[key] = value;
+      }
+
+      const resolvedValue = value || cachedParams[key] || "";
+      if (resolvedValue && !nextParams.has(key)) {
+        nextParams.set(key, resolvedValue);
+      }
+    }
+
+    if (hasLiveParams && typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(cachedParams));
+      } catch {
+        // Ignore storage write failures and continue with live params.
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
+
   const appNavLinks = [
     { to: "/app", label: "Home" },
     { to: "/app/invoice", label: "Create invoice" },
@@ -40,16 +82,16 @@ export default function App() {
     <ShopifyAppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={{}}>
         <NavMenu>
-          <Link to="/app" rel="home">
+          <Link to={withEmbeddedParams("/app")} rel="home">
             Home
           </Link>
-          <Link to="/app/invoice">Invoice</Link>
-          <Link to="/app/invoices">Invoices</Link>
-          <Link to="/app/quote">Create Quote</Link>
-          <Link to="/app/quotes">Quotes</Link>
-          <Link to="/app/schedule">Schedule</Link>
-          <Link to="/app/reports">Reports</Link>
-          <Link to="/app/staff">Staff</Link>
+          <Link to={withEmbeddedParams("/app/invoice")}>Invoice</Link>
+          <Link to={withEmbeddedParams("/app/invoices")}>Invoices</Link>
+          <Link to={withEmbeddedParams("/app/quote")}>Create Quote</Link>
+          <Link to={withEmbeddedParams("/app/quotes")}>Quotes</Link>
+          <Link to={withEmbeddedParams("/app/schedule")}>Schedule</Link>
+          <Link to={withEmbeddedParams("/app/reports")}>Reports</Link>
+          <Link to={withEmbeddedParams("/app/staff")}>Staff</Link>
         </NavMenu>
 
         {!hideTopNav ? (
@@ -58,7 +100,7 @@ export default function App() {
               {appNavLinks.map((item) => (
                 <Button
                   key={item.to}
-                  onClick={() => navigate(item.to)}
+                  onClick={() => navigate(withEmbeddedParams(item.to))}
                   variant={location.pathname === item.to ? "primary" : "secondary"}
                 >
                   {item.label}
