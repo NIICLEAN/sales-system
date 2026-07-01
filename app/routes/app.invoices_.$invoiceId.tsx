@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
@@ -196,16 +196,11 @@ export default function PrintInvoicePage() {
   const fulfilmentMethod = searchParams.get("fulfilmentMethod") || "Collected";
   const printMode = searchParams.get("printMode") || "";
   const autoprintEnabled = searchParams.get("autoprint") === "1";
-  const [manualPrintMode, setManualPrintMode] = useState<"invoice" | "both">(
-    printMode === "both" ? "both" : "invoice",
-  );
-  const [pendingManualPrint, setPendingManualPrint] = useState(false);
-
-  const effectivePrintMode = autoprintEnabled
-    ? printMode === "both" || printMode === "packing" || printMode === "invoice"
+  const normalizedPrintMode =
+    printMode === "both" || printMode === "packing" || printMode === "invoice"
       ? printMode
-      : "invoice"
-    : manualPrintMode;
+      : "";
+  const effectivePrintMode = normalizedPrintMode || "invoice";
 
   const packingOnlyPrint = effectivePrintMode === "packing";
   const showInvoiceSheet = !packingOnlyPrint;
@@ -213,7 +208,7 @@ export default function PrintInvoicePage() {
   const shouldPrintPackingSlip =
     packingOnlyPrint ||
     effectivePrintMode === "both" ||
-    (effectivePrintMode !== "invoice" &&
+    (autoprintEnabled && !normalizedPrintMode &&
       (fulfilmentMethod === "Collecting" || fulfilmentMethod === "Delivery"));
 
   useEffect(() => {
@@ -227,21 +222,13 @@ export default function PrintInvoicePage() {
   }, [searchParams]);
 
   function printWithMode(mode: "invoice" | "both") {
-    setManualPrintMode(mode);
-    setPendingManualPrint(true);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("autoprint", "1");
+    params.set("printMode", mode);
+    params.set("fulfilmentMethod", fulfilmentMethod);
+
+    window.location.href = withEmbeddedParams(`${window.location.pathname}?${params.toString()}`);
   }
-
-  useEffect(() => {
-    if (!pendingManualPrint || autoprintEnabled) return;
-
-    // Give the browser time to paint the selected print mode before opening print.
-    const timer = window.setTimeout(() => {
-      setPendingManualPrint(false);
-      window.print();
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [pendingManualPrint, autoprintEnabled, manualPrintMode]);
 
   const amountPaid = Number(loadedInvoice.amountPaid || 0);
   const partialPaymentCount = Number(loadedInvoice.paymentSummary?.count || 0);
@@ -277,7 +264,7 @@ export default function PrintInvoicePage() {
   }
 
   return (
-    <div className="page">
+    <div className={`page ${effectivePrintMode === "invoice" ? "single-sheet-print" : ""}`}>
       <style>{`
         body {
           margin: 0;
@@ -609,6 +596,98 @@ export default function PrintInvoicePage() {
             max-width: none;
             box-shadow: none;
             padding: 25px;
+          }
+
+          .single-sheet-print.page {
+            padding: 14px;
+          }
+
+          .single-sheet-print .header {
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+          }
+
+          .single-sheet-print .invoice-title {
+            font-size: 28px;
+          }
+
+          .single-sheet-print .business {
+            font-size: 11px;
+            line-height: 1.25;
+          }
+
+          .single-sheet-print .meta-grid {
+            margin-bottom: 14px;
+          }
+
+          .single-sheet-print .meta-cell {
+            padding: 10px;
+            min-height: auto;
+          }
+
+          .single-sheet-print .label {
+            margin-bottom: 6px;
+            font-size: 11px;
+          }
+
+          .single-sheet-print .value {
+            font-size: 12px;
+          }
+
+          .single-sheet-print .address-grid {
+            gap: 12px;
+            margin-bottom: 14px;
+          }
+
+          .single-sheet-print .address-box {
+            padding: 12px;
+            min-height: auto;
+          }
+
+          .single-sheet-print .address-title {
+            font-size: 12px;
+            margin-bottom: 8px;
+          }
+
+          .single-sheet-print p {
+            margin: 2px 0;
+            font-size: 12px;
+            line-height: 1.2;
+          }
+
+          .single-sheet-print table {
+            margin-top: 10px;
+          }
+
+          .single-sheet-print th,
+          .single-sheet-print td {
+            padding: 6px 7px;
+            font-size: 11px;
+            line-height: 1.2;
+          }
+
+          .single-sheet-print .totals {
+            width: 330px;
+            margin-top: 12px;
+          }
+
+          .single-sheet-print .totals-row {
+            padding: 8px 10px;
+            font-size: 12px;
+          }
+
+          .single-sheet-print .total-row {
+            font-size: 15px;
+          }
+
+          .single-sheet-print .balance-row {
+            font-size: 13px;
+          }
+
+          .single-sheet-print .footer {
+            margin-top: 14px;
+            padding-top: 8px;
+            font-size: 11px;
           }
 
           .actions,
