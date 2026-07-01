@@ -239,6 +239,9 @@ export async function loader({ request }: { request: Request }) {
     const { admin } = await authenticate.admin(request);
 
     const url = new URL(request.url);
+    const shopDomain = String(
+      url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain") || "",
+    ).trim();
     const xeroConfigured = Boolean(
       process.env.XERO_CLIENT_ID &&
       process.env.XERO_CLIENT_SECRET &&
@@ -378,9 +381,10 @@ export async function loader({ request }: { request: Request }) {
         const json = (await response.json()) as any;
         shopifyLegacyInvoices =
           json?.data?.orders?.edges?.map((edge: any) => ({
-            adminOrderPath: edge?.node?.legacyResourceId
-              ? `/admin/orders/${edge.node.legacyResourceId}`
-              : null,
+            adminOrderPath:
+              edge?.node?.legacyResourceId && shopDomain
+                ? `https://${shopDomain}/admin/orders/${edge.node.legacyResourceId}`
+                : null,
             id: String(edge?.node?.id || ""),
             name: String(edge?.node?.name || "-") || "-",
             customerName:
