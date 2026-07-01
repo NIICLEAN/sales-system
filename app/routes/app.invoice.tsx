@@ -832,6 +832,8 @@ const [showAddress, setShowAddress] = useState(
   }));
 
   const paymentOptions = [
+    { label: "Not paid", value: "Not paid" },
+    { label: "Deposit", value: "Deposit" },
     { label: "Cash", value: "Cash" },
     { label: "Worldpay", value: "Worldpay" },
     { label: "MyPos", value: "MyPos" },
