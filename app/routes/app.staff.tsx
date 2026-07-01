@@ -5,6 +5,7 @@ import {
   Page,
   Layout,
   Card,
+  Banner,
   TextField,
   Button,
   IndexTable,
@@ -19,11 +20,15 @@ import prisma from "../db.server";
 export async function loader({ request }: { request: Request }) {
   await authenticate.admin(request);
 
+  const url = new URL(request.url);
+  const status = String(url.searchParams.get("status") || "");
+  const message = String(url.searchParams.get("message") || "");
+
   const staff = await prisma.staff.findMany({
     orderBy: { createdAt: "desc" },
   });
 
-  return { staff };
+  return { staff, status, message };
 }
 
 export async function action({ request }: { request: Request }) {
@@ -46,9 +51,21 @@ export async function action({ request }: { request: Request }) {
     const staffId = Number(formData.get("staffId"));
 
     if (staffId) {
-      await prisma.staff.delete({
-        where: { id: staffId },
-      });
+      try {
+        await prisma.staff.delete({
+          where: { id: staffId },
+        });
+      } catch (error: any) {
+        if (error?.code === "P2003") {
+          return redirect(
+            "/app/staff?status=error&message=Cannot%20delete%20this%20staff%20member%20because%20legacy%20records%20still%20reference%20them",
+          );
+        }
+
+        return redirect(
+          "/app/staff?status=error&message=Failed%20to%20delete%20staff%20member",
+        );
+      }
     }
   }
 
@@ -56,7 +73,7 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function StaffPage() {
-  const { staff } = useLoaderData<typeof loader>();
+  const { staff, status, message } = useLoaderData<typeof loader>();
   const [name, setName] = useState("");
 
   return (
@@ -86,6 +103,15 @@ export default function StaffPage() {
                 </div>
               </Form>
             </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            {status && message ? (
+              <Banner tone={status === "error" ? "critical" : "success"}>
+                {message}
+              </Banner>
+            ) : null}
+
           </Layout.Section>
 
           <Layout.Section>
