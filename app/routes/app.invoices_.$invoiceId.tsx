@@ -701,7 +701,22 @@ export default function PrintInvoicePage() {
 
           .invoice-print-sheet,
           .single-sheet-print .invoice-print-sheet {
+            page-break-inside: auto;
+            break-inside: auto;
+          }
+
+          .totals {
+            margin-top: 10px;
+          }
+
+          .footer {
+            margin-top: 8px;
+            padding-top: 6px;
+            font-size: 11px;
+            page-break-before: avoid;
+            break-before: avoid;
             page-break-inside: avoid;
+            break-inside: avoid;
           }
 
           .actions,
