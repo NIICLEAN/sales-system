@@ -1,4 +1,4 @@
-import { Form, redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { Form, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import {
   AppProvider,
@@ -642,12 +642,30 @@ export default function InvoicesPage() {
     xeroConfigured,
     error,
   } = useLoaderData<typeof loader>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
   const connectXero = searchParams.get("connectXero") === "1";
+
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+
+    // Preserve Shopify embedded app context so client-side routes don't trigger re-auth.
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value && !nextParams.has(key)) {
+        nextParams.set(key, value);
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
 
   function openAdminPath(path: string) {
     if (typeof window === "undefined") return;
@@ -686,7 +704,7 @@ export default function InvoicesPage() {
 
                     <Button
                       variant="primary"
-                      onClick={() => navigate("/app/invoice")}
+                      onClick={() => navigate(withEmbeddedParams("/app/invoice"))}
                     >
                       Create Invoice
                     </Button>
@@ -704,7 +722,7 @@ export default function InvoicesPage() {
                         { label: "Local only", value: "local" },
                           { label: "Scheduled/custom only", value: "custom" },
                       ]}
-                      onChange={(value) => navigate(`/app/invoices?source=${value}`)}
+                      onChange={(value) => navigate(withEmbeddedParams(`/app/invoices?source=${value}`))}
                     />
                   </Form>
                 ) : null}
@@ -727,7 +745,7 @@ export default function InvoicesPage() {
               <Banner tone="warning">
                 Xero is not connected yet. Connect Xero first, then run Sync Xero.
                 <div style={{ marginTop: 8 }}>
-                  <Button onClick={() => navigate("/app/xero/connect")}>Open Xero connect</Button>
+                  <Button onClick={() => navigate(withEmbeddedParams("/app/xero/connect"))}>Open Xero connect</Button>
                 </div>
               </Banner>
             ) : null}
@@ -791,12 +809,12 @@ export default function InvoicesPage() {
 
                     <IndexTable.Cell>
                       <InlineStack gap="200">
-                        <Button onClick={() => navigate(`/app/invoices/${invoice.id}`)}>
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>
                             View
                         </Button>
 
 <Button
-  onClick={() => navigate(`/app/invoice?editInvoiceId=${invoice.id}`)}
+  onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}
 >
   Edit
 </Button>
@@ -841,7 +859,7 @@ export default function InvoicesPage() {
                           {formatDateTime(invoice.createdAt)}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Button onClick={() => navigate("/app/schedule")}>
+                          <Button onClick={() => navigate(withEmbeddedParams("/app/schedule"))}> 
                             Open Schedule
                           </Button>
                         </IndexTable.Cell>
@@ -891,7 +909,7 @@ export default function InvoicesPage() {
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <InlineStack gap="200">
-                            <Button onClick={() => navigate(`/app/works/${invoice.id}`)}>
+                            <Button onClick={() => navigate(withEmbeddedParams(`/app/works/${invoice.id}`))}>
                               Open
                             </Button>
                             <Form method="post">
