@@ -218,7 +218,28 @@ export async function loader({ request }: { request: Request }) {
         })
       : [];
 
-    return { invoices, customInvoices, source, xeroConnected, xeroConfigured, error: null };
+    const legacyWorksInvoices = await prisma.worksOrder.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        customerName: true,
+        paymentMethod: true,
+        total: true,
+        createdAt: true,
+        xeroInvoiceNumber: true,
+      },
+      take: 200,
+    });
+
+    return {
+      invoices,
+      customInvoices,
+      legacyWorksInvoices,
+      source,
+      xeroConnected,
+      xeroConfigured,
+      error: null,
+    };
   } catch (error) {
     if (error instanceof Response) {
       throw error;
@@ -228,6 +249,7 @@ export async function loader({ request }: { request: Request }) {
     return {
       invoices: [],
       customInvoices: [],
+      legacyWorksInvoices: [],
       source: "local",
       xeroConnected: false,
       xeroConfigured: false,
@@ -237,7 +259,15 @@ export async function loader({ request }: { request: Request }) {
 }
 
 export default function InvoicesPage() {
-  const { invoices, customInvoices, source, xeroConnected, xeroConfigured, error } = useLoaderData<typeof loader>();
+  const {
+    invoices,
+    customInvoices,
+    legacyWorksInvoices,
+    source,
+    xeroConnected,
+    xeroConfigured,
+    error,
+  } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -425,6 +455,55 @@ export default function InvoicesPage() {
                         <IndexTable.Cell>{invoice.assignedStaff?.name || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>
                           {new Date(invoice.createdAt).toLocaleString()}
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                </BlockStack>
+              </Card>
+            ) : null}
+
+            {legacyWorksInvoices.length > 0 ? (
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Legacy invoices (works orders)
+                  </Text>
+
+                  <IndexTable
+                    resourceName={{ singular: "legacy invoice", plural: "legacy invoices" }}
+                    itemCount={legacyWorksInvoices.length}
+                    headings={[
+                      { title: "Invoice" },
+                      { title: "Customer" },
+                      { title: "Payment" },
+                      { title: "Total" },
+                      { title: "Date" },
+                      { title: "Actions" },
+                    ]}
+                    selectable={false}
+                  >
+                    {legacyWorksInvoices.map((invoice: any, index: number) => (
+                      <IndexTable.Row
+                        id={`legacy-${invoice.id}`}
+                        key={`legacy-${invoice.id}`}
+                        position={index}
+                      >
+                        <IndexTable.Cell>
+                          {invoice.xeroInvoiceNumber || `WORK-${invoice.id}`}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>{invoice.customerName || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell>{invoice.paymentMethod || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          £{Number(invoice.total ?? 0).toFixed(2)}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {new Date(invoice.createdAt).toLocaleString()}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Button onClick={() => navigate(`/app/works/${invoice.id}`)}>
+                            View
+                          </Button>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
