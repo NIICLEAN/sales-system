@@ -23,7 +23,7 @@ export default function App() {
 
   const appNavLinks = [
     { to: "/app", label: "Home" },
-    { to: "/app/invoice", label: "Invoice" },
+    { to: "/app/invoice", label: "Create invoice" },
     { to: "/app/invoices", label: "Invoices" },
     { to: "/app/quote", label: "Create Quote" },
     { to: "/app/quotes", label: "Quotes" },
