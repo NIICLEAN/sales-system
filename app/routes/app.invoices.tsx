@@ -38,11 +38,214 @@ function mapLegacyPaymentStatus(value: unknown) {
   return "Unpaid";
 }
 
+function parseMoneyString(value: unknown) {
+  const normalized = String(value || "").replace(/[^0-9.-]/g, "");
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function getCustomAttributeValue(attributes: Array<{ key?: string | null; value?: string | null }> | null | undefined, key: string) {
+  const match = attributes?.find((attribute) => String(attribute?.key || "").trim().toLowerCase() === key.toLowerCase());
+  return String(match?.value || "").trim();
+}
+
 export async function action({ request }: ActionFunctionArgs) {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const formData = await request.formData();
   const intent = String(formData.get("_intent") || "");
+
+  if (intent === "openShopifyLegacyInEditor") {
+    const shopifyOrderId = String(formData.get("shopifyOrderId") || "").trim();
+    const legacyResourceId = String(formData.get("legacyResourceId") || "").trim();
+
+    if (!shopifyOrderId) {
+      return redirect("/app/invoices?syncStatus=error&syncMessage=Invalid%20Shopify%20invoice%20selection");
+    }
+
+    try {
+      const reference = legacyResourceId ? `SHOPIFY:${legacyResourceId}` : `SHOPIFY:${shopifyOrderId}`;
+
+      const existingSale = await prisma.sale.findFirst({
+        where: {
+          OR: [
+            { shopifyOrderId },
+            { reference },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (existingSale) {
+        return redirect(`/app/invoice?editInvoiceId=${existingSale.id}`);
+      }
+
+      const response = await admin.graphql(
+        `
+          query LegacyInvoiceOrder($id: ID!) {
+            order(id: $id) {
+              id
+              name
+              note
+              createdAt
+              displayFinancialStatus
+              customAttributes {
+                key
+                value
+              }
+              customer {
+                id
+                displayName
+                email
+                phone
+              }
+              shippingAddress {
+                address1
+                address2
+                city
+                province
+                zip
+                country
+                phone
+              }
+              currentSubtotalPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
+              currentTotalDiscountsSet {
+                shopMoney {
+                  amount
+                }
+              }
+              currentTotalTaxSet {
+                shopMoney {
+                  amount
+                }
+              }
+              currentTotalPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
+              lineItems(first: 100) {
+                edges {
+                  node {
+                    name
+                    sku
+                    quantity
+                    image {
+                      url
+                    }
+                    variant {
+                      id
+                    }
+                    originalUnitPriceSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
+                    discountedUnitPriceAfterAllDiscountsSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        { variables: { id: shopifyOrderId } },
+      );
+
+      const json = (await response.json()) as any;
+      const order = json?.data?.order;
+
+      if (!order) {
+        return redirect("/app/invoices?syncStatus=error&syncMessage=Shopify%20invoice%20order%20not%20found");
+      }
+
+      const customAttributes = order.customAttributes ?? [];
+      const salespersonId = Number(getCustomAttributeValue(customAttributes, "Salesperson ID") || 0);
+      const defaultStaff = await prisma.staff.findFirst({ orderBy: { id: "asc" } });
+      const staffExists = salespersonId
+        ? await prisma.staff.findUnique({
+            where: { id: salespersonId },
+            select: { id: true },
+          })
+        : null;
+
+      if (!defaultStaff && !staffExists) {
+        return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
+      }
+
+      const total = toNumber(order?.currentTotalPriceSet?.shopMoney?.amount);
+      const amountPaid = parseMoneyString(getCustomAttributeValue(customAttributes, "Amount Paid"));
+      const vatType = getCustomAttributeValue(customAttributes, "VAT Type") || "Standard";
+      const paymentMethod = getCustomAttributeValue(customAttributes, "Payment Method") || "Other";
+      const depositPaidAttr = getCustomAttributeValue(customAttributes, "Deposit Paid").toLowerCase();
+      const depositPaid = depositPaidAttr === "yes" || (amountPaid > 0 && amountPaid < total);
+
+      const createdSale = await prisma.sale.create({
+        data: {
+          shopifyOrderId: order.id,
+          shopifyOrderName: order.name || null,
+          customerId: order.customer?.id || null,
+          customerName: order.customer?.displayName || "Walk-in customer",
+          customerEmail: order.customer?.email || null,
+          customerVatNumber: getCustomAttributeValue(customAttributes, "VAT Number") || null,
+          customerPhone: order.customer?.phone || order.shippingAddress?.phone || null,
+          address1: order.shippingAddress?.address1 || null,
+          address2: order.shippingAddress?.address2 || null,
+          city: order.shippingAddress?.city || null,
+          county: order.shippingAddress?.province || null,
+          postcode: order.shippingAddress?.zip || null,
+          country: order.shippingAddress?.country || null,
+          reference,
+          paymentMethod,
+          subtotal: toNumber(order?.currentSubtotalPriceSet?.shopMoney?.amount),
+          discountTotal: toNumber(order?.currentTotalDiscountsSet?.shopMoney?.amount),
+          vatAmount: toNumber(order?.currentTotalTaxSet?.shopMoney?.amount),
+          total,
+          amountPaid,
+          balanceDue: Math.max(total - amountPaid, 0),
+          paymentStatus: mapLegacyPaymentStatus(getCustomAttributeValue(customAttributes, "Payment Status") || order.displayFinancialStatus),
+          depositPaid,
+          vatType: vatType as any,
+          staffId: staffExists?.id || defaultStaff!.id,
+          createdAt: parseXeroDate(order.createdAt),
+          lineItems: {
+            create: (order.lineItems?.edges || []).map((edge: any) => {
+              const node = edge?.node;
+              const originalUnitPrice = toNumber(node?.originalUnitPriceSet?.shopMoney?.amount);
+              const discountedUnitPrice = toNumber(node?.discountedUnitPriceAfterAllDiscountsSet?.shopMoney?.amount);
+              const quantity = Number(node?.quantity || 0);
+              const lineDiscount = Math.max((originalUnitPrice - discountedUnitPrice) * quantity, 0);
+
+              return {
+                shopifyVariantId: node?.variant?.id || null,
+                title: String(node?.name || "Item"),
+                sku: node?.sku || null,
+                imageUrl: node?.image?.url || null,
+                quantity,
+                unitPrice: originalUnitPrice,
+                discount: lineDiscount,
+                lineTotal: Math.max(discountedUnitPrice * quantity, 0),
+                isCustom: !node?.variant?.id,
+              };
+            }),
+          },
+        },
+      });
+
+      return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
+    } catch (error: any) {
+      console.error("Failed to open Shopify legacy invoice in editor:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to open Shopify legacy invoice"));
+      return redirect(`/app/invoices?syncStatus=error&syncMessage=${message}`);
+    }
+  }
 
   if (intent === "openLegacyInEditor") {
     const worksOrderId = Number(formData.get("worksOrderId") || 0);
@@ -337,6 +540,7 @@ export async function loader({ request }: { request: Request }) {
 
     let shopifyLegacyInvoices: Array<{
       id: string;
+      legacyResourceId: string | null;
       name: string;
       customerName: string;
       paymentStatus: string;
@@ -386,6 +590,7 @@ export async function loader({ request }: { request: Request }) {
                 ? `https://${shopDomain}/admin/orders/${edge.node.legacyResourceId}`
                 : null,
             id: String(edge?.node?.id || ""),
+            legacyResourceId: edge?.node?.legacyResourceId ? String(edge.node.legacyResourceId) : null,
             name: String(edge?.node?.name || "-") || "-",
             customerName:
               String(edge?.node?.customer?.displayName || "Walk-in customer") ||
@@ -741,13 +946,24 @@ export default function InvoicesPage() {
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           {invoice.adminOrderPath ? (
-                            <Button onClick={() => openAdminPath(invoice.adminOrderPath)}>
-                              Open Order
-                            </Button>
+                            <InlineStack gap="200">
+                              <Form method="post">
+                                <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                                <input type="hidden" name="shopifyOrderId" value={invoice.id} />
+                                <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
+                                <Button submit>Edit Invoice</Button>
+                              </Form>
+                              <Button onClick={() => openAdminPath(invoice.adminOrderPath)}>
+                                Open Order
+                              </Button>
+                            </InlineStack>
                           ) : (
-                            <Text as="span" tone="subdued">
-                              No direct link
-                            </Text>
+                            <Form method="post">
+                              <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                              <input type="hidden" name="shopifyOrderId" value={invoice.id} />
+                              <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
+                              <Button submit>Edit Invoice</Button>
+                            </Form>
                           )}
                         </IndexTable.Cell>
                       </IndexTable.Row>
