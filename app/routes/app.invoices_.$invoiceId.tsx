@@ -274,11 +274,20 @@ export default function PrintInvoicePage() {
         }
 
         .page {
+          --invoice-scale: 0.84;
           max-width: 900px;
           margin: 30px auto;
           background: white;
           padding: 45px;
           box-shadow: 0 0 10px rgba(0,0,0,0.12);
+        }
+
+        .single-sheet-print.page {
+          --invoice-scale: 0.76;
+        }
+
+        .invoice-print-sheet {
+          display: block;
         }
 
         .actions {
@@ -587,6 +596,11 @@ export default function PrintInvoicePage() {
         }
 
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 6mm;
+          }
+
           body {
             background: white;
           }
@@ -595,11 +609,18 @@ export default function PrintInvoicePage() {
             margin: 0;
             max-width: none;
             box-shadow: none;
-            padding: 25px;
+            padding: 0;
+          }
+
+          .invoice-print-sheet {
+            transform: scale(var(--invoice-scale));
+            transform-origin: top left;
+            width: calc(100% / var(--invoice-scale));
+            page-break-inside: avoid;
           }
 
           .single-sheet-print.page {
-            padding: 14px;
+            padding: 0;
           }
 
           .single-sheet-print .header {
@@ -744,7 +765,7 @@ export default function PrintInvoicePage() {
       </div>
 
       {showInvoiceSheet ? (
-      <>
+      <div className="invoice-print-sheet">
       <div className="header">
         <div>
           <h1 className="invoice-title">Invoice</h1>
@@ -890,7 +911,7 @@ export default function PrintInvoicePage() {
       </div>
 
       <div className="footer">Thank you for your business.</div>
-      </>
+      </div>
       ) : null}
 
       {shouldPrintPackingSlip && (
