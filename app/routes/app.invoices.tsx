@@ -138,19 +138,27 @@ export async function loader({ request }: { request: Request }) {
     await authenticate.admin(request);
 
     const url = new URL(request.url);
-    const source = String(url.searchParams.get("source") || "all");
+    const xeroConfigured = Boolean(
+      process.env.XERO_CLIENT_ID &&
+      process.env.XERO_CLIENT_SECRET &&
+      process.env.XERO_REDIRECT_URI,
+    );
 
-    const includeLocal = source !== "custom";
-    const includeCustom = source !== "local";
+    const source = String(url.searchParams.get("source") || (xeroConfigured ? "all" : "local"));
+
+    const includeLocal = !xeroConfigured || source !== "custom";
+    const includeCustom = xeroConfigured && source !== "local";
 
     let xeroConnected = false;
-    try {
-      const xeroConnection = await getXeroConnection();
-      xeroConnected = Boolean(xeroConnection?.tenantId);
-    } catch (error) {
-      // Keep invoices working even if Xero storage/migrations are unavailable.
-      console.error("Failed to load Xero connection status:", error);
-      xeroConnected = false;
+    if (xeroConfigured) {
+      try {
+        const xeroConnection = await getXeroConnection();
+        xeroConnected = Boolean(xeroConnection?.tenantId);
+      } catch (error) {
+        // Keep invoices working even if Xero storage/migrations are unavailable.
+        console.error("Failed to load Xero connection status:", error);
+        xeroConnected = false;
+      }
     }
 
     const invoices = includeLocal
@@ -197,7 +205,7 @@ export async function loader({ request }: { request: Request }) {
         })
       : [];
 
-    return { invoices, customInvoices, source, xeroConnected, error: null };
+    return { invoices, customInvoices, source, xeroConnected, xeroConfigured, error: null };
   } catch (error) {
     if (error instanceof Response) {
       throw error;
@@ -207,15 +215,16 @@ export async function loader({ request }: { request: Request }) {
     return {
       invoices: [],
       customInvoices: [],
-      source: "all",
+      source: "local",
       xeroConnected: false,
+      xeroConfigured: false,
       error: "Invoices could not be loaded right now.",
     };
   }
 }
 
 export default function InvoicesPage() {
-  const { invoices, customInvoices, source, xeroConnected, error } = useLoaderData<typeof loader>();
+  const { invoices, customInvoices, source, xeroConnected, xeroConfigured, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -236,13 +245,17 @@ export default function InvoicesPage() {
                   </Text>
 
                   <InlineStack gap="200" blockAlign="center">
-                    <Form method="post">
-                      <input type="hidden" name="_intent" value="syncXero" />
-                      <Button submit disabled={!xeroConnected}>Sync Xero</Button>
-                    </Form>
+                    {xeroConfigured ? (
+                      <>
+                        <Form method="post">
+                          <input type="hidden" name="_intent" value="syncXero" />
+                          <Button submit disabled={!xeroConnected}>Sync Xero</Button>
+                        </Form>
 
-                    {!xeroConnected ? (
-                      <Button onClick={() => navigate("/app/xero/connect")}>Connect Xero</Button>
+                        {!xeroConnected ? (
+                          <Button onClick={() => navigate("/app/xero/connect")}>Connect Xero</Button>
+                        ) : null}
+                      </>
                     ) : null}
 
                     <Button
@@ -254,19 +267,21 @@ export default function InvoicesPage() {
                   </InlineStack>
                 </InlineStack>
 
-                <Form method="get">
-                  <Select
-                    label="Invoice source"
-                    name="source"
-                    value={source}
-                    options={[
-                      { label: "Local + custom/Xero", value: "all" },
-                      { label: "Local only", value: "local" },
-                      { label: "Custom/Xero only", value: "custom" },
-                    ]}
-                    onChange={(value) => navigate(`/app/invoices?source=${value}`)}
-                  />
-                </Form>
+                {xeroConfigured ? (
+                  <Form method="get">
+                    <Select
+                      label="Invoice source"
+                      name="source"
+                      value={source}
+                      options={[
+                        { label: "Local + custom/Xero", value: "all" },
+                        { label: "Local only", value: "local" },
+                        { label: "Custom/Xero only", value: "custom" },
+                      ]}
+                      onChange={(value) => navigate(`/app/invoices?source=${value}`)}
+                    />
+                  </Form>
+                ) : null}
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -282,7 +297,7 @@ export default function InvoicesPage() {
               </Banner>
             ) : null}
 
-            {!xeroConnected || connectXero ? (
+            {xeroConfigured && (!xeroConnected || connectXero) ? (
               <Banner tone="warning">
                 Xero is not connected yet. Connect Xero first, then run Sync Xero.
                 <div style={{ marginTop: 8 }}>
