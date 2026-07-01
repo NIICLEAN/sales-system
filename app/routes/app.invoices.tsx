@@ -17,7 +17,7 @@ import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getConnectedXeroClient } from "../services/xero.server";
+import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -42,10 +42,18 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    const [defaultStaff, { xero, tenantId }] = await Promise.all([
+    const [defaultStaff, connection] = await Promise.all([
       prisma.staff.findFirst({ orderBy: { id: "asc" } }),
-      getConnectedXeroClient(),
+      getXeroConnection(),
     ]);
+
+    if (!connection) {
+      return redirect(
+        "/app/invoices?syncStatus=error&syncMessage=Xero%20is%20not%20connected%20yet&connectXero=1",
+      );
+    }
+
+    const { xero, tenantId } = await getConnectedXeroClient();
 
     if (!defaultStaff) {
       return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
@@ -135,6 +143,9 @@ export async function loader({ request }: { request: Request }) {
     const includeLocal = source !== "custom";
     const includeCustom = source !== "local";
 
+    const xeroConnection = await getXeroConnection();
+    const xeroConnected = Boolean(xeroConnection?.tenantId);
+
     const invoices = includeLocal
       ? await prisma.sale.findMany({
           orderBy: { createdAt: "desc" },
@@ -179,7 +190,7 @@ export async function loader({ request }: { request: Request }) {
         })
       : [];
 
-    return { invoices, customInvoices, source, error: null };
+    return { invoices, customInvoices, source, xeroConnected, error: null };
   } catch (error) {
     if (error instanceof Response) {
       throw error;
@@ -190,18 +201,20 @@ export async function loader({ request }: { request: Request }) {
       invoices: [],
       customInvoices: [],
       source: "all",
+      xeroConnected: false,
       error: "Invoices could not be loaded right now.",
     };
   }
 }
 
 export default function InvoicesPage() {
-  const { invoices, customInvoices, source, error } = useLoaderData<typeof loader>();
+  const { invoices, customInvoices, source, xeroConnected, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
+  const connectXero = searchParams.get("connectXero") === "1";
 
   return (
     <AppProvider i18n={{}}>
@@ -218,8 +231,12 @@ export default function InvoicesPage() {
                   <InlineStack gap="200" blockAlign="center">
                     <Form method="post">
                       <input type="hidden" name="_intent" value="syncXero" />
-                      <Button submit>Sync Xero</Button>
+                      <Button submit disabled={!xeroConnected}>Sync Xero</Button>
                     </Form>
+
+                    {!xeroConnected ? (
+                      <Button onClick={() => navigate("/app/xero/connect")}>Connect Xero</Button>
+                    ) : null}
 
                     <Button
                       variant="primary"
@@ -255,6 +272,15 @@ export default function InvoicesPage() {
             {syncStatus && syncMessage ? (
               <Banner tone={syncStatus === "success" ? "success" : "critical"}>
                 {syncMessage}
+              </Banner>
+            ) : null}
+
+            {!xeroConnected || connectXero ? (
+              <Banner tone="warning">
+                Xero is not connected yet. Connect Xero first, then run Sync Xero.
+                <div style={{ marginTop: 8 }}>
+                  <Button onClick={() => navigate("/app/xero/connect")}>Open Xero connect</Button>
+                </div>
               </Banner>
             ) : null}
 
