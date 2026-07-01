@@ -20,6 +20,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
+import { createSaleCompat } from "../services/saleCompat.server";
 
 const VAT_RATE = 0.2;
 
@@ -641,8 +642,8 @@ const draftOrderInput = {
   const shopifyOrder =
     completeDraftJson.data.draftOrderComplete.draftOrder.order;
 
-const sale = await prisma.sale.create({
-      data: {
+const sale = await createSaleCompat({
+  sale: {
       shopifyOrderId: shopifyOrder?.id || null,
       shopifyOrderName: shopifyOrder?.name || null,
       customerId: shopifyCustomerId,
@@ -667,8 +668,8 @@ const sale = await prisma.sale.create({
       paymentStatus,
       depositPaid,
       staffId,
-      lineItems: {
-        create: lineItems.map((item: any) => ({
+    },
+      lineItems: lineItems.map((item: any) => ({
           shopifyVariantId: item.type === "custom" ? null : item.id,
           title: item.title,
           sku: item.sku,
@@ -682,8 +683,6 @@ const sale = await prisma.sale.create({
           ),
           isCustom: item.type === "custom",
         })),
-      },
-    },
   });
 
   // Adjust Shopify inventory for any non-custom line items

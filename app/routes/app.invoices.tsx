@@ -18,6 +18,7 @@ import "@shopify/polaris/build/esm/styles.css";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
+import { createSaleCompat } from "../services/saleCompat.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -194,8 +195,8 @@ export async function action({ request }: ActionFunctionArgs) {
       const depositPaidAttr = getCustomAttributeValue(customAttributes, "Deposit Paid").toLowerCase();
       const depositPaid = depositPaidAttr === "yes" || (amountPaid > 0 && amountPaid < total);
 
-      const createdSale = await prisma.sale.create({
-        data: {
+      const createdSale = await createSaleCompat({
+        sale: {
           shopifyOrderId: order.id,
           shopifyOrderName: order.name || null,
           customerId: order.customer?.id || null,
@@ -221,8 +222,8 @@ export async function action({ request }: ActionFunctionArgs) {
           depositPaid,
           staffId: staffExists?.id || defaultStaff!.id,
           createdAt: parseXeroDate(order.createdAt),
-          lineItems: {
-            create: (order.lineItems?.edges || []).map((edge: any) => {
+        },
+          lineItems: (order.lineItems?.edges || []).map((edge: any) => {
               const node = edge?.node;
               const originalUnitPrice = toNumber(node?.originalUnitPriceSet?.shopMoney?.amount);
               const discountedUnitPrice = toNumber(node?.discountedUnitPriceAfterAllDiscountsSet?.shopMoney?.amount);
@@ -241,8 +242,6 @@ export async function action({ request }: ActionFunctionArgs) {
                 isCustom: !node?.variant?.id,
               };
             }),
-          },
-        },
       });
 
       return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
@@ -296,8 +295,8 @@ export async function action({ request }: ActionFunctionArgs) {
       const total = Number(worksOrder.total ?? 0);
       const amountPaid = Number(worksOrder.amountPaid ?? 0);
 
-      const createdSale = await prisma.sale.create({
-        data: {
+      const createdSale = await createSaleCompat({
+        sale: {
           shopifyOrderId: null,
           shopifyOrderName: worksOrder.xeroInvoiceNumber || null,
           customerId: worksOrder.customerId || null,
@@ -323,8 +322,8 @@ export async function action({ request }: ActionFunctionArgs) {
           depositPaid: amountPaid > 0 && amountPaid < total,
           staffId: staffExists?.id || defaultStaff!.id,
           createdAt: worksOrder.createdAt,
-          lineItems: {
-            create: worksOrder.lineItems.map((item) => ({
+        },
+          lineItems: worksOrder.lineItems.map((item) => ({
               shopifyVariantId: item.shopifyVariantId || null,
               title: item.title,
               sku: item.sku || null,
@@ -335,8 +334,6 @@ export async function action({ request }: ActionFunctionArgs) {
               lineTotal: Number(item.lineTotal ?? 0),
               isCustom: !item.shopifyVariantId,
             })),
-          },
-        },
       });
 
       return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
@@ -402,8 +399,8 @@ export async function action({ request }: ActionFunctionArgs) {
       const paymentStatus =
         balanceDue <= 0 ? "Paid" : amountPaid > 0 ? "Partially Paid" : "Unpaid";
 
-      await prisma.sale.create({
-        data: {
+      await createSaleCompat({
+        sale: {
           shopifyOrderId: `xero:${invoiceId}`,
           shopifyOrderName: String(invoice?.invoiceNumber || "").trim() || null,
           customerId: null,

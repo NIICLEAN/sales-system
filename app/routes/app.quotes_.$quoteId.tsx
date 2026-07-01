@@ -17,6 +17,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
+import { createSaleCompat } from "../services/saleCompat.server";
 
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
@@ -151,8 +152,8 @@ export async function action({ request, params }: { request: Request; params: { 
 
   const shopifyOrder = completeDraftJson.data.draftOrderComplete.draftOrder.order;
 
-  const sale = await prisma.sale.create({
-    data: {
+  const sale = await createSaleCompat({
+    sale: {
       shopifyOrderId: shopifyOrder?.id || null,
       shopifyOrderName: shopifyOrder?.name || null,
       customerId: null,
@@ -177,8 +178,8 @@ export async function action({ request, params }: { request: Request; params: { 
       paymentStatus: "Unpaid",
       depositPaid: false,
       staffId: quote.staffId,
-      lineItems: {
-        create: quote.lineItems.map((item: any) => ({
+    },
+    lineItems: quote.lineItems.map((item: any) => ({
           shopifyVariantId: item.shopifyVariantId || null,
           title: item.title,
           sku: item.sku,
@@ -189,8 +190,6 @@ export async function action({ request, params }: { request: Request; params: { 
           lineTotal: item.lineTotal,
           isCustom: !item.shopifyVariantId,
         })),
-      },
-    },
   });
 
   // Adjust inventory for non-custom items
