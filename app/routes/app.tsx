@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useLocation, useNavigate, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-react-router/react";
@@ -19,6 +19,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const appNavLinks = [
     { to: "/app", label: "Home" },
@@ -57,7 +58,7 @@ export default function App() {
               {appNavLinks.map((item) => (
                 <Button
                   key={item.to}
-                  url={item.to}
+                  onClick={() => navigate(item.to)}
                   variant={location.pathname === item.to ? "primary" : "secondary"}
                 >
                   {item.label}
