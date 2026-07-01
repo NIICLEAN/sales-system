@@ -143,8 +143,15 @@ export async function loader({ request }: { request: Request }) {
     const includeLocal = source !== "custom";
     const includeCustom = source !== "local";
 
-    const xeroConnection = await getXeroConnection();
-    const xeroConnected = Boolean(xeroConnection?.tenantId);
+    let xeroConnected = false;
+    try {
+      const xeroConnection = await getXeroConnection();
+      xeroConnected = Boolean(xeroConnection?.tenantId);
+    } catch (error) {
+      // Keep invoices working even if Xero storage/migrations are unavailable.
+      console.error("Failed to load Xero connection status:", error);
+      xeroConnected = false;
+    }
 
     const invoices = includeLocal
       ? await prisma.sale.findMany({
