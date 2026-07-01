@@ -33,8 +33,10 @@ export async function loader({
   try {
     await authenticate.admin(request);
 
-    const invoice = await prisma.sale.findUnique({
-      where: { id: Number(params.invoiceId) },
+    const invoiceId = Number(params.invoiceId);
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: invoiceId },
       select: {
         id: true,
         shopifyOrderId: true,
@@ -62,15 +64,41 @@ export async function loader({
         depositPaid: true,
         staffId: true,
         createdAt: true,
-        staff: true,
-        lineItems: true,
-        payments: true,
       },
     });
 
-    if (!invoice) {
+    if (!sale) {
       throw new Response("Invoice not found", { status: 404 });
     }
+
+    const [staff, lineItems] = await Promise.all([
+      prisma.staff.findUnique({
+        where: { id: sale.staffId },
+        select: { name: true },
+      }),
+      prisma.saleLineItem.findMany({
+        where: { saleId: invoiceId },
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          title: true,
+          sku: true,
+          quantity: true,
+          unitPrice: true,
+          discount: true,
+          lineTotal: true,
+        },
+      }),
+    ]);
+
+    const invoice = {
+      ...sale,
+      staff,
+      lineItems: lineItems.map((item) => ({
+        ...item,
+        imageUrl: null,
+      })),
+    };
 
     return {
       invoice,
