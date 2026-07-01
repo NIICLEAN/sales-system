@@ -71,7 +71,7 @@ export async function loader({
       throw new Response("Invoice not found", { status: 404 });
     }
 
-    const [staff, lineItems, paymentAggregate] = await Promise.all([
+    const [staff, lineItems] = await Promise.all([
       prisma.staff.findUnique({
         where: { id: sale.staffId },
         select: { name: true },
@@ -89,15 +89,25 @@ export async function loader({
           lineTotal: true,
         },
       }),
-      prisma.payment.aggregate({
+    ]);
+
+    let recordedPaymentCount = 0;
+    let recordedPaymentTotal = 0;
+
+    try {
+      const paymentAggregate = await prisma.payment.aggregate({
         where: { saleId: invoiceId },
         _count: { id: true },
         _sum: { amount: true },
-      }),
-    ]);
+      });
 
-    const recordedPaymentCount = Number(paymentAggregate?._count?.id || 0);
-    const recordedPaymentTotal = Number(paymentAggregate?._sum?.amount || 0);
+      recordedPaymentCount = Number(paymentAggregate?._count?.id || 0);
+      recordedPaymentTotal = Number(paymentAggregate?._sum?.amount || 0);
+    } catch (error) {
+      // Keep invoice detail working on legacy databases where Payment may be unavailable.
+      console.error("Failed to load payment aggregate for invoice:", error);
+    }
+
     const fallbackAmountPaid = Number(sale.amountPaid || 0);
 
     const paymentSummary = {
