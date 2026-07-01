@@ -111,6 +111,18 @@ export default function App() {
           .brand-nav :global(button) {
             border-color: #c8dbff;
           }
+
+          @media print {
+            .brand-header,
+            .brand-nav {
+              display: none !important;
+            }
+
+            .brand-shell {
+              background: white;
+              min-height: auto;
+            }
+          }
         `}</style>
 
         <div className="brand-shell">
