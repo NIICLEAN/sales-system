@@ -176,7 +176,6 @@ export async function action({ request, params }: { request: Request; params: { 
       balanceDue: quote.total,
       paymentStatus: "Unpaid",
       depositPaid: false,
-      vatType: quote.vatType as any,
       staffId: quote.staffId,
       lineItems: {
         create: quote.lineItems.map((item: any) => ({
