@@ -1,5 +1,5 @@
 import { Form, useLoaderData, redirect } from "react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Page,
   Layout,
@@ -15,6 +15,7 @@ import {
   Badge,
   Checkbox,
   Box,
+  Modal,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
@@ -398,6 +399,7 @@ const formData = await request.formData();
 
 const editInvoiceId = String(formData.get("editInvoiceId") || "").trim();
 const isEditMode = Boolean(params.invoiceId || editInvoiceId);
+const printMode = String(formData.get("printMode") || "invoice").trim().toLowerCase();
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -866,11 +868,20 @@ try {
   console.error("Failed to record payment:", err);
 }
 
- return redirect(
-  `/app/invoices/${sale.id}?autoprint=1&fulfilmentMethod=${encodeURIComponent(
+  if (printMode === "none") {
+    return redirect(`/app/invoices/${sale.id}`);
+  }
+
+  const printParams = new URLSearchParams({
+    autoprint: "1",
     fulfilmentMethod,
-  )}`,
-);
+  });
+
+  if (printMode === "invoice" || printMode === "packing" || printMode === "both") {
+    printParams.set("printMode", printMode);
+  }
+
+  return redirect(`/app/invoices/${sale.id}?${printParams.toString()}`);
 }
 
 export default function InvoicePage() {
@@ -884,6 +895,16 @@ const {
 } = useLoaderData<typeof loader>();
 
 const isEditMode = Boolean(existingInvoice);
+const formRef = useRef<HTMLFormElement | null>(null);
+const printModeRef = useRef<HTMLInputElement | null>(null);
+const [showPrintOptions, setShowPrintOptions] = useState(false);
+
+function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
+  if (printModeRef.current) {
+    printModeRef.current.value = mode;
+  }
+  formRef.current?.requestSubmit();
+}
 
   const [searchTerm, setSearchTerm] = useState(productSearch || "");
 
@@ -1496,7 +1517,14 @@ const [showAddress, setShowAddress] = useState(
       </Layout>
 
       <div style={{ marginTop: 16 }}>
-        <Form method="post">
+        <Form method="post" ref={formRef}>
+          <input
+            ref={printModeRef}
+            type="hidden"
+            name="printMode"
+            value={isEditMode ? "none" : "invoice"}
+            readOnly
+          />
           <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
           <input type="hidden" name="customerId" value={customerId} />
           <input
@@ -1819,9 +1847,50 @@ const [showAddress, setShowAddress] = useState(
                       </Text>
                     </InlineStack>
 
-<Button submit variant="primary" fullWidth>
-  {isEditMode ? "Save Changes" : "Save Proforma"}
-</Button>
+                    {isEditMode ? (
+                      <Button submit variant="primary" fullWidth>
+                        Save Changes
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        onClick={() => setShowPrintOptions(true)}
+                      >
+                        Save Proforma
+                      </Button>
+                    )}
+
+                    <Modal
+                      open={!isEditMode && showPrintOptions}
+                      onClose={() => setShowPrintOptions(false)}
+                      title="Print after saving proforma"
+                    >
+                      <Modal.Section>
+                        <BlockStack gap="300">
+                          <Text as="p" variant="bodyMd">
+                            Choose to print one sheet (invoice) or two sheets (invoice + packing slip).
+                          </Text>
+
+                          <InlineStack gap="200" wrap>
+                            <Button
+                              variant="primary"
+                              onClick={() => submitProformaWithPrintMode("invoice")}
+                            >
+                              Print one sheet (invoice)
+                            </Button>
+
+                            <Button onClick={() => submitProformaWithPrintMode("both")}>
+                              Print two sheets
+                            </Button>
+
+                            <Button onClick={() => submitProformaWithPrintMode("none")}>
+                              Save without printing
+                            </Button>
+                          </InlineStack>
+                        </BlockStack>
+                      </Modal.Section>
+                    </Modal>
                   </BlockStack>
                 </Card>
               </div>

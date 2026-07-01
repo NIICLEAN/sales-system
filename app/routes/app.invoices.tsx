@@ -58,6 +58,22 @@ function getCustomAttributeValue(attributes: Array<{ key?: string | null; value?
   return String(match?.value || "").trim();
 }
 
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   const { admin } = await authenticate.admin(request);
 
@@ -67,9 +83,17 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "openShopifyLegacyInEditor") {
     const shopifyOrderId = String(formData.get("shopifyOrderId") || "").trim();
     const legacyResourceId = String(formData.get("legacyResourceId") || "").trim();
+    const openMode = String(formData.get("openMode") || "edit").trim().toLowerCase();
+    const viewPathForSale = (saleId: number) =>
+      openMode === "view" ? `/app/invoices/${saleId}` : `/app/invoice?editInvoiceId=${saleId}`;
 
     if (!shopifyOrderId) {
-      return redirect("/app/invoices?syncStatus=error&syncMessage=Invalid%20Shopify%20invoice%20selection");
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=Invalid%20Shopify%20invoice%20selection",
+        ),
+      );
     }
 
     try {
@@ -86,7 +110,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       if (existingSale) {
-        return redirect(`/app/invoice?editInvoiceId=${existingSale.id}`);
+        return redirect(withEmbeddedParamsFromRequest(request, viewPathForSale(existingSale.id)));
       }
 
       const response = await admin.graphql(
@@ -172,7 +196,12 @@ export async function action({ request }: ActionFunctionArgs) {
       const order = json?.data?.order;
 
       if (!order) {
-        return redirect("/app/invoices?syncStatus=error&syncMessage=Shopify%20invoice%20order%20not%20found");
+        return redirect(
+          withEmbeddedParamsFromRequest(
+            request,
+            "/app/invoices?syncStatus=error&syncMessage=Shopify%20invoice%20order%20not%20found",
+          ),
+        );
       }
 
       const customAttributes = order.customAttributes ?? [];
@@ -186,7 +215,12 @@ export async function action({ request }: ActionFunctionArgs) {
         : null;
 
       if (!defaultStaff && !staffExists) {
-        return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
+        return redirect(
+          withEmbeddedParamsFromRequest(
+            request,
+            "/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists",
+          ),
+        );
       }
 
       const total = toNumber(order?.currentTotalPriceSet?.shopMoney?.amount);
@@ -244,11 +278,13 @@ export async function action({ request }: ActionFunctionArgs) {
             }),
       });
 
-      return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
+      return redirect(withEmbeddedParamsFromRequest(request, viewPathForSale(createdSale.id)));
     } catch (error: any) {
       console.error("Failed to open Shopify legacy invoice in editor:", error);
       const message = encodeURIComponent(String(error?.message || "Failed to open Shopify legacy invoice"));
-      return redirect(`/app/invoices?syncStatus=error&syncMessage=${message}`);
+      return redirect(
+        withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`),
+      );
     }
   }
 
@@ -964,6 +1000,14 @@ export default function InvoicesPage() {
                             <InlineStack gap="200">
                               <Form method="post">
                                 <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                                <input type="hidden" name="openMode" value="view" />
+                                <input type="hidden" name="shopifyOrderId" value={invoice.id} />
+                                <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
+                                <Button submit>View</Button>
+                              </Form>
+                              <Form method="post">
+                                <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                                <input type="hidden" name="openMode" value="edit" />
                                 <input type="hidden" name="shopifyOrderId" value={invoice.id} />
                                 <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
                                 <Button submit>Edit Invoice</Button>
@@ -973,12 +1017,22 @@ export default function InvoicesPage() {
                               </Button>
                             </InlineStack>
                           ) : (
-                            <Form method="post">
-                              <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
-                              <input type="hidden" name="shopifyOrderId" value={invoice.id} />
-                              <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
-                              <Button submit>Edit Invoice</Button>
-                            </Form>
+                            <InlineStack gap="200">
+                              <Form method="post">
+                                <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                                <input type="hidden" name="openMode" value="view" />
+                                <input type="hidden" name="shopifyOrderId" value={invoice.id} />
+                                <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
+                                <Button submit>View</Button>
+                              </Form>
+                              <Form method="post">
+                                <input type="hidden" name="_intent" value="openShopifyLegacyInEditor" />
+                                <input type="hidden" name="openMode" value="edit" />
+                                <input type="hidden" name="shopifyOrderId" value={invoice.id} />
+                                <input type="hidden" name="legacyResourceId" value={invoice.legacyResourceId || ""} />
+                                <Button submit>Edit Invoice</Button>
+                              </Form>
+                            </InlineStack>
                           )}
                         </IndexTable.Cell>
                       </IndexTable.Row>

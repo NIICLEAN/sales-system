@@ -127,9 +127,15 @@ export default function PrintInvoicePage() {
   const loadedInvoice = invoice;
 
   const fulfilmentMethod = searchParams.get("fulfilmentMethod") || "Collected";
+  const printMode = searchParams.get("printMode") || "";
+  const packingOnlyPrint = printMode === "packing";
+  const showInvoiceSheet = !packingOnlyPrint;
 
   const shouldPrintPackingSlip =
-    fulfilmentMethod === "Collecting" || fulfilmentMethod === "Delivery";
+    packingOnlyPrint ||
+    printMode === "both" ||
+    (printMode !== "invoice" &&
+      (fulfilmentMethod === "Collecting" || fulfilmentMethod === "Delivery"));
 
   useEffect(() => {
     if (searchParams.get("autoprint") !== "1") return;
@@ -403,6 +409,11 @@ export default function PrintInvoicePage() {
           display: none;
         }
 
+        .packing-slip-visible {
+          display: block;
+          page-break-before: auto;
+        }
+
         .packing-header {
           display: flex;
           justify-content: space-between;
@@ -533,6 +544,8 @@ export default function PrintInvoicePage() {
         </button>
       </div>
 
+      {showInvoiceSheet ? (
+      <>
       <div className="header">
         <div>
           <h1 className="invoice-title">Invoice</h1>
@@ -666,9 +679,11 @@ export default function PrintInvoicePage() {
       </div>
 
       <div className="footer">Thank you for your business.</div>
+      </>
+      ) : null}
 
       {shouldPrintPackingSlip && (
-        <div className="packing-slip">
+        <div className={`packing-slip ${packingOnlyPrint ? "packing-slip-visible" : ""}`}>
           <div className="packing-header">
             <div>
               <div className="packing-title">Packing Slip</div>
