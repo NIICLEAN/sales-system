@@ -161,7 +161,7 @@ export async function loader({ request }: { request: Request }) {
       }
     }
 
-    const invoices = includeLocal
+    const localInvoices = includeLocal
       ? await prisma.sale.findMany({
           orderBy: { createdAt: "desc" },
           select: {
@@ -172,14 +172,27 @@ export async function loader({ request }: { request: Request }) {
             createdAt: true,
             shopifyOrderName: true,
             reference: true,
-            staff: {
-              select: {
-                name: true,
-              },
-            },
+            staffId: true,
           },
         })
       : [];
+
+    const staffIds = Array.from(new Set(localInvoices.map((invoice) => invoice.staffId)));
+    const staffRecords = staffIds.length
+      ? await prisma.staff.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+    const staffById = new Map(staffRecords.map((staff) => [staff.id, staff.name]));
+
+    const invoices = localInvoices.map((invoice) => ({
+      ...invoice,
+      staff: staffById.has(invoice.staffId)
+        ? { name: staffById.get(invoice.staffId) }
+        : null,
+    }));
 
     const customInvoices = includeCustom
       ? await prisma.workSchedule.findMany({
