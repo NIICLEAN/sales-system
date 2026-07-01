@@ -71,7 +71,7 @@ export async function loader({
       throw new Response("Invoice not found", { status: 404 });
     }
 
-    const [staff, lineItems] = await Promise.all([
+    const [staff, lineItems, paymentAggregate] = await Promise.all([
       prisma.staff.findUnique({
         where: { id: sale.staffId },
         select: { name: true },
@@ -89,11 +89,27 @@ export async function loader({
           lineTotal: true,
         },
       }),
+      prisma.payment.aggregate({
+        where: { saleId: invoiceId },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
     ]);
+
+    const recordedPaymentCount = Number(paymentAggregate?._count?.id || 0);
+    const recordedPaymentTotal = Number(paymentAggregate?._sum?.amount || 0);
+    const fallbackAmountPaid = Number(sale.amountPaid || 0);
+
+    const paymentSummary = {
+      count: recordedPaymentCount || (fallbackAmountPaid > 0 ? 1 : 0),
+      total: recordedPaymentTotal || fallbackAmountPaid,
+      isEstimated: recordedPaymentCount === 0 && fallbackAmountPaid > 0,
+    };
 
     const invoice = {
       ...sale,
       staff,
+      paymentSummary,
       lineItems: lineItems.map((item) => ({
         ...item,
         imageUrl: null,
@@ -207,6 +223,9 @@ export default function PrintInvoicePage() {
   }
 
   const amountPaid = Number(loadedInvoice.amountPaid || 0);
+  const partialPaymentCount = Number(loadedInvoice.paymentSummary?.count || 0);
+  const partialPaymentTotal = Number(loadedInvoice.paymentSummary?.total || amountPaid || 0);
+  const partialPaymentEstimated = Boolean(loadedInvoice.paymentSummary?.isEstimated);
 
   const balanceDue =
     loadedInvoice.balanceDue !== null && loadedInvoice.balanceDue !== undefined
@@ -452,6 +471,17 @@ export default function PrintInvoicePage() {
           color: #9b0000;
           font-weight: 700;
           font-size: 16px;
+        }
+
+        .payments-row {
+          background: #eff7ff;
+        }
+
+        .payments-note {
+          display: block;
+          margin-top: 6px;
+          font-size: 11px;
+          color: #4b5870;
         }
 
         .footer {
@@ -738,6 +768,18 @@ export default function PrintInvoicePage() {
         <div className="totals-row paid-row">
           <span>Amount Paid</span>
           <span>{money(amountPaid)}</span>
+        </div>
+
+        <div className="totals-row payments-row">
+          <span>
+            Partial Payments Made ({partialPaymentCount})
+            {partialPaymentEstimated ? (
+              <span className="payments-note">Based on recorded amount paid</span>
+            ) : null}
+          </span>
+          <span>
+            {money(partialPaymentTotal)} / {money(invoice.total)}
+          </span>
         </div>
 
         <div className="totals-row balance-row">
