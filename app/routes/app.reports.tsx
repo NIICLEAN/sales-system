@@ -78,17 +78,44 @@ export async function loader({ request }: { request: Request }) {
       dateFilter.lte = new Date(`${toDate}T23:59:59`);
     }
 
-    const sales = await prisma.sale.findMany({
+    const rawSales = await prisma.sale.findMany({
       where: {
         ...(staffId !== "all" ? { staffId: Number(staffId) } : {}),
         ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
       },
       orderBy: { createdAt: "desc" },
-      include: {
-        staff: true,
-        lineItems: true,
+      select: {
+        id: true,
+        shopifyOrderName: true,
+        customerName: true,
+        customerEmail: true,
+        paymentMethod: true,
+        reference: true,
+        subtotal: true,
+        discountTotal: true,
+        vatAmount: true,
+        total: true,
+        createdAt: true,
+        staffId: true,
       },
     });
+
+    const staffIds = Array.from(new Set(rawSales.map((sale) => sale.staffId)));
+    const staffRecords = staffIds.length
+      ? await prisma.staff.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+    const staffById = new Map(staffRecords.map((person) => [person.id, person.name]));
+
+    const sales = rawSales.map((sale) => ({
+      ...sale,
+      staff: staffById.has(sale.staffId)
+        ? { name: staffById.get(sale.staffId) }
+        : null,
+    }));
 
     const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total ?? 0), 0);
     const totalVat = sales.reduce((sum, sale) => sum + Number(sale.vatAmount ?? 0), 0);

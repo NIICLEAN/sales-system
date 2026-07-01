@@ -19,13 +19,33 @@ export async function loader({ request }: { request: Request }) {
   try {
     await authenticate.admin(request);
 
-    const quotes = await prisma.quote.findMany({
+    const rawQuotes = await prisma.quote.findMany({
       orderBy: { createdAt: "desc" },
-      include: {
-        staff: true,
-        lineItems: true,
+      select: {
+        id: true,
+        customerName: true,
+        total: true,
+        createdAt: true,
+        staffId: true,
       },
     });
+
+    const staffIds = Array.from(new Set(rawQuotes.map((quote) => quote.staffId)));
+    const staffRecords = staffIds.length
+      ? await prisma.staff.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+    const staffById = new Map(staffRecords.map((staff) => [staff.id, staff.name]));
+
+    const quotes = rawQuotes.map((quote) => ({
+      ...quote,
+      staff: staffById.has(quote.staffId)
+        ? { name: staffById.get(quote.staffId) }
+        : null,
+    }));
 
     return { quotes, error: null };
   } catch (error) {
