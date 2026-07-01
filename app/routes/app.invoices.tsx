@@ -706,9 +706,9 @@ export default function InvoicesPage() {
                       name="source"
                       value={source}
                       options={[
-                        { label: "Local + custom/Xero", value: "all" },
+                          { label: "Local + scheduled/custom", value: "all" },
                         { label: "Local only", value: "local" },
-                        { label: "Custom/Xero only", value: "custom" },
+                          { label: "Scheduled/custom only", value: "custom" },
                       ]}
                       onChange={(value) => navigate(`/app/invoices?source=${value}`)}
                     />
@@ -817,7 +817,7 @@ export default function InvoicesPage() {
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">
-                    Custom / Xero invoices (from schedule)
+                    Custom scheduled invoices
                   </Text>
 
                   <IndexTable

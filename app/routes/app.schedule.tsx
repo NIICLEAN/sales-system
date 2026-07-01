@@ -432,7 +432,7 @@ export default function SchedulePage() {
                 label="Invoice source"
                 options={[
                   { label: "Shopify invoice", value: "shopify" },
-                  { label: "Custom / Xero invoice", value: "custom" },
+                  { label: "Custom invoice", value: "custom" },
                 ]}
                 value={invoiceMode}
                 onChange={setInvoiceMode}
@@ -452,7 +452,7 @@ export default function SchedulePage() {
                     value={customInvoiceNumber}
                     onChange={setCustomInvoiceNumber}
                     autoComplete="off"
-                    placeholder="e.g. XERO-1042"
+                    placeholder="e.g. INV-1042"
                   />
 
                   <TextField
