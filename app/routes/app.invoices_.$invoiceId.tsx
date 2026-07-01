@@ -438,6 +438,16 @@ export default function PrintInvoicePage() {
       `}</style>
 
       <div className="actions">
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            window.location.href = `/app/invoice?editInvoiceId=${invoice.id}`;
+          }}
+        >
+          Edit Invoice
+        </button>
+
         <button type="button" onClick={() => window.print()}>
           Print Invoice
         </button>

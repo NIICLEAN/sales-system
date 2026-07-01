@@ -31,11 +31,112 @@ function parseXeroDate(value: unknown) {
   return date;
 }
 
+function mapLegacyPaymentStatus(value: unknown) {
+  const status = String(value || "").toLowerCase();
+  if (status === "paid") return "Paid";
+  if (status === "part_paid" || status === "partially_paid") return "Partially Paid";
+  return "Unpaid";
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   await authenticate.admin(request);
 
   const formData = await request.formData();
   const intent = String(formData.get("_intent") || "");
+
+  if (intent === "openLegacyInEditor") {
+    const worksOrderId = Number(formData.get("worksOrderId") || 0);
+
+    if (!worksOrderId) {
+      return redirect("/app/invoices?syncStatus=error&syncMessage=Invalid%20legacy%20invoice%20selection");
+    }
+
+    try {
+      const reference = `WORKS:${worksOrderId}`;
+
+      const existingSale = await prisma.sale.findFirst({
+        where: { reference },
+        select: { id: true },
+      });
+
+      if (existingSale) {
+        return redirect(`/app/invoice?editInvoiceId=${existingSale.id}`);
+      }
+
+      const worksOrder = await prisma.worksOrder.findUnique({
+        where: { id: worksOrderId },
+        include: { lineItems: true },
+      });
+
+      if (!worksOrder) {
+        return redirect("/app/invoices?syncStatus=error&syncMessage=Legacy%20invoice%20not%20found");
+      }
+
+      const defaultStaff = await prisma.staff.findFirst({ orderBy: { id: "asc" } });
+      const staffExists = worksOrder.salespersonId
+        ? await prisma.staff.findUnique({
+            where: { id: worksOrder.salespersonId },
+            select: { id: true },
+          })
+        : null;
+
+      if (!defaultStaff && !staffExists) {
+        return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
+      }
+
+      const total = Number(worksOrder.total ?? 0);
+      const amountPaid = Number(worksOrder.amountPaid ?? 0);
+
+      const createdSale = await prisma.sale.create({
+        data: {
+          shopifyOrderId: null,
+          shopifyOrderName: worksOrder.xeroInvoiceNumber || null,
+          customerId: worksOrder.customerId || null,
+          customerName: worksOrder.customerName || "Walk-in customer",
+          customerEmail: worksOrder.customerEmail || null,
+          customerVatNumber: worksOrder.customerVatNumber || null,
+          customerPhone: worksOrder.customerPhone || null,
+          address1: worksOrder.address1 || null,
+          address2: worksOrder.address2 || null,
+          city: worksOrder.city || null,
+          county: worksOrder.county || null,
+          postcode: worksOrder.postcode || null,
+          country: worksOrder.country || null,
+          reference,
+          paymentMethod: worksOrder.paymentMethod || "Other",
+          subtotal: Number(worksOrder.subtotal ?? 0),
+          discountTotal: Number(worksOrder.discountTotal ?? 0),
+          vatAmount: Number(worksOrder.vatAmount ?? 0),
+          total,
+          amountPaid,
+          balanceDue: Math.max(total - amountPaid, 0),
+          paymentStatus: mapLegacyPaymentStatus(worksOrder.paymentStatus),
+          depositPaid: amountPaid > 0 && amountPaid < total,
+          staffId: staffExists?.id || defaultStaff!.id,
+          createdAt: worksOrder.createdAt,
+          lineItems: {
+            create: worksOrder.lineItems.map((item) => ({
+              shopifyVariantId: item.shopifyVariantId || null,
+              title: item.title,
+              sku: item.sku || null,
+              imageUrl: null,
+              quantity: Number(item.quantity || 0),
+              unitPrice: Number(item.unitPrice ?? 0),
+              discount: Number(item.discount ?? 0),
+              lineTotal: Number(item.lineTotal ?? 0),
+              isCustom: !item.shopifyVariantId,
+            })),
+          },
+        },
+      });
+
+      return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
+    } catch (error: any) {
+      console.error("Failed to open legacy invoice in editor:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to open legacy invoice"));
+      return redirect(`/app/invoices?syncStatus=error&syncMessage=${message}`);
+    }
+  }
 
   if (intent !== "syncXero") {
     return null;
@@ -238,6 +339,7 @@ export async function loader({ request }: { request: Request }) {
       paymentStatus: string;
       total: number;
       createdAt: string;
+      adminOrderPath: string | null;
     }> = [];
 
     if (
@@ -253,6 +355,7 @@ export async function loader({ request }: { request: Request }) {
                 edges {
                   node {
                     id
+                    legacyResourceId
                     name
                     createdAt
                     displayFinancialStatus
@@ -275,6 +378,9 @@ export async function loader({ request }: { request: Request }) {
         const json = (await response.json()) as any;
         shopifyLegacyInvoices =
           json?.data?.orders?.edges?.map((edge: any) => ({
+            adminOrderPath: edge?.node?.legacyResourceId
+              ? `/admin/orders/${edge.node.legacyResourceId}`
+              : null,
             id: String(edge?.node?.id || ""),
             name: String(edge?.node?.name || "-") || "-",
             customerName:
@@ -336,6 +442,15 @@ export default function InvoicesPage() {
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
   const connectXero = searchParams.get("connectXero") === "1";
+
+  function openAdminPath(path: string) {
+    if (typeof window === "undefined") return;
+    if (window.top) {
+      window.top.location.href = path;
+      return;
+    }
+    window.location.href = path;
+  }
 
   return (
     <AppProvider i18n={{}}>
@@ -501,6 +616,7 @@ export default function InvoicesPage() {
                       { title: "Customer" },
                       { title: "Assigned staff" },
                       { title: "Date" },
+                      { title: "Actions" },
                     ]}
                     selectable={false}
                   >
@@ -517,6 +633,11 @@ export default function InvoicesPage() {
                         <IndexTable.Cell>{invoice.assignedStaff?.name || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>
                           {new Date(invoice.createdAt).toLocaleString()}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Button onClick={() => navigate("/app/schedule")}>
+                            Open Schedule
+                          </Button>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -563,9 +684,16 @@ export default function InvoicesPage() {
                           {new Date(invoice.createdAt).toLocaleString()}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Button onClick={() => navigate(`/app/works/${invoice.id}`)}>
-                            View
-                          </Button>
+                          <InlineStack gap="200">
+                            <Button onClick={() => navigate(`/app/works/${invoice.id}`)}>
+                              Open
+                            </Button>
+                            <Form method="post">
+                              <input type="hidden" name="_intent" value="openLegacyInEditor" />
+                              <input type="hidden" name="worksOrderId" value={invoice.id} />
+                              <Button submit>Edit Invoices</Button>
+                            </Form>
+                          </InlineStack>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -590,6 +718,7 @@ export default function InvoicesPage() {
                       { title: "Payment" },
                       { title: "Total" },
                       { title: "Date" },
+                      { title: "Actions" },
                     ]}
                     selectable={false}
                   >
@@ -605,6 +734,17 @@ export default function InvoicesPage() {
                         <IndexTable.Cell>£{Number(invoice.total ?? 0).toFixed(2)}</IndexTable.Cell>
                         <IndexTable.Cell>
                           {new Date(invoice.createdAt).toLocaleString()}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {invoice.adminOrderPath ? (
+                            <Button onClick={() => openAdminPath(invoice.adminOrderPath)}>
+                              Open Order
+                            </Button>
+                          ) : (
+                            <Text as="span" tone="subdued">
+                              No direct link
+                            </Text>
+                          )}
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
