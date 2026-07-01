@@ -135,7 +135,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export async function loader({ request }: { request: Request }) {
   try {
-    await authenticate.admin(request);
+    const { admin } = await authenticate.admin(request);
 
     const url = new URL(request.url);
     const xeroConfigured = Boolean(
@@ -231,10 +231,70 @@ export async function loader({ request }: { request: Request }) {
       take: 200,
     });
 
+    let shopifyLegacyInvoices: Array<{
+      id: string;
+      name: string;
+      customerName: string;
+      paymentStatus: string;
+      total: number;
+      createdAt: string;
+    }> = [];
+
+    if (
+      invoices.length === 0 &&
+      customInvoices.length === 0 &&
+      legacyWorksInvoices.length === 0
+    ) {
+      try {
+        const response = await admin.graphql(
+          `
+            query LegacyInvoiceOrders($query: String!) {
+              orders(first: 50, query: $query, reverse: true, sortKey: CREATED_AT) {
+                edges {
+                  node {
+                    id
+                    name
+                    createdAt
+                    displayFinancialStatus
+                    customer {
+                      displayName
+                    }
+                    currentTotalPriceSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          `,
+          { variables: { query: "tag:'Invoice App'" } },
+        );
+
+        const json = (await response.json()) as any;
+        shopifyLegacyInvoices =
+          json?.data?.orders?.edges?.map((edge: any) => ({
+            id: String(edge?.node?.id || ""),
+            name: String(edge?.node?.name || "-") || "-",
+            customerName:
+              String(edge?.node?.customer?.displayName || "Walk-in customer") ||
+              "Walk-in customer",
+            paymentStatus: String(edge?.node?.displayFinancialStatus || "-") || "-",
+            total: Number(edge?.node?.currentTotalPriceSet?.shopMoney?.amount ?? 0),
+            createdAt: String(edge?.node?.createdAt || new Date().toISOString()),
+          })) || [];
+      } catch (error) {
+        console.error("Failed to load legacy Shopify invoice orders:", error);
+        shopifyLegacyInvoices = [];
+      }
+    }
+
     return {
       invoices,
       customInvoices,
       legacyWorksInvoices,
+      shopifyLegacyInvoices,
       source,
       xeroConnected,
       xeroConfigured,
@@ -250,6 +310,7 @@ export async function loader({ request }: { request: Request }) {
       invoices: [],
       customInvoices: [],
       legacyWorksInvoices: [],
+      shopifyLegacyInvoices: [],
       source: "local",
       xeroConnected: false,
       xeroConfigured: false,
@@ -263,6 +324,7 @@ export default function InvoicesPage() {
     invoices,
     customInvoices,
     legacyWorksInvoices,
+    shopifyLegacyInvoices,
     source,
     xeroConnected,
     xeroConfigured,
@@ -510,6 +572,54 @@ export default function InvoicesPage() {
                   </IndexTable>
                 </BlockStack>
               </Card>
+            ) : null}
+
+            {shopifyLegacyInvoices.length > 0 ? (
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Legacy invoices (Shopify tagged orders)
+                  </Text>
+
+                  <IndexTable
+                    resourceName={{ singular: "shopify invoice", plural: "shopify invoices" }}
+                    itemCount={shopifyLegacyInvoices.length}
+                    headings={[
+                      { title: "Order" },
+                      { title: "Customer" },
+                      { title: "Payment" },
+                      { title: "Total" },
+                      { title: "Date" },
+                    ]}
+                    selectable={false}
+                  >
+                    {shopifyLegacyInvoices.map((invoice: any, index: number) => (
+                      <IndexTable.Row
+                        id={`shopify-${invoice.id}`}
+                        key={`shopify-${invoice.id}`}
+                        position={index}
+                      >
+                        <IndexTable.Cell>{invoice.name}</IndexTable.Cell>
+                        <IndexTable.Cell>{invoice.customerName || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell>{invoice.paymentStatus || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell>£{Number(invoice.total ?? 0).toFixed(2)}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {new Date(invoice.createdAt).toLocaleString()}
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                </BlockStack>
+              </Card>
+            ) : null}
+
+            {invoices.length === 0 &&
+            customInvoices.length === 0 &&
+            legacyWorksInvoices.length === 0 &&
+            shopifyLegacyInvoices.length === 0 ? (
+              <Banner tone="info">
+                No invoices were found in local Sales, legacy Works Orders, custom schedule invoices, or Shopify tagged orders.
+              </Banner>
             ) : null}
           </Layout.Section>
         </Layout>
