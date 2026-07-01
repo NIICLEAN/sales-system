@@ -31,6 +31,14 @@ function parseXeroDate(value: unknown) {
   return date;
 }
 
+function formatDateTime(value: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Europe/London",
+  }).format(new Date(value));
+}
+
 function mapLegacyPaymentStatus(value: unknown) {
   const status = String(value || "").toLowerCase();
   if (status === "paid") return "Paid";
@@ -787,7 +795,7 @@ export default function InvoicesPage() {
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
-                      {new Date(invoice.createdAt).toLocaleString()}
+                      {formatDateTime(invoice.createdAt)}
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
@@ -839,7 +847,7 @@ export default function InvoicesPage() {
                         <IndexTable.Cell>{invoice.customCustomerName || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>{invoice.assignedStaff?.name || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          {new Date(invoice.createdAt).toLocaleString()}
+                          {formatDateTime(invoice.createdAt)}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <Button onClick={() => navigate("/app/schedule")}>
@@ -888,7 +896,7 @@ export default function InvoicesPage() {
                           £{Number(invoice.total ?? 0).toFixed(2)}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          {new Date(invoice.createdAt).toLocaleString()}
+                          {formatDateTime(invoice.createdAt)}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <InlineStack gap="200">
@@ -940,7 +948,7 @@ export default function InvoicesPage() {
                         <IndexTable.Cell>{invoice.paymentStatus || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>£{Number(invoice.total ?? 0).toFixed(2)}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          {new Date(invoice.createdAt).toLocaleString()}
+                          {formatDateTime(invoice.createdAt)}
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           {invoice.adminOrderPath ? (

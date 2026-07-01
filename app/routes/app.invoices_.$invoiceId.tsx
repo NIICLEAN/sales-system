@@ -8,6 +8,21 @@ function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
+function formatDateTime(value: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Europe/London",
+  }).format(new Date(value));
+}
+
+function formatDate(value: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "short",
+    timeZone: "Europe/London",
+  }).format(new Date(value));
+}
+
 export async function loader({
   request,
   params,
@@ -511,7 +526,7 @@ export default function PrintInvoicePage() {
         <div className="meta-cell">
           <div className="label">Invoice Date</div>
           <div className="value">
-            {new Date(invoice.createdAt).toLocaleString("en-GB")}
+            {formatDateTime(invoice.createdAt)}
           </div>
         </div>
 
@@ -634,7 +649,7 @@ export default function PrintInvoicePage() {
 
             <div className="packing-order">
               <div>Order INV-{invoice.id}</div>
-              <div>{new Date(invoice.createdAt).toLocaleDateString("en-GB")}</div>
+              <div>{formatDate(invoice.createdAt)}</div>
             </div>
           </div>
 
