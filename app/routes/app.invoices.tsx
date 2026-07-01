@@ -21,14 +21,26 @@ export async function loader({ request }: { request: Request }) {
 
     const invoices = await prisma.sale.findMany({
       orderBy: { createdAt: "desc" },
-      include: {
-        staff: true,
-        lineItems: true,
+      select: {
+        id: true,
+        customerName: true,
+        paymentMethod: true,
+        total: true,
+        createdAt: true,
+        staff: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
     return { invoices, error: null };
   } catch (error) {
+    if (error instanceof Response) {
+      throw error;
+    }
+
     console.error("Failed to load invoices:", error);
     return { invoices: [], error: "Invoices could not be loaded right now." };
   }
