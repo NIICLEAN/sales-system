@@ -44,6 +44,180 @@ function getGrossPrice(netPrice: any, isVatExempt: boolean) {
   return isVatExempt ? roundMoney(net) : roundMoney(net * (1 + VAT_RATE));
 }
 
+function buildOrderCustomAttributes({
+  paymentMethod,
+  paymentStatus,
+  amountPaid,
+  balanceDue,
+  depositPaid,
+  reference,
+  staffId,
+  customerVatNumber,
+  vatType,
+  isVatExempt,
+  fulfilmentMethod,
+}: {
+  paymentMethod: string;
+  paymentStatus: string;
+  amountPaid: number;
+  balanceDue: number;
+  depositPaid: boolean;
+  reference: string;
+  staffId: number;
+  customerVatNumber: string;
+  vatType: string;
+  isVatExempt: boolean;
+  fulfilmentMethod: string;
+}) {
+  return [
+    { key: "Payment Method", value: paymentMethod },
+    { key: "Payment Status", value: paymentStatus },
+    { key: "Amount Paid", value: money(amountPaid) },
+    { key: "Balance Due", value: money(balanceDue) },
+    { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
+    { key: "Reference", value: reference || "-" },
+    { key: "Salesperson ID", value: String(staffId) },
+    { key: "VAT Number", value: customerVatNumber || "-" },
+    { key: "VAT Type", value: vatType || "Standard" },
+    {
+      key: "Pricing Basis",
+      value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT",
+    },
+    { key: "Order Type", value: fulfilmentMethod },
+  ];
+}
+
+async function createShopifyOrderFromInvoice({
+  admin,
+  shopifyCustomerId,
+  customerEmail,
+  customerPhone,
+  isVatExempt,
+  reference,
+  tags,
+  customAttributes,
+  hasManualShippingAddress,
+  customerName,
+  address1,
+  address2,
+  city,
+  county,
+  postcode,
+  country,
+  lineItems,
+  paymentStatus,
+}: any) {
+  const draftOrderInput = {
+    customerId: shopifyCustomerId || undefined,
+    email: customerEmail || undefined,
+    phone: customerPhone || undefined,
+    taxExempt: isVatExempt,
+    note: reference || undefined,
+    tags,
+    customAttributes,
+    shippingAddress: hasManualShippingAddress
+      ? {
+          firstName: customerName,
+          address1,
+          address2,
+          city,
+          province: county,
+          zip: postcode,
+          country,
+          phone: customerPhone || undefined,
+        }
+      : undefined,
+    lineItems: lineItems.map((item: any) => {
+      const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
+      const netDiscount = roundMoney(Number(item.discount || 0));
+
+      return {
+        quantity: Number(item.quantity),
+        title: item.title || "Custom item",
+        sku: item.sku || undefined,
+        originalUnitPriceWithCurrency: {
+          amount: Number(netUnitPrice ?? 0).toFixed(2),
+          currencyCode: "GBP",
+        },
+        taxable: !isVatExempt,
+        appliedDiscount: netDiscount
+          ? {
+              value: netDiscount,
+              valueType: "FIXED_AMOUNT",
+              title: "Manual discount",
+            }
+          : null,
+      };
+    }),
+  };
+
+  const createDraftResponse = await admin.graphql(
+    `
+      mutation CreateDraftOrder($input: DraftOrderInput!) {
+        draftOrderCreate(input: $input) {
+          draftOrder {
+            id
+            name
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    { variables: { input: draftOrderInput } },
+  );
+
+  const createDraftJson = await createDraftResponse.json();
+  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
+
+  if (createErrors.length > 0) {
+    throw new Response(createErrors.map((e: any) => e.message).join(", "), {
+      status: 400,
+    });
+  }
+
+  const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
+
+  const completeDraftResponse = await admin.graphql(
+    `
+      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
+        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
+          draftOrder {
+            id
+            order {
+              id
+              name
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        id: draftOrderId,
+        paymentPending: paymentStatus !== "Paid",
+      },
+    },
+  );
+
+  const completeDraftJson = await completeDraftResponse.json();
+  const completeErrors = completeDraftJson.data?.draftOrderComplete?.userErrors || [];
+
+  if (completeErrors.length > 0) {
+    throw new Response(completeErrors.map((e: any) => e.message).join(", "), {
+      status: 400,
+    });
+  }
+
+  return completeDraftJson.data.draftOrderComplete.draftOrder.order;
+}
+
 export async function loader({
   request,
   params,
@@ -376,6 +550,22 @@ const tags = [
   depositPaid ? "Deposit Paid" : null,
 ].filter(Boolean) as string[];
 
+  const customAttributes = buildOrderCustomAttributes({
+    paymentMethod,
+    paymentStatus,
+    amountPaid,
+    balanceDue,
+    depositPaid,
+    reference,
+    staffId,
+    customerVatNumber,
+    vatType,
+    isVatExempt,
+    fulfilmentMethod,
+  });
+
+  const shouldCreateShopifyOrder = amountPaid > 0;
+
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
   await prisma.saleLineItem.deleteMany({
@@ -435,6 +625,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
     where: { id: invoiceId },
     select: {
       shopifyOrderId: true,
+      amountPaid: true,
     },
   });
 
@@ -462,24 +653,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
             phone: customerPhone || undefined,
             note: reference || undefined,
             tags,
-            customAttributes: [
-              { key: "Payment Method", value: paymentMethod },
-              { key: "Payment Status", value: paymentStatus },
-              { key: "Amount Paid", value: money(amountPaid) },
-              { key: "Balance Due", value: money(balanceDue) },
-              { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
-              { key: "Reference", value: reference || "-" },
-              { key: "Salesperson ID", value: String(staffId) },
-              { key: "VAT Number", value: customerVatNumber || "-" },
-              { key: "VAT Type", value: vatType || "Standard" },
-              {
-                key: "Pricing Basis",
-                value: isVatExempt
-                  ? "VAT exempt net price"
-                  : "Net price + 20% VAT",
-              },
-              { key: "Order Type", value: fulfilmentMethod },
-            ],
+            customAttributes,
             shippingAddress: hasManualShippingAddress
               ? {
                   firstName: customerName,
@@ -507,140 +681,95 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         status: 400,
       });
     }
+  } else if (shouldCreateShopifyOrder) {
+    const shopifyOrder = await createShopifyOrderFromInvoice({
+      admin,
+      shopifyCustomerId,
+      customerEmail,
+      customerPhone,
+      isVatExempt,
+      reference,
+      tags,
+      customAttributes,
+      hasManualShippingAddress,
+      customerName,
+      address1,
+      address2,
+      city,
+      county,
+      postcode,
+      country,
+      lineItems,
+      paymentStatus,
+    });
+
+    await prisma.sale.update({
+      where: { id: invoiceId },
+      data: {
+        shopifyOrderId: shopifyOrder?.id || null,
+        shopifyOrderName: shopifyOrder?.name || null,
+      },
+    });
+
+    try {
+      const variantAdjustments = lineItems
+        .filter((i: any) => i.type !== "custom" && i.id)
+        .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
+
+      if (variantAdjustments.length > 0) {
+        await adjustInventoryForLineItems(admin, variantAdjustments);
+      }
+    } catch (err) {
+      console.error("Inventory adjustment failed:", err);
+    }
+  }
+
+  const previousAmountPaid = roundMoney(Number(existingSale?.amountPaid || 0));
+  const paymentDelta = roundMoney(amountPaid - previousAmountPaid);
+
+  try {
+    if (paymentDelta > 0) {
+      await prisma.payment.create({
+        data: {
+          saleId: invoiceId,
+          amount: paymentDelta,
+          method: (paymentMethod as any) || "Other",
+          provider: paymentMethod,
+          reference: reference || null,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("Failed to record payment:", err);
   }
 
   return redirect(`/app/invoices/${invoiceId}`);
 }
 
-const draftOrderInput = {
-  customerId: shopifyCustomerId || undefined,
-  email: customerEmail || undefined,
-  phone: customerPhone || undefined,
-  taxExempt: isVatExempt,
-  note: reference || undefined,
-  tags,
-    customAttributes: [
-      { key: "Payment Method", value: paymentMethod },
-      { key: "Payment Status", value: paymentStatus },
-      { key: "Amount Paid", value: money(amountPaid) },
-      { key: "Balance Due", value: money(balanceDue) },
-      { key: "Deposit Paid", value: depositPaid ? "Yes" : "No" },
-      { key: "Reference", value: reference || "-" },
-      { key: "Salesperson ID", value: String(staffId) },
-      { key: "VAT Number", value: customerVatNumber || "-" },
-      {
-        key: "Pricing Basis",
-        value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT",
-      },
-      { key: "Order Type", value: fulfilmentMethod },
-    ],
-    shippingAddress: hasManualShippingAddress
-      ? {
-          firstName: customerName,
-          address1,
-          address2,
-          city,
-          province: county,
-          zip: postcode,
-          country,
-          phone: customerPhone || undefined,
-        }
-      : undefined,
+  let shopifyOrder = null;
 
-    lineItems: lineItems.map((item: any) => {
-      const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
-      const netDiscount = roundMoney(Number(item.discount || 0));
-
-      return {
-        quantity: Number(item.quantity),
-        title: item.title || "Custom item",
-        sku: item.sku || undefined,
-        originalUnitPriceWithCurrency: {
-          amount: Number(netUnitPrice ?? 0).toFixed(2),
-          currencyCode: "GBP",
-        },
-        // note: taxable should only be true for standard VAT treatment
-        taxable: vatType === "Standard",
-        appliedDiscount: netDiscount
-          ? {
-              value: netDiscount,
-              valueType: "FIXED_AMOUNT",
-              title: "Manual discount",
-            }
-          : null,
-      };
-    }),
-  };
-
-  const createDraftResponse = await admin.graphql(
-    `
-      mutation CreateDraftOrder($input: DraftOrderInput!) {
-        draftOrderCreate(input: $input) {
-          draftOrder {
-            id
-            name
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `,
-    { variables: { input: draftOrderInput } },
-  );
-
-  const createDraftJson = await createDraftResponse.json();
-
-  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
-
-  if (createErrors.length > 0) {
-    throw new Response(createErrors.map((e: any) => e.message).join(", "), {
-      status: 400,
+  if (shouldCreateShopifyOrder) {
+    shopifyOrder = await createShopifyOrderFromInvoice({
+      admin,
+      shopifyCustomerId,
+      customerEmail,
+      customerPhone,
+      isVatExempt,
+      reference,
+      tags,
+      customAttributes,
+      hasManualShippingAddress,
+      customerName,
+      address1,
+      address2,
+      city,
+      county,
+      postcode,
+      country,
+      lineItems,
+      paymentStatus,
     });
   }
-
-  const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
-
-  const completeDraftResponse = await admin.graphql(
-    `
-      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
-        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
-          draftOrder {
-            id
-            order {
-              id
-              name
-            }
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `,
-    {
-      variables: {
-        id: draftOrderId,
-        paymentPending: paymentStatus !== "Paid",
-      },
-    },
-  );
-
-  const completeDraftJson = await completeDraftResponse.json();
-
-  const completeErrors =
-    completeDraftJson.data?.draftOrderComplete?.userErrors || [];
-
-  if (completeErrors.length > 0) {
-    throw new Response(completeErrors.map((e: any) => e.message).join(", "), {
-      status: 400,
-    });
-  }
-
-  const shopifyOrder =
-    completeDraftJson.data.draftOrderComplete.draftOrder.order;
 
 const sale = await createSaleCompat({
   sale: {
@@ -668,6 +797,7 @@ const sale = await createSaleCompat({
       paymentStatus,
       depositPaid,
       staffId,
+      createdAt: new Date(),
     },
       lineItems: lineItems.map((item: any) => ({
           shopifyVariantId: item.type === "custom" ? null : item.id,
@@ -686,16 +816,18 @@ const sale = await createSaleCompat({
   });
 
   // Adjust Shopify inventory for any non-custom line items
-  try {
-    const variantAdjustments = lineItems
-      .filter((i: any) => i.type !== "custom" && i.id)
-      .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
+  if (shouldCreateShopifyOrder) {
+    try {
+      const variantAdjustments = lineItems
+        .filter((i: any) => i.type !== "custom" && i.id)
+        .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
 
-    if (variantAdjustments.length > 0) {
-      await adjustInventoryForLineItems(admin, variantAdjustments);
+      if (variantAdjustments.length > 0) {
+        await adjustInventoryForLineItems(admin, variantAdjustments);
+      }
+    } catch (err) {
+      console.error("Inventory adjustment failed:", err);
     }
-  } catch (err) {
-    console.error("Inventory adjustment failed:", err);
   }
 
   if (customerEmail) {
@@ -1688,7 +1820,7 @@ const [showAddress, setShowAddress] = useState(
                     </InlineStack>
 
 <Button submit variant="primary" fullWidth>
-  {isEditMode ? "Save Changes" : "Save Invoice"}
+  {isEditMode ? "Save Changes" : "Save Proforma"}
 </Button>
                   </BlockStack>
                 </Card>
