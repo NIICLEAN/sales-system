@@ -45,6 +45,22 @@ function getGrossPrice(netPrice: any, isVatExempt: boolean) {
   return isVatExempt ? roundMoney(net) : roundMoney(net * (1 + VAT_RATE));
 }
 
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 function buildOrderCustomAttributes({
   paymentMethod,
   paymentStatus,
@@ -745,7 +761,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
     console.error("Failed to record payment:", err);
   }
 
-  return redirect(`/app/invoices/${invoiceId}`);
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}`));
 }
 
   let shopifyOrder = null;
@@ -869,7 +885,7 @@ try {
 }
 
   if (printMode === "none") {
-    return redirect(`/app/invoices/${sale.id}`);
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}`));
   }
 
   const printParams = new URLSearchParams({
@@ -881,7 +897,7 @@ try {
     printParams.set("printMode", printMode);
   }
 
-  return redirect(`/app/invoices/${sale.id}?${printParams.toString()}`);
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}?${printParams.toString()}`));
 }
 
 export default function InvoicePage() {

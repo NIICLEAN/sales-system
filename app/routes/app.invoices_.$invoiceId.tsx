@@ -225,12 +225,10 @@ export default function PrintInvoicePage() {
     event?.preventDefault();
     event?.stopPropagation();
 
-    const pdfUrl = window.location.pathname.replace(/\/$/, "") + "/pdf";
+    const pdfUrl = withEmbeddedParams(window.location.pathname.replace(/\/$/, "") + "/pdf");
 
     const link = document.createElement("a");
     link.href = pdfUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
     link.download = `Invoice-INV-${loadedInvoice.id}.pdf`;
 
     document.body.appendChild(link);

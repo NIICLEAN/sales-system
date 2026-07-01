@@ -1,4 +1,4 @@
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useLocation, useNavigate } from "react-router";
 import {
   AppProvider,
   Page,
@@ -57,6 +57,23 @@ export async function loader({ request }: { request: Request }) {
 export default function QuotesPage() {
   const { quotes, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value && !nextParams.has(key)) {
+        nextParams.set(key, value);
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
 
   return (
     <AppProvider i18n={{}}>
@@ -69,7 +86,7 @@ export default function QuotesPage() {
                   Saved quotes
                 </Text>
 
-                <Button variant="primary" onClick={() => navigate("/app/quote")}>
+                <Button variant="primary" onClick={() => navigate(withEmbeddedParams("/app/quote"))}>
                   Create Quote
                 </Button>
               </InlineStack>
@@ -110,11 +127,11 @@ export default function QuotesPage() {
 
                     <IndexTable.Cell>
                       <InlineStack gap="200">
-                        <Button onClick={() => navigate(`/app/quotes/${quote.id}`)}>
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}`))}>
                           View
                         </Button>
 
-                        <Button onClick={() => navigate(`/app/quotes/${quote.id}/print`)}>
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}>
                           Print
                         </Button>
                       </InlineStack>

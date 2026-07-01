@@ -20,6 +20,22 @@ import "@shopify/polaris/build/esm/styles.css";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 export async function loader({ request }: { request: Request }) {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -167,7 +183,7 @@ export async function action({ request }: { request: Request }) {
   const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
 
   if (!staffId || lineItems.length === 0) {
-    return redirect("/app/quote");
+    return redirect(withEmbeddedParamsFromRequest(request, "/app/quote"));
   }
 
   const subtotal = lineItems.reduce(
@@ -238,7 +254,7 @@ export async function action({ request }: { request: Request }) {
     }
   }
 
-  return redirect(`/app/quotes/${quote.id}?autoprint=1`);
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?autoprint=1`));
 }
 
 export default function QuotePage() {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLoaderData, useNavigate, useSearchParams, redirect } from "react-router";
+import { useLoaderData, useLocation, useNavigate, useSearchParams, redirect } from "react-router";
 import {
   Page,
   Layout,
@@ -18,6 +18,22 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat } from "../services/saleCompat.server";
+
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
 
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
@@ -225,13 +241,30 @@ export async function action({ request, params }: { request: Request; params: { 
     }
   }
 
-  return redirect(`/app/invoices/${sale.id}`);
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}`));
 }
 
 export default function QuoteViewPage() {
   const { quote, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value && !nextParams.has(key)) {
+        nextParams.set(key, value);
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
 
   const loadedQuote = quote;
 
@@ -243,11 +276,11 @@ export default function QuoteViewPage() {
     if (searchParams.get("autoprint") !== "1") return;
 
     const timer = window.setTimeout(() => {
-      navigate(`/app/quotes/${quote.id}/print?autoprint=1`);
+      navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print?autoprint=1`));
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [searchParams, navigate, loadedQuote.id]);
+  }, [searchParams, navigate, loadedQuote.id, location.search]);
 
   return (
     <Page
@@ -255,7 +288,7 @@ export default function QuoteViewPage() {
       subtitle="Review, print, or download this customer quote."
       backAction={{
         content: "Quotes",
-          onAction: () => navigate("/app/quotes"),
+          onAction: () => navigate(withEmbeddedParams("/app/quotes")),
       }}
     >
       <Layout>
@@ -281,7 +314,7 @@ export default function QuoteViewPage() {
                 <InlineStack gap="300">
                   <Button
                     variant="primary"
-                    onClick={() => navigate(`/app/quotes/${quote.id}/print`)}
+                    onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}
                   >
                     Print / Download Quote
                   </Button>
@@ -303,7 +336,7 @@ export default function QuoteViewPage() {
                     </button>
                   </form>
 
-                  <Button onClick={() => navigate("/app/quotes")}>Back</Button>
+                  <Button onClick={() => navigate(withEmbeddedParams("/app/quotes"))}>Back</Button>
                 </InlineStack>
               </BlockStack>
             </Card>
@@ -440,7 +473,7 @@ export default function QuoteViewPage() {
                 <Button
                   variant="primary"
                   fullWidth
-                  onClick={() => navigate(`/app/quotes/${quote.id}/print`)}
+                  onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}
                 >
                   Print / Download Quote
                 </Button>

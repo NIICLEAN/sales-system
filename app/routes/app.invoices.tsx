@@ -292,7 +292,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const worksOrderId = Number(formData.get("worksOrderId") || 0);
 
     if (!worksOrderId) {
-      return redirect("/app/invoices?syncStatus=error&syncMessage=Invalid%20legacy%20invoice%20selection");
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=Invalid%20legacy%20invoice%20selection",
+        ),
+      );
     }
 
     try {
@@ -304,7 +309,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       if (existingSale) {
-        return redirect(`/app/invoice?editInvoiceId=${existingSale.id}`);
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoice?editInvoiceId=${existingSale.id}`));
       }
 
       const worksOrder = await prisma.worksOrder.findUnique({
@@ -313,7 +318,12 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       if (!worksOrder) {
-        return redirect("/app/invoices?syncStatus=error&syncMessage=Legacy%20invoice%20not%20found");
+        return redirect(
+          withEmbeddedParamsFromRequest(
+            request,
+            "/app/invoices?syncStatus=error&syncMessage=Legacy%20invoice%20not%20found",
+          ),
+        );
       }
 
       const defaultStaff = await prisma.staff.findFirst({ orderBy: { id: "asc" } });
@@ -325,7 +335,12 @@ export async function action({ request }: ActionFunctionArgs) {
         : null;
 
       if (!defaultStaff && !staffExists) {
-        return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
+        return redirect(
+          withEmbeddedParamsFromRequest(
+            request,
+            "/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists",
+          ),
+        );
       }
 
       const total = Number(worksOrder.total ?? 0);
@@ -372,11 +387,13 @@ export async function action({ request }: ActionFunctionArgs) {
             })),
       });
 
-      return redirect(`/app/invoice?editInvoiceId=${createdSale.id}`);
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoice?editInvoiceId=${createdSale.id}`));
     } catch (error: any) {
       console.error("Failed to open legacy invoice in editor:", error);
       const message = encodeURIComponent(String(error?.message || "Failed to open legacy invoice"));
-      return redirect(`/app/invoices?syncStatus=error&syncMessage=${message}`);
+      return redirect(
+        withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`),
+      );
     }
   }
 
@@ -392,14 +409,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!connection) {
       return redirect(
-        "/app/invoices?syncStatus=error&syncMessage=Xero%20is%20not%20connected%20yet&connectXero=1",
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=Xero%20is%20not%20connected%20yet&connectXero=1",
+        ),
       );
     }
 
     const { xero, tenantId } = await getConnectedXeroClient();
 
     if (!defaultStaff) {
-      return redirect("/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists");
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=No%20staff%20record%20exists",
+        ),
+      );
     }
 
     const response = await (xero.accountingApi as any).getInvoices(tenantId);
@@ -468,11 +493,16 @@ export async function action({ request }: ActionFunctionArgs) {
       importedCount += 1;
     }
 
-    return redirect(`/app/invoices?syncStatus=success&syncMessage=Imported%20${importedCount}%20Xero%20invoice(s)`);
+    return redirect(
+      withEmbeddedParamsFromRequest(
+        request,
+        `/app/invoices?syncStatus=success&syncMessage=Imported%20${importedCount}%20Xero%20invoice(s)`,
+      ),
+    );
   } catch (error: any) {
     console.error("Failed to sync Xero invoices:", error);
     const message = encodeURIComponent(String(error?.message || "Xero sync failed"));
-    return redirect(`/app/invoices?syncStatus=error&syncMessage=${message}`);
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
   }
 }
 
@@ -759,7 +789,7 @@ export default function InvoicesPage() {
                         </Form>
 
                         {!xeroConnected ? (
-                          <Button onClick={() => navigate("/app/xero/connect")}>Connect Xero</Button>
+                          <Button onClick={() => navigate(withEmbeddedParams("/app/xero/connect"))}>Connect Xero</Button>
                         ) : null}
                       </>
                     ) : null}
