@@ -1,9 +1,9 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-react-router/react";
-import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import { AppProvider as PolarisAppProvider, Button, InlineStack } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
@@ -18,6 +18,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
+  const location = useLocation();
+
+  const appNavLinks = [
+    { to: "/app", label: "Home" },
+    { to: "/app/invoice", label: "Invoice" },
+    { to: "/app/invoices", label: "Invoices" },
+    { to: "/app/quote", label: "Create Quote" },
+    { to: "/app/quotes", label: "Quotes" },
+    { to: "/app/works/awaiting-scheduled", label: "Awaiting Works" },
+    { to: "/app/works/scheduled", label: "Scheduled Works" },
+    { to: "/app/schedule", label: "Schedule" },
+    { to: "/app/reports", label: "Reports" },
+    { to: "/app/staff", label: "Staff" },
+  ];
+
+  const hideTopNav = /\/print$|\.pdf$/.test(location.pathname);
 
   return (
     <ShopifyAppProvider embedded apiKey={apiKey}>
@@ -34,6 +50,22 @@ export default function App() {
           <Link to="/app/reports">Reports</Link>
           <Link to="/app/staff">Staff</Link>
         </NavMenu>
+
+        {!hideTopNav ? (
+          <div style={{ padding: "12px 16px 0 16px", overflowX: "auto" }}>
+            <InlineStack gap="200" wrap={false}>
+              {appNavLinks.map((item) => (
+                <Button
+                  key={item.to}
+                  url={item.to}
+                  variant={location.pathname === item.to ? "primary" : "secondary"}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </InlineStack>
+          </div>
+        ) : null}
 
         <Outlet />
       </PolarisAppProvider>
