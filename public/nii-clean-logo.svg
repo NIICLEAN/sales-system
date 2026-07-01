@@ -1,0 +1,31 @@
+<svg width="1200" height="300" viewBox="0 0 1200 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">NII Clean Logo</title>
+  <desc id="desc">Blue and cyan drop mark with NII Clean wordmark</desc>
+  <defs>
+    <linearGradient id="outerRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2F66F5" />
+      <stop offset="100%" stop-color="#2841D6" />
+    </linearGradient>
+    <linearGradient id="dropMain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2D61E8" />
+      <stop offset="100%" stop-color="#2345CB" />
+    </linearGradient>
+    <linearGradient id="dropAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#65C6F2" />
+      <stop offset="100%" stop-color="#49A8DD" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(18 18)">
+    <circle cx="132" cy="132" r="126" fill="none" stroke="url(#outerRing)" stroke-width="18"/>
+    <ellipse cx="132" cy="132" rx="106" ry="84" fill="none" stroke="#FFFFFF" stroke-width="12" transform="rotate(-18 132 132)"/>
+    <ellipse cx="132" cy="132" rx="106" ry="84" fill="none" stroke="#FFFFFF" stroke-width="12" transform="rotate(26 132 132)"/>
+
+    <path d="M132 22 C105 72 75 108 75 156 C75 201 100 232 132 232 C164 232 189 202 189 156 C189 109 160 73 132 22Z" fill="url(#dropMain)"/>
+    <path d="M132 22 C146 79 183 110 183 161 C183 194 166 220 146 232 C181 228 212 194 212 151 C212 105 182 69 132 22Z" fill="url(#dropAccent)"/>
+
+    <polygon points="132,102 137,116 152,116 140,125 145,140 132,131 119,140 124,125 112,116 127,116" fill="#FFFFFF"/>
+  </g>
+
+  <text x="320" y="192" font-family="Inter, Arial, sans-serif" font-weight="700" font-size="128" fill="#2A56DE">NII Clean</text>
+</svg>

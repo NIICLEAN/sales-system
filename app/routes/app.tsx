@@ -81,6 +81,39 @@ export default function App() {
   return (
     <ShopifyAppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={{}}>
+        <style>{`
+          .brand-shell {
+            min-height: 100vh;
+            background: linear-gradient(180deg, #eef6ff 0%, #f8fbff 180px, #ffffff 380px);
+          }
+
+          .brand-header {
+            margin: 14px 16px 0 16px;
+            padding: 10px 16px;
+            border-radius: 14px;
+            border: 1px solid #d5e5ff;
+            background: linear-gradient(110deg, #eff6ff 0%, #f5fbff 60%, #eefafc 100%);
+            box-shadow: 0 8px 24px rgba(42, 86, 222, 0.08);
+          }
+
+          .brand-logo {
+            display: block;
+            width: 220px;
+            max-width: 55vw;
+            height: auto;
+          }
+
+          .brand-nav {
+            padding: 12px 16px 0 16px;
+            overflow-x: auto;
+          }
+
+          .brand-nav :global(button) {
+            border-color: #c8dbff;
+          }
+        `}</style>
+
+        <div className="brand-shell">
         <NavMenu>
           <Link to={withEmbeddedParams("/app")} rel="home">
             Home
@@ -95,7 +128,15 @@ export default function App() {
         </NavMenu>
 
         {!hideTopNav ? (
-          <div style={{ padding: "12px 16px 0 16px", overflowX: "auto" }}>
+          <>
+            <div className="brand-header">
+              <img
+                className="brand-logo"
+                src="/nii-clean-logo.svg"
+                alt="NII Clean"
+              />
+            </div>
+            <div className="brand-nav">
             <InlineStack gap="200" wrap={false}>
               {appNavLinks.map((item) => (
                 <Button
@@ -107,10 +148,12 @@ export default function App() {
                 </Button>
               ))}
             </InlineStack>
-          </div>
+            </div>
+          </>
         ) : null}
 
         <Outlet />
+        </div>
       </PolarisAppProvider>
     </ShopifyAppProvider>
   );
