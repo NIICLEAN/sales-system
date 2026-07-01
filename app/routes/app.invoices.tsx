@@ -552,60 +552,54 @@ export async function loader({ request }: { request: Request }) {
       adminOrderPath: string | null;
     }> = [];
 
-    if (
-      invoices.length === 0 &&
-      customInvoices.length === 0 &&
-      legacyWorksInvoices.length === 0
-    ) {
-      try {
-        const response = await admin.graphql(
-          `
-            query LegacyInvoiceOrders($query: String!) {
-              orders(first: 50, query: $query, reverse: true, sortKey: CREATED_AT) {
-                edges {
-                  node {
-                    id
-                    legacyResourceId
-                    name
-                    createdAt
-                    displayFinancialStatus
-                    customer {
-                      displayName
-                    }
-                    currentTotalPriceSet {
-                      shopMoney {
-                        amount
-                      }
+    try {
+      const response = await admin.graphql(
+        `
+          query LegacyInvoiceOrders($query: String!) {
+            orders(first: 50, query: $query, reverse: true, sortKey: CREATED_AT) {
+              edges {
+                node {
+                  id
+                  legacyResourceId
+                  name
+                  createdAt
+                  displayFinancialStatus
+                  customer {
+                    displayName
+                  }
+                  currentTotalPriceSet {
+                    shopMoney {
+                      amount
                     }
                   }
                 }
               }
             }
-          `,
-          { variables: { query: "tag:'Invoice App'" } },
-        );
+          }
+        `,
+        { variables: { query: "tag:'Invoice App'" } },
+      );
 
-        const json = (await response.json()) as any;
-        shopifyLegacyInvoices =
-          json?.data?.orders?.edges?.map((edge: any) => ({
-            adminOrderPath:
-              edge?.node?.legacyResourceId && shopDomain
-                ? `https://${shopDomain}/admin/orders/${edge.node.legacyResourceId}`
-                : null,
-            id: String(edge?.node?.id || ""),
-            legacyResourceId: edge?.node?.legacyResourceId ? String(edge.node.legacyResourceId) : null,
-            name: String(edge?.node?.name || "-") || "-",
-            customerName:
-              String(edge?.node?.customer?.displayName || "Walk-in customer") ||
-              "Walk-in customer",
-            paymentStatus: String(edge?.node?.displayFinancialStatus || "-") || "-",
-            total: Number(edge?.node?.currentTotalPriceSet?.shopMoney?.amount ?? 0),
-            createdAt: String(edge?.node?.createdAt || new Date().toISOString()),
-          })) || [];
-      } catch (error) {
-        console.error("Failed to load legacy Shopify invoice orders:", error);
-        shopifyLegacyInvoices = [];
-      }
+      const json = (await response.json()) as any;
+      shopifyLegacyInvoices =
+        json?.data?.orders?.edges?.map((edge: any) => ({
+          adminOrderPath:
+            edge?.node?.legacyResourceId && shopDomain
+              ? `https://${shopDomain}/admin/orders/${edge.node.legacyResourceId}`
+              : null,
+          id: String(edge?.node?.id || ""),
+          legacyResourceId: edge?.node?.legacyResourceId ? String(edge.node.legacyResourceId) : null,
+          name: String(edge?.node?.name || "-") || "-",
+          customerName:
+            String(edge?.node?.customer?.displayName || "Walk-in customer") ||
+            "Walk-in customer",
+          paymentStatus: String(edge?.node?.displayFinancialStatus || "-") || "-",
+          total: Number(edge?.node?.currentTotalPriceSet?.shopMoney?.amount ?? 0),
+          createdAt: String(edge?.node?.createdAt || new Date().toISOString()),
+        })) || [];
+    } catch (error) {
+      console.error("Failed to load legacy Shopify invoice orders:", error);
+      shopifyLegacyInvoices = [];
     }
 
     return {
