@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
@@ -120,6 +120,47 @@ export default function PrintInvoicePage() {
   const { invoice, logoUrl, error } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
 
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const nextParams = new URLSearchParams(queryString);
+    const storageKey = "shopifyEmbeddedParams";
+
+    let cachedParams: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      try {
+        cachedParams = JSON.parse(window.sessionStorage.getItem(storageKey) || "{}") || {};
+      } catch {
+        cachedParams = {};
+      }
+    }
+
+    let hasLiveParams = false;
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = searchParams.get(key);
+      if (value) {
+        hasLiveParams = true;
+        cachedParams[key] = value;
+      }
+
+      const resolvedValue = value || cachedParams[key] || "";
+      if (resolvedValue && !nextParams.has(key)) {
+        nextParams.set(key, resolvedValue);
+      }
+    }
+
+    if (hasLiveParams && typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(cachedParams));
+      } catch {
+        // Ignore storage write failures and continue with available params.
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
+
   if (error || !invoice) {
     return <Banner tone="critical">{error || "Invoice not found."}</Banner>;
   }
@@ -128,13 +169,24 @@ export default function PrintInvoicePage() {
 
   const fulfilmentMethod = searchParams.get("fulfilmentMethod") || "Collected";
   const printMode = searchParams.get("printMode") || "";
-  const packingOnlyPrint = printMode === "packing";
+  const autoprintEnabled = searchParams.get("autoprint") === "1";
+  const [manualPrintMode, setManualPrintMode] = useState<"invoice" | "both">(
+    printMode === "both" ? "both" : "invoice",
+  );
+
+  const effectivePrintMode = autoprintEnabled
+    ? printMode === "both" || printMode === "packing" || printMode === "invoice"
+      ? printMode
+      : "invoice"
+    : manualPrintMode;
+
+  const packingOnlyPrint = effectivePrintMode === "packing";
   const showInvoiceSheet = !packingOnlyPrint;
 
   const shouldPrintPackingSlip =
     packingOnlyPrint ||
-    printMode === "both" ||
-    (printMode !== "invoice" &&
+    effectivePrintMode === "both" ||
+    (effectivePrintMode !== "invoice" &&
       (fulfilmentMethod === "Collecting" || fulfilmentMethod === "Delivery"));
 
   useEffect(() => {
@@ -146,6 +198,13 @@ export default function PrintInvoicePage() {
 
     return () => window.clearTimeout(timer);
   }, [searchParams]);
+
+  function printWithMode(mode: "invoice" | "both") {
+    setManualPrintMode(mode);
+    window.setTimeout(() => {
+      window.print();
+    }, 50);
+  }
 
   const amountPaid = Number(loadedInvoice.amountPaid || 0);
 
@@ -521,14 +580,25 @@ export default function PrintInvoicePage() {
           type="button"
           className="secondary"
           onClick={() => {
-            window.location.href = `/app/invoice?editInvoiceId=${invoice.id}`;
+            window.location.href = withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`);
           }}
         >
           Edit Invoice
         </button>
 
-        <button type="button" onClick={() => window.print()}>
-          Print Invoice
+        <button
+          type="button"
+          onClick={() => printWithMode("invoice")}
+        >
+          Print One Sheet
+        </button>
+
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => printWithMode("both")}
+        >
+          Print Two Sheets
         </button>
 
         <button type="button" onClick={downloadPdf}>
