@@ -69,11 +69,44 @@ if (params.invoiceId || editInvoiceId) {
     where: {
       id: Number(params.invoiceId || editInvoiceId),
     },
-    include: {
+    select: {
+      id: true,
+      shopifyOrderId: true,
+      shopifyOrderName: true,
+      customerId: true,
+      customerName: true,
+      customerEmail: true,
+      customerVatNumber: true,
+      customerPhone: true,
+      address1: true,
+      address2: true,
+      city: true,
+      county: true,
+      postcode: true,
+      country: true,
+      reference: true,
+      paymentMethod: true,
+      subtotal: true,
+      discountTotal: true,
+      vatAmount: true,
+      total: true,
+      amountPaid: true,
+      balanceDue: true,
+      paymentStatus: true,
+      depositPaid: true,
+      staffId: true,
+      createdAt: true,
       lineItems: true,
       staff: true,
     },
   });
+
+  if (existingInvoice) {
+    existingInvoice = {
+      ...existingInvoice,
+      vatType: "Standard",
+    } as any;
+  }
 }
 
   let variants: any[] = [];
@@ -359,7 +392,6 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       customerName,
       customerEmail,
       customerVatNumber,
-      vatType: vatType as any,
       customerPhone,
       address1,
       address2,
@@ -634,7 +666,6 @@ const sale = await prisma.sale.create({
       balanceDue,
       paymentStatus,
       depositPaid,
-      vatType: vatType as any,
       staffId,
       lineItems: {
         create: lineItems.map((item: any) => ({

@@ -20,10 +20,35 @@ export async function loader({
 
     const invoice = await prisma.sale.findUnique({
       where: { id: Number(params.invoiceId) },
-      include: {
+      select: {
+        id: true,
+        shopifyOrderId: true,
+        shopifyOrderName: true,
+        customerId: true,
+        customerName: true,
+        customerEmail: true,
+        customerVatNumber: true,
+        customerPhone: true,
+        address1: true,
+        address2: true,
+        city: true,
+        county: true,
+        postcode: true,
+        country: true,
+        reference: true,
+        paymentMethod: true,
+        subtotal: true,
+        discountTotal: true,
+        vatAmount: true,
+        total: true,
+        amountPaid: true,
+        balanceDue: true,
+        paymentStatus: true,
+        depositPaid: true,
+        staffId: true,
+        createdAt: true,
         staff: true,
         lineItems: true,
-        // include recorded payments
         payments: true,
       },
     });

@@ -182,7 +182,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const total = toNumber(order?.currentTotalPriceSet?.shopMoney?.amount);
       const amountPaid = parseMoneyString(getCustomAttributeValue(customAttributes, "Amount Paid"));
-      const vatType = getCustomAttributeValue(customAttributes, "VAT Type") || "Standard";
       const paymentMethod = getCustomAttributeValue(customAttributes, "Payment Method") || "Other";
       const depositPaidAttr = getCustomAttributeValue(customAttributes, "Deposit Paid").toLowerCase();
       const depositPaid = depositPaidAttr === "yes" || (amountPaid > 0 && amountPaid < total);
@@ -212,7 +211,6 @@ export async function action({ request }: ActionFunctionArgs) {
           balanceDue: Math.max(total - amountPaid, 0),
           paymentStatus: mapLegacyPaymentStatus(getCustomAttributeValue(customAttributes, "Payment Status") || order.displayFinancialStatus),
           depositPaid,
-          vatType: vatType as any,
           staffId: staffExists?.id || defaultStaff!.id,
           createdAt: parseXeroDate(order.createdAt),
           lineItems: {
