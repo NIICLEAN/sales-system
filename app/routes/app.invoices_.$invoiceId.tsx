@@ -274,16 +274,11 @@ export default function PrintInvoicePage() {
         }
 
         .page {
-          --invoice-scale: 0.84;
           max-width: 900px;
           margin: 30px auto;
           background: white;
           padding: 45px;
           box-shadow: 0 0 10px rgba(0,0,0,0.12);
-        }
-
-        .single-sheet-print.page {
-          --invoice-scale: 0.76;
         }
 
         .invoice-print-sheet {
@@ -609,18 +604,11 @@ export default function PrintInvoicePage() {
             margin: 0;
             max-width: none;
             box-shadow: none;
-            padding: 0;
-          }
-
-          .invoice-print-sheet {
-            transform: scale(var(--invoice-scale));
-            transform-origin: top left;
-            width: calc(100% / var(--invoice-scale));
-            page-break-inside: avoid;
+            padding: 14px;
           }
 
           .single-sheet-print.page {
-            padding: 0;
+            padding: 10px;
           }
 
           .single-sheet-print .header {
@@ -709,6 +697,11 @@ export default function PrintInvoicePage() {
             margin-top: 14px;
             padding-top: 8px;
             font-size: 11px;
+          }
+
+          .invoice-print-sheet,
+          .single-sheet-print .invoice-print-sheet {
+            page-break-inside: avoid;
           }
 
           .actions,
