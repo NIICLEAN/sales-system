@@ -199,6 +199,7 @@ export default function PrintInvoicePage() {
   const [manualPrintMode, setManualPrintMode] = useState<"invoice" | "both">(
     printMode === "both" ? "both" : "invoice",
   );
+  const [pendingManualPrint, setPendingManualPrint] = useState(false);
 
   const effectivePrintMode = autoprintEnabled
     ? printMode === "both" || printMode === "packing" || printMode === "invoice"
@@ -227,10 +228,20 @@ export default function PrintInvoicePage() {
 
   function printWithMode(mode: "invoice" | "both") {
     setManualPrintMode(mode);
-    window.setTimeout(() => {
-      window.print();
-    }, 50);
+    setPendingManualPrint(true);
   }
+
+  useEffect(() => {
+    if (!pendingManualPrint || autoprintEnabled) return;
+
+    // Give the browser time to paint the selected print mode before opening print.
+    const timer = window.setTimeout(() => {
+      setPendingManualPrint(false);
+      window.print();
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [pendingManualPrint, autoprintEnabled, manualPrintMode]);
 
   const amountPaid = Number(loadedInvoice.amountPaid || 0);
   const partialPaymentCount = Number(loadedInvoice.paymentSummary?.count || 0);
@@ -608,6 +619,7 @@ export default function PrintInvoicePage() {
           .packing-slip {
             display: block;
             page-break-before: always;
+            break-before: page;
             padding-top: 10px;
           }
         }
