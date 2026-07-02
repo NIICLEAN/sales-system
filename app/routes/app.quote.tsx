@@ -37,21 +37,22 @@ function withEmbeddedParamsFromRequest(request: Request, path: string) {
 }
 
 export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
-  const url = new URL(request.url);
+  try {
+    const { admin } = await authenticate.admin(request);
+    const url = new URL(request.url);
 
-  const productSearch = url.searchParams.get("productSearch") || "";
-  const customerSearch = url.searchParams.get("customerSearch") || "";
+    const productSearch = url.searchParams.get("productSearch") || "";
+    const customerSearch = url.searchParams.get("customerSearch") || "";
 
-  const staff = await prisma.staff.findMany({
-    orderBy: { name: "asc" },
-  });
+    const staff = await prisma.staff.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  let variants: any[] = [];
-  let customers: any[] = [];
+    let variants: any[] = [];
+    let customers: any[] = [];
 
-  if (productSearch.trim()) {
-    try {
+    if (productSearch.trim()) {
+      try {
       const productsResponse = await admin.graphql(
         `
           query ProductVariants($query: String) {
@@ -97,14 +98,14 @@ export async function loader({ request }: { request: Request }) {
       variants =
         productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
         [];
-    } catch (error) {
-      console.error("Product search failed:", error);
-      variants = [];
+      } catch (error) {
+        console.error("Product search failed:", error);
+        variants = [];
+      }
     }
-  }
 
-  if (customerSearch.trim()) {
-    try {
+    if (customerSearch.trim()) {
+      try {
       const customersResponse = await admin.graphql(
         `
           query Customers($query: String) {
@@ -147,19 +148,30 @@ export async function loader({ request }: { request: Request }) {
 
       customers =
         customersJson.data?.customers?.edges?.map((edge: any) => edge.node) || [];
-    } catch (error) {
-      console.error("Customer search failed:", error);
-      customers = [];
+      } catch (error) {
+        console.error("Customer search failed:", error);
+        customers = [];
+      }
     }
-  }
 
-  return {
-    staff,
-    variants,
-    customers,
-    productSearch,
-    customerSearch,
-  };
+    return {
+      staff,
+      variants,
+      customers,
+      productSearch,
+      customerSearch,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote page:", error);
+    return {
+      staff: [],
+      variants: [],
+      customers: [],
+      productSearch: "",
+      customerSearch: "",
+    };
+  }
 }
 
 export async function action({ request }: { request: Request }) {

@@ -241,7 +241,8 @@ export async function loader({
 }: {
   request: Request;
   params: { invoiceId?: string };
-}) {  const { admin } = await authenticate.admin(request);
+}) {
+  const { admin } = await authenticate.admin(request);
 
   const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
@@ -257,7 +258,7 @@ export async function loader({
   let existingInvoice = null;
 
 if (params.invoiceId || editInvoiceId) {
-  existingInvoice = await prisma.sale.findUnique({
+  const sale = await prisma.sale.findUnique({
     where: {
       id: Number(params.invoiceId || editInvoiceId),
     },
@@ -288,14 +289,24 @@ if (params.invoiceId || editInvoiceId) {
       depositPaid: true,
       staffId: true,
       createdAt: true,
-      lineItems: true,
-      staff: true,
     },
   });
 
-  if (existingInvoice) {
+  if (sale) {
+    const [lineItems, staffRecord] = await Promise.all([
+      prisma.saleLineItem.findMany({
+        where: { saleId: sale.id },
+        orderBy: { id: "asc" },
+      }),
+      prisma.staff.findUnique({
+        where: { id: sale.staffId },
+      }),
+    ]);
+
     existingInvoice = {
-      ...existingInvoice,
+      ...sale,
+      lineItems,
+      staff: staffRecord,
       vatType: "Standard",
     } as any;
   }
