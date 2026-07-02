@@ -397,6 +397,102 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "backfillNcpNumbers") {
+    try {
+      const response = await admin.graphql(
+        `
+          query BackfillLegacyInvoiceOrders($query: String!) {
+            orders(first: 100, query: $query, reverse: true, sortKey: CREATED_AT) {
+              edges {
+                node {
+                  id
+                  name
+                  createdAt
+                  customer {
+                    displayName
+                  }
+                  currentTotalPriceSet {
+                    shopMoney {
+                      amount
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        { variables: { query: "tag:'Invoice App'" } },
+      );
+
+      const json = (await response.json()) as any;
+      const shopifyOrders =
+        json?.data?.orders?.edges?.map((edge: any) => ({
+          id: String(edge?.node?.id || ""),
+          name: String(edge?.node?.name || ""),
+          createdAt: new Date(String(edge?.node?.createdAt || new Date().toISOString())),
+          customerName: String(edge?.node?.customer?.displayName || "").trim().toLowerCase(),
+          total: Number(edge?.node?.currentTotalPriceSet?.shopMoney?.amount ?? 0),
+        })) || [];
+
+      const localInvoices = await prisma.sale.findMany({
+        where: {
+          OR: [{ shopifyOrderId: null }, { shopifyOrderName: null }],
+        },
+        select: {
+          id: true,
+          customerName: true,
+          total: true,
+          createdAt: true,
+          shopifyOrderId: true,
+          shopifyOrderName: true,
+        },
+      });
+
+      let updatedCount = 0;
+
+      for (const invoice of localInvoices) {
+        const invoiceCustomerName = String(invoice.customerName || "").trim().toLowerCase();
+        const invoiceTotal = Number(invoice.total || 0);
+
+        const candidates = shopifyOrders
+          .filter((order: any) => {
+            const sameCustomer = order.customerName === invoiceCustomerName;
+            const sameTotal = Math.abs(Number(order.total || 0) - invoiceTotal) < 0.01;
+            return sameCustomer && sameTotal;
+          })
+          .sort(
+            (a: any, b: any) =>
+              Math.abs(a.createdAt.getTime() - new Date(invoice.createdAt).getTime()) -
+              Math.abs(b.createdAt.getTime() - new Date(invoice.createdAt).getTime()),
+          );
+
+        const bestMatch = candidates[0];
+        if (!bestMatch) continue;
+
+        await prisma.sale.update({
+          where: { id: invoice.id },
+          data: {
+            shopifyOrderId: invoice.shopifyOrderId || bestMatch.id,
+            shopifyOrderName: invoice.shopifyOrderName || bestMatch.name,
+          },
+        });
+
+        updatedCount += 1;
+      }
+
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=Recovered%20NCP%20numbers%20for%20${updatedCount}%20invoice(s)`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Failed to backfill NCP numbers:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to recover NCP numbers"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -793,6 +889,11 @@ export default function InvoicesPage() {
                         ) : null}
                       </>
                     ) : null}
+
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="backfillNcpNumbers" />
+                      <Button submit>Recover NCP Numbers</Button>
+                    </Form>
 
                     <Button
                       variant="primary"
