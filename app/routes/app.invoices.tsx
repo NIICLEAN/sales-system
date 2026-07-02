@@ -19,7 +19,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
 import { createSaleCompat } from "../services/saleCompat.server";
-import { getSaleShippingMetaBySaleIds } from "../services/saleShippingMeta.server";
+import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -494,6 +494,108 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "pullShippingFromShopify") {
+    try {
+      const sales = await prisma.sale.findMany({
+        where: {
+          shopifyOrderId: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          shopifyOrderId: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      });
+
+      let updatedCount = 0;
+
+      for (const sale of sales) {
+        const orderId = String(sale.shopifyOrderId || "").trim();
+        if (!orderId.startsWith("gid://shopify/Order/")) continue;
+
+        try {
+          const response = await admin.graphql(
+            `
+              query PullOrderShipping($id: ID!) {
+                order(id: $id) {
+                  id
+                  tags
+                  customAttributes {
+                    key
+                    value
+                  }
+                  shippingAddress {
+                    address1
+                  }
+                  fulfillments(first: 10) {
+                    nodes {
+                      trackingInfo {
+                        number
+                        company
+                      }
+                    }
+                  }
+                }
+              }
+            `,
+            { variables: { id: orderId } },
+          );
+
+          const json = (await response.json()) as any;
+          const order = json?.data?.order;
+          if (!order) continue;
+
+          const orderType = getCustomAttributeValue(order.customAttributes || [], "Order Type");
+          const normalizedOrderType = String(orderType || "").trim().toLowerCase();
+          const orderTags = Array.isArray(order?.tags)
+            ? order.tags.map((tag: any) => String(tag || "").trim().toLowerCase())
+            : [];
+
+          let shippingMethod: "Collection" | "Delivery" = "Collection";
+
+          if (normalizedOrderType === "delivery" || orderTags.includes("delivery")) {
+            shippingMethod = "Delivery";
+          } else if (orderTags.includes("collected") || orderTags.includes("collection")) {
+            shippingMethod = "Collection";
+          } else if (!normalizedOrderType && order?.shippingAddress?.address1) {
+            // Fallback when older orders don't have Order Type custom attribute.
+            shippingMethod = "Delivery";
+          }
+
+          const trackingNumber =
+            order?.fulfillments?.nodes
+              ?.flatMap((fulfillment: any) => fulfillment?.trackingInfo || [])
+              ?.map((tracking: any) => String(tracking?.number || "").trim())
+              ?.find((value: string) => Boolean(value)) || null;
+
+          await upsertSaleShippingMeta({
+            saleId: sale.id,
+            shippingMethod,
+            trackingNumber,
+          });
+
+          updatedCount += 1;
+        } catch (error) {
+          console.error(`Failed pulling shipping for sale ${sale.id}:`, error);
+        }
+      }
+
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=Pulled%20shipping%20details%20for%20${updatedCount}%20invoice(s)`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Failed to pull shipping from Shopify:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to pull shipping from Shopify"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -897,6 +999,11 @@ export default function InvoicesPage() {
                     <Form method="post">
                       <input type="hidden" name="_intent" value="backfillNcpNumbers" />
                       <Button submit>Recover NCP Numbers</Button>
+                    </Form>
+
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="pullShippingFromShopify" />
+                      <Button submit>Pull Shipping</Button>
                     </Form>
 
                     <Button
