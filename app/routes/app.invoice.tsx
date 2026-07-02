@@ -605,7 +605,7 @@ const tags = [
     fulfilmentMethod,
   });
 
-  const shouldCreateShopifyOrder = amountPaid > 0;
+  const shouldCreateShopifyOrder = amountPaid > 0 && total > 0 && lineItems.length > 0;
 
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
@@ -713,34 +713,39 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       });
     }
   } else if (shouldCreateShopifyOrder) {
-    const shopifyOrder = await createShopifyOrderFromInvoice({
-      admin,
-      shopifyCustomerId,
-      customerEmail,
-      customerPhone,
-      isVatExempt,
-      reference,
-      tags,
-      customAttributes,
-      hasManualShippingAddress,
-      customerName,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      lineItems,
-      paymentStatus,
-    });
+    try {
+      const shopifyOrder = await createShopifyOrderFromInvoice({
+        admin,
+        shopifyCustomerId,
+        customerEmail,
+        customerPhone,
+        isVatExempt,
+        reference,
+        tags,
+        customAttributes,
+        hasManualShippingAddress,
+        customerName,
+        address1,
+        address2,
+        city,
+        county,
+        postcode,
+        country,
+        lineItems,
+        paymentStatus,
+      });
 
-    await prisma.sale.update({
-      where: { id: invoiceId },
-      data: {
-        shopifyOrderId: shopifyOrder?.id || null,
-        shopifyOrderName: shopifyOrder?.name || null,
-      },
-    });
+      await prisma.sale.update({
+        where: { id: invoiceId },
+        data: {
+          shopifyOrderId: shopifyOrder?.id || null,
+          shopifyOrderName: shopifyOrder?.name || null,
+        },
+      });
+    } catch (error) {
+      // Do not block local invoice edits if Shopify order creation fails.
+      console.error("Failed to create Shopify order during invoice edit:", error);
+    }
 
     try {
       const variantAdjustments = lineItems
