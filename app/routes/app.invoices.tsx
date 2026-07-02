@@ -73,6 +73,17 @@ function toShopifyOrderGid(value: string | null | undefined) {
   return null;
 }
 
+function extractLegacyOrderNumber(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const hashMatch = raw.match(/#(\d+)/);
+  if (hashMatch?.[1]) return hashMatch[1];
+
+  if (/^\d+$/.test(raw)) return raw;
+  return null;
+}
+
 function withEmbeddedParamsFromRequest(request: Request, path: string) {
   const requestUrl = new URL(request.url);
   const [pathname, queryString = ""] = path.split("?");
@@ -528,11 +539,49 @@ export async function action({ request }: ActionFunctionArgs) {
         select: {
           id: true,
           shopifyOrderId: true,
+          shopifyOrderName: true,
           reference: true,
         },
         orderBy: { createdAt: "desc" },
         take: 150,
       });
+
+      const orderLookupResponse = await admin.graphql(
+        `
+          query ShippingOrderLookup($query: String!) {
+            orders(first: 250, query: $query, reverse: true, sortKey: CREATED_AT) {
+              edges {
+                node {
+                  id
+                  name
+                  legacyResourceId
+                }
+              }
+            }
+          }
+        `,
+        { variables: { query: "tag:'Invoice App'" } },
+      );
+
+      const orderLookupJson = (await orderLookupResponse.json()) as any;
+      const lookupOrders =
+        orderLookupJson?.data?.orders?.edges?.map((edge: any) => ({
+          id: String(edge?.node?.id || "").trim(),
+          name: String(edge?.node?.name || "").trim(),
+          legacyResourceId: String(edge?.node?.legacyResourceId || "").trim(),
+        })) || [];
+
+      const orderIdByName = new Map<string, string>();
+      const orderIdByLegacyNumber = new Map<string, string>();
+
+      for (const order of lookupOrders) {
+        if (order.name && order.id) {
+          orderIdByName.set(order.name.toLowerCase(), order.id);
+        }
+        if (order.legacyResourceId && order.id) {
+          orderIdByLegacyNumber.set(order.legacyResourceId, order.id);
+        }
+      }
 
       let updatedCount = 0;
 
@@ -541,9 +590,19 @@ export async function action({ request }: ActionFunctionArgs) {
         const referenceOrderId = referenceValue.startsWith("SHOPIFY:")
           ? referenceValue.replace(/^SHOPIFY:/, "").trim()
           : "";
-        const orderId =
+        const fromDirectId =
           toShopifyOrderGid(String(sale.shopifyOrderId || "").trim()) ||
           toShopifyOrderGid(referenceOrderId);
+        const saleOrderName = String(sale.shopifyOrderName || "").trim();
+        const nameMatchId = saleOrderName ? orderIdByName.get(saleOrderName.toLowerCase()) || null : null;
+        const legacyFromName = extractLegacyOrderNumber(saleOrderName);
+        const legacyFromReference = extractLegacyOrderNumber(referenceOrderId);
+        const legacyMatchId =
+          (legacyFromName ? orderIdByLegacyNumber.get(legacyFromName) : null) ||
+          (legacyFromReference ? orderIdByLegacyNumber.get(legacyFromReference) : null) ||
+          null;
+
+        const orderId = fromDirectId || nameMatchId || legacyMatchId;
         if (!orderId) continue;
 
         try {
