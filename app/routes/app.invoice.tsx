@@ -440,6 +440,9 @@ const editInvoiceId = String(formData.get("editInvoiceId") || "").trim();
 const isEditMode = Boolean(params.invoiceId || editInvoiceId);
 const printMode = String(formData.get("printMode") || "invoice").trim().toLowerCase();
 const editModeInvoiceId = Number(params.invoiceId || editInvoiceId || 0);
+const manualTotalInput = roundMoney(
+  Math.max(0, Number(String(formData.get("manualTotal") || "0").replace(/,/g, ""))),
+);
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -643,11 +646,19 @@ const editModeInvoiceId = Number(params.invoiceId || editInvoiceId || 0);
   let total = roundMoney(netTotal + vatAmount);
 
   if (isEditMode && lineItems.length === 0 && existingFinancials) {
-    subtotal = roundMoney(existingFinancials.subtotal);
-    discountTotal = roundMoney(existingFinancials.discountTotal);
-    vatAmount = roundMoney(existingFinancials.vatAmount);
-    total = roundMoney(existingFinancials.total);
-    netTotal = roundMoney(subtotal - discountTotal);
+    if (manualTotalInput > 0) {
+      subtotal = manualTotalInput;
+      discountTotal = 0;
+      vatAmount = 0;
+      total = manualTotalInput;
+      netTotal = manualTotalInput;
+    } else {
+      subtotal = roundMoney(existingFinancials.subtotal);
+      discountTotal = roundMoney(existingFinancials.discountTotal);
+      vatAmount = roundMoney(existingFinancials.vatAmount);
+      total = roundMoney(existingFinancials.total);
+      netTotal = roundMoney(subtotal - discountTotal);
+    }
   }
   const balanceDue = roundMoney(Math.max(total - amountPaid, 0));
   const paymentStatus = getPaymentStatus(total, amountPaid);
@@ -1109,6 +1120,10 @@ const [amountPaid, setAmountPaid] = useState(
   String(existingInvoice?.amountPaid || 0),
 );
 
+const [manualTotal, setManualTotal] = useState(
+  String(existingInvoice?.total || 0),
+);
+
 const [depositPaid, setDepositPaid] = useState(
   existingInvoice?.depositPaid || false,
 );
@@ -1238,6 +1253,24 @@ const [showAddress, setShowAddress] = useState(
     const balanceDue = roundMoney(Math.max(total - paid, 0));
     const paymentStatus = getPaymentStatus(total, paid);
 
+    if (isEditMode && items.length === 0) {
+      const overrideTotal = roundMoney(Math.max(0, Number(manualTotal || 0)));
+      const overridePaid = roundMoney(Math.max(0, Number(amountPaid || 0)));
+      const overrideBalanceDue = roundMoney(Math.max(overrideTotal - overridePaid, 0));
+      const overrideStatus = getPaymentStatus(overrideTotal, overridePaid);
+
+      return {
+        subtotal: overrideTotal,
+        discount: 0,
+        netTotal: overrideTotal,
+        vatAmount: 0,
+        total: overrideTotal,
+        paid: overridePaid,
+        balanceDue: overrideBalanceDue,
+        paymentStatus: overrideStatus,
+      };
+    }
+
     return {
       subtotal,
       discount,
@@ -1248,7 +1281,7 @@ const [showAddress, setShowAddress] = useState(
       balanceDue,
       paymentStatus,
     };
-  }, [items, vatType, amountPaid]);
+  }, [items, vatType, amountPaid, isEditMode, manualTotal]);
 
   return (
 <Page
@@ -1638,6 +1671,7 @@ const [showAddress, setShowAddress] = useState(
             readOnly
           />
           <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
+          <input type="hidden" name="manualTotal" value={manualTotal} />
           <input type="hidden" name="customerId" value={customerId} />
           <input
   type="hidden"
@@ -1928,6 +1962,17 @@ const [showAddress, setShowAddress] = useState(
                     <Divider />
 
                     <BlockStack gap="300">
+                      {isEditMode && items.length === 0 ? (
+                        <TextField
+                          label="Invoice total (no line items)"
+                          value={manualTotal}
+                          onChange={setManualTotal}
+                          autoComplete="off"
+                          type="number"
+                          prefix="£"
+                        />
+                      ) : null}
+
                       <TextField
                         label="Amount paid"
                         name="amountPaid"
