@@ -602,7 +602,93 @@ export default function PrintInvoicePage() {
             margin: 0;
             max-width: none;
             box-shadow: none;
-            padding: 14px;
+            padding: 8px;
+          }
+
+          .invoice-print-sheet {
+            font-size: 11px;
+          }
+
+          .invoice-print-sheet .header {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+          }
+
+          .invoice-print-sheet .invoice-title {
+            font-size: 24px;
+          }
+
+          .invoice-print-sheet .business {
+            font-size: 10px;
+            line-height: 1.2;
+          }
+
+          .invoice-print-sheet .meta-grid {
+            margin-bottom: 10px;
+          }
+
+          .invoice-print-sheet .meta-cell {
+            padding: 8px;
+            min-height: auto;
+          }
+
+          .invoice-print-sheet .label {
+            margin-bottom: 4px;
+            font-size: 10px;
+          }
+
+          .invoice-print-sheet .value {
+            font-size: 11px;
+          }
+
+          .invoice-print-sheet .address-grid {
+            gap: 8px;
+            margin-bottom: 10px;
+          }
+
+          .invoice-print-sheet .address-box {
+            padding: 8px;
+            min-height: auto;
+          }
+
+          .invoice-print-sheet .address-title {
+            margin-bottom: 6px;
+            font-size: 11px;
+          }
+
+          .invoice-print-sheet p {
+            margin: 1px 0;
+            font-size: 11px;
+            line-height: 1.15;
+          }
+
+          .invoice-print-sheet table {
+            margin-top: 6px;
+          }
+
+          .invoice-print-sheet th,
+          .invoice-print-sheet td {
+            padding: 5px 6px;
+            font-size: 10px;
+            line-height: 1.15;
+          }
+
+          .invoice-print-sheet .totals {
+            width: 320px;
+            margin-top: 6px;
+          }
+
+          .invoice-print-sheet .totals-row {
+            padding: 6px 8px;
+            font-size: 10px;
+          }
+
+          .invoice-print-sheet .total-row {
+            font-size: 12px;
+          }
+
+          .invoice-print-sheet .balance-row {
+            font-size: 11px;
           }
 
           .single-sheet-print.page {
@@ -715,6 +801,11 @@ export default function PrintInvoicePage() {
             break-before: avoid;
             page-break-inside: avoid;
             break-inside: avoid;
+            display: none;
+          }
+
+          .payments-note {
+            display: none;
           }
 
           .actions,
