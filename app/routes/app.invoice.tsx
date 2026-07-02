@@ -26,10 +26,29 @@ import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShi
 
 const VAT_RATE = 0.2;
 
+const SHIPPING_SERVICE_OPTIONS = [
+  { value: "ireland-delivery", label: "Ireland Delivery", price: 14.95 },
+  { value: "ni-uk-delivery", label: "NI / UK Delivery", price: 12.95 },
+  { value: "long-heavy-parcel", label: "Long or Heavy Parcel (all countries)", price: 29.95 },
+  { value: "pallet-delivery", label: "Pallet delivery", price: 100 },
+  { value: "pallet-international", label: "Pallet international", price: 495 },
+];
+
 const money = (value: number) => `£${Number(value ?? 0).toFixed(2)}`;
 
 function roundMoney(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function getShippingServiceByValue(value: string) {
+  return SHIPPING_SERVICE_OPTIONS.find((option) => option.value === value) || null;
+}
+
+function getShippingServiceValueFromLabel(label: string) {
+  const normalized = String(label || "").trim().toLowerCase();
+  if (!normalized) return "";
+  const match = SHIPPING_SERVICE_OPTIONS.find((option) => option.label.toLowerCase() === normalized);
+  return match?.value || "";
 }
 
 function getPaymentStatus(total: any, amountPaid: any) {
@@ -74,6 +93,8 @@ function buildOrderCustomAttributes({
   vatType,
   isVatExempt,
   fulfilmentMethod,
+  shippingServiceLabel,
+  shippingCharge,
 }: {
   paymentMethod: string;
   paymentStatus: string;
@@ -86,6 +107,8 @@ function buildOrderCustomAttributes({
   vatType: string;
   isVatExempt: boolean;
   fulfilmentMethod: string;
+  shippingServiceLabel: string;
+  shippingCharge: number;
 }) {
   return [
     { key: "Payment Method", value: paymentMethod },
@@ -102,6 +125,8 @@ function buildOrderCustomAttributes({
       value: isVatExempt ? "VAT exempt net price" : "Net price + 20% VAT",
     },
     { key: "Order Type", value: fulfilmentMethod },
+    { key: "Shipping Service", value: shippingServiceLabel || "-" },
+    { key: "Shipping Charge", value: money(shippingCharge) },
   ];
 }
 
@@ -236,6 +261,69 @@ async function createShopifyOrderFromInvoice({
   return completeDraftJson.data.draftOrderComplete.draftOrder.order;
 }
 
+async function autoFulfillCollectionOrder({ admin, orderId }: { admin: any; orderId: string }) {
+  try {
+    const fulfillmentOrdersResponse = await admin.graphql(
+      `
+        query FulfillmentOrdersForOrder($id: ID!) {
+          order(id: $id) {
+            fulfillmentOrders(first: 20) {
+              nodes {
+                id
+                status
+              }
+            }
+          }
+        }
+      `,
+      { variables: { id: orderId } },
+    );
+
+    const fulfillmentOrdersJson = (await fulfillmentOrdersResponse.json()) as any;
+    const fulfillmentOrders =
+      fulfillmentOrdersJson?.data?.order?.fulfillmentOrders?.nodes?.filter(
+        (node: any) => node?.id && node?.status !== "CLOSED" && node?.status !== "CANCELLED",
+      ) || [];
+
+    if (!fulfillmentOrders.length) return;
+
+    const fulfillmentResponse = await admin.graphql(
+      `
+        mutation CreateCollectionFulfillment($fulfillment: FulfillmentV2Input!) {
+          fulfillmentCreateV2(fulfillment: $fulfillment) {
+            fulfillment {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          fulfillment: {
+            notifyCustomer: false,
+            lineItemsByFulfillmentOrder: fulfillmentOrders.map((node: any) => ({
+              fulfillmentOrderId: node.id,
+            })),
+          },
+        },
+      },
+    );
+
+    const fulfillmentJson = (await fulfillmentResponse.json()) as any;
+    const userErrors = fulfillmentJson?.data?.fulfillmentCreateV2?.userErrors || [];
+    if (userErrors.length) {
+      console.error("Auto-fulfilment userErrors:", userErrors);
+    }
+  } catch (error) {
+    console.error("Auto-fulfilment failed:", error);
+  }
+}
+
 export async function loader({
   request,
   params,
@@ -310,6 +398,7 @@ if (params.invoiceId || editInvoiceId) {
       lineItems,
       staff: staffRecord,
       shippingMethod: shippingMeta.shippingMethod,
+      deliveryMethod: shippingMeta.deliveryMethod || "",
       trackingNumber: shippingMeta.trackingNumber || "",
       vatType: "Standard",
     } as any;
@@ -448,6 +537,7 @@ const manualTotalInput = roundMoney(
   Math.max(0, Number(String(formData.get("manualTotal") || "0").replace(/,/g, ""))),
 );
 const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
+const shippingServiceValue = String(formData.get("shippingService") || "").trim();
 const trackingNumber = String(formData.get("trackingNumber") || "").trim();
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
@@ -495,6 +585,15 @@ const trackingNumber = String(formData.get("trackingNumber") || "").trim();
   const fulfilmentMethod = String(
   formData.get("fulfilmentMethod") || "Collected",
 );
+    const selectedShippingService =
+      shippingMethod === "Delivery"
+        ? getShippingServiceByValue(shippingServiceValue) || SHIPPING_SERVICE_OPTIONS[0]
+        : null;
+    const shippingCharge = roundMoney(Number(selectedShippingService?.price || 0));
+    const shippingServiceLabel =
+      shippingMethod === "Delivery"
+        ? selectedShippingService?.label || "Delivery"
+        : "Shipping not required";
 
   let lineItems: any[] = [];
   let existingFinancials: {
@@ -667,6 +766,7 @@ const trackingNumber = String(formData.get("trackingNumber") || "").trim();
   );
 
   let netTotal = roundMoney(subtotal - discountTotal);
+  netTotal = roundMoney(netTotal + shippingCharge);
   let vatAmount = isVatExempt ? 0 : roundMoney(netTotal * VAT_RATE);
   let total = roundMoney(netTotal + vatAmount);
 
@@ -705,6 +805,7 @@ const tags = [
     vatType,
   paymentStatus,
   fulfilmentMethod,
+  shippingServiceLabel,
   depositPaid ? "Deposit Paid" : null,
 ].filter(Boolean) as string[];
 
@@ -720,6 +821,8 @@ const tags = [
     vatType,
     isVatExempt,
     fulfilmentMethod,
+    shippingServiceLabel,
+    shippingCharge,
   });
 
   const shouldCreateShopifyOrder = amountPaid > 0 && total > 0 && lineItems.length > 0;
@@ -834,6 +937,13 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         status: 400,
       });
     }
+
+    if (shippingMethod === "Collection") {
+      await autoFulfillCollectionOrder({
+        admin,
+        orderId: existingSale.shopifyOrderId,
+      });
+    }
   } else if (shouldCreateShopifyOrder) {
     try {
       const shopifyOrder = await createShopifyOrderFromInvoice({
@@ -864,6 +974,10 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           shopifyOrderName: shopifyOrder?.name || null,
         },
       });
+
+      if (shippingMethod === "Collection" && shopifyOrder?.id) {
+        await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
+      }
     } catch (error) {
       // Do not block local invoice edits if Shopify order creation fails.
       console.error("Failed to create Shopify order during invoice edit:", error);
@@ -906,6 +1020,13 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       saleId: invoiceId,
       shippingMethod,
       trackingNumber,
+      deliveryMethod: shippingServiceLabel,
+      deliveryStatus:
+        shippingMethod === "Collection"
+          ? "Shipping not required"
+          : trackingNumber
+            ? "Tracking added"
+            : "Awaiting tracking",
     });
   } catch (err) {
     console.error("Failed to save shipping meta:", err);
@@ -937,6 +1058,10 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       lineItems,
       paymentStatus,
     });
+
+    if (shippingMethod === "Collection" && shopifyOrder?.id) {
+      await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
+    }
   }
 
 const sale = await createSaleCompat({
@@ -1039,6 +1164,13 @@ try {
     saleId: sale.id,
     shippingMethod,
     trackingNumber,
+    deliveryMethod: shippingServiceLabel,
+    deliveryStatus:
+      shippingMethod === "Collection"
+        ? "Shipping not required"
+        : trackingNumber
+          ? "Tracking added"
+          : "Awaiting tracking",
   });
 } catch (err) {
   console.error("Failed to save shipping meta:", err);
@@ -1158,6 +1290,12 @@ const [fulfilmentMethod, setFulfilmentMethod] =
 
 const [shippingMethod, setShippingMethod] = useState(
   existingInvoice?.shippingMethod === "Delivery" ? "Delivery" : "Collection",
+);
+
+const [shippingService, setShippingService] = useState(
+  existingInvoice?.shippingMethod === "Delivery"
+    ? getShippingServiceValueFromLabel(existingInvoice?.deliveryMethod || "")
+    : "",
 );
 
 const [trackingNumber, setTrackingNumber] = useState(
@@ -1305,7 +1443,12 @@ const [showAddress, setShowAddress] = useState(
       items.reduce((sum, item) => sum + Number(item.discount || 0), 0),
     );
 
-    const netTotal = roundMoney(subtotal - discount);
+    const selectedShippingService =
+      shippingMethod === "Delivery"
+        ? getShippingServiceByValue(shippingService)
+        : null;
+    const shippingCharge = roundMoney(Number(selectedShippingService?.price || 0));
+    const netTotal = roundMoney(subtotal - discount + shippingCharge);
     const vatAmount = (vatType === "Exempt" || vatType === "CrossBorder")
       ? 0
       : roundMoney(netTotal * VAT_RATE);
@@ -1326,6 +1469,7 @@ const [showAddress, setShowAddress] = useState(
         netTotal: overrideTotal,
         vatAmount: 0,
         total: overrideTotal,
+        shippingCharge,
         paid: overridePaid,
         balanceDue: overrideBalanceDue,
         paymentStatus: overrideStatus,
@@ -1338,11 +1482,14 @@ const [showAddress, setShowAddress] = useState(
       netTotal,
       vatAmount,
       total,
+      shippingCharge,
       paid,
       balanceDue,
       paymentStatus,
     };
-  }, [items, vatType, amountPaid, isEditMode, manualTotal]);
+  }, [items, vatType, amountPaid, isEditMode, manualTotal, shippingMethod, shippingService]);
+
+  const deliveryRequiresService = shippingMethod === "Delivery" && !shippingService;
 
   return (
 <Page
@@ -1962,9 +2109,32 @@ const [showAddress, setShowAddress] = useState(
                             { label: "Delivery", value: "Delivery" },
                           ]}
                           value={shippingMethod}
-                          onChange={setShippingMethod}
+                          onChange={(value) => {
+                            setShippingMethod(value);
+                            if (value !== "Delivery") {
+                              setShippingService("");
+                            }
+                          }}
                         />
                       </div>
+
+                      {shippingMethod === "Delivery" ? (
+                        <div style={{ flex: 1 }}>
+                          <Select
+                            label="Shipping method"
+                            name="shippingService"
+                            options={[
+                              { label: "Select delivery method", value: "" },
+                              ...SHIPPING_SERVICE_OPTIONS.map((option) => ({
+                                label: `${option.label} - ${money(option.price)}`,
+                                value: option.value,
+                              })),
+                            ]}
+                            value={shippingService}
+                            onChange={setShippingService}
+                          />
+                        </div>
+                      ) : null}
 
                       <div style={{ flex: 1 }}>
                         <TextField
@@ -1977,6 +2147,12 @@ const [showAddress, setShowAddress] = useState(
                         />
                       </div>
                     </InlineStack>
+
+                    {deliveryRequiresService ? (
+                      <Text as="p" tone="critical">
+                        Delivery orders require a shipping method.
+                      </Text>
+                    ) : null}
 
                     <TextField
                       label="Reference"
@@ -2030,6 +2206,11 @@ const [showAddress, setShowAddress] = useState(
                       </InlineStack>
 
                       <InlineStack align="space-between">
+                        <Text as="p">Shipping</Text>
+                        <Text as="p">{money(totals.shippingCharge || 0)}</Text>
+                      </InlineStack>
+
+                      <InlineStack align="space-between">
                         <Text as="p">VAT</Text>
                         <Text as="p">{money(totals.vatAmount)}</Text>
                       </InlineStack>
@@ -2044,6 +2225,23 @@ const [showAddress, setShowAddress] = useState(
                           {money(totals.total)}
                         </Text>
                       </InlineStack>
+                    </BlockStack>
+
+                    <Divider />
+
+                    <BlockStack gap="100">
+                      <InlineStack align="space-between">
+                        <Text as="p">Fulfilment</Text>
+                        <Text as="p">{shippingMethod}</Text>
+                      </InlineStack>
+                      {shippingMethod === "Delivery" ? (
+                        <InlineStack align="space-between">
+                          <Text as="p">Delivery method</Text>
+                          <Text as="p">
+                            {getShippingServiceByValue(shippingService)?.label || "Not selected"}
+                          </Text>
+                        </InlineStack>
+                      ) : null}
                     </BlockStack>
 
                     <Divider />
@@ -2092,13 +2290,14 @@ const [showAddress, setShowAddress] = useState(
                     </InlineStack>
 
                     {isEditMode ? (
-                      <Button submit variant="primary" fullWidth>
+                      <Button submit variant="primary" fullWidth disabled={deliveryRequiresService}>
                         Save Changes
                       </Button>
                     ) : (
                       <Button
                         variant="primary"
                         fullWidth
+                        disabled={deliveryRequiresService}
                         onClick={() => setShowPrintOptions(true)}
                       >
                         Save Proforma

@@ -934,6 +934,7 @@ export async function loader({ request }: { request: Request }) {
             id: true,
             customerName: true,
             paymentMethod: true,
+            paymentStatus: true,
             total: true,
             createdAt: true,
             shopifyOrderName: true,
@@ -1253,13 +1254,14 @@ export default function InvoicesPage() {
                 resourceName={{ singular: "invoice", plural: "invoices" }}
                 itemCount={invoices.length}
                 headings={[
-                  { title: "Invoice" },
-                  { title: "Customer" },
-                  { title: "Salesperson" },
-                  { title: "Shipping" },
-                  { title: "Payment" },
+                  { title: "Invoice Number" },
+                  { title: "Name" },
+                  { title: "Sales person" },
+                  { title: "Shipping / Delivery" },
+                  { title: "Payment type" },
                   { title: "Total" },
                   { title: "Date" },
+                  { title: "Paid status" },
                   { title: "Actions" },
                 ]}
                 selectable={false}
@@ -1298,10 +1300,8 @@ export default function InvoicesPage() {
 
                     <IndexTable.Cell>
                       <BlockStack gap="100">
-                        <Text as="span">Method: {invoice.shippingMethod || "Collection"}</Text>
-                        <Text as="span" tone="subdued">Fulfillment: {invoice.fulfillmentStatus || "-"}</Text>
-                        <Text as="span" tone="subdued">Delivery: {invoice.deliveryStatus || "-"}</Text>
-                        <Text as="span" tone="subdued">Type: {invoice.deliveryMethod || "-"}</Text>
+                        <Text as="span" fontWeight="medium">{invoice.shippingMethod || "Collection"}</Text>
+                        <Text as="span" tone="subdued">{invoice.deliveryMethod || "-"}</Text>
                         {invoice.trackingNumber ? (
                           <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
                         ) : null}
@@ -1316,6 +1316,27 @@ export default function InvoicesPage() {
 
                     <IndexTable.Cell>
                       {formatDateTime(invoice.createdAt)}
+                    </IndexTable.Cell>
+
+                    <IndexTable.Cell>
+                      <div
+                        style={{
+                          borderRadius: 8,
+                          padding: "8px 10px",
+                          textAlign: "center",
+                          fontWeight: 600,
+                          color: "#fff",
+                          background:
+                            invoice.paymentStatus === "Paid"
+                              ? "#1f7a1f"
+                              : invoice.paymentStatus === "Partially Paid"
+                                ? "#b26b00"
+                                : "#b00020",
+                          minWidth: 92,
+                        }}
+                      >
+                        {invoice.paymentStatus || "Unpaid"}
+                      </div>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>

@@ -1,4 +1,4 @@
-import { Form, useLoaderData, redirect } from "react-router";
+import { Form, useLoaderData, redirect, useSearchParams } from "react-router";
 import { useMemo, useRef, useState } from "react";
 import {
   AppProvider,
@@ -14,6 +14,7 @@ import {
   Text,
   Badge,
   Divider,
+  Banner,
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
@@ -192,7 +193,13 @@ export async function action({ request }: { request: Request }) {
   const country = String(formData.get("country") || "").trim();
 
   const reference = String(formData.get("reference") || "").trim();
-  const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
+  let lineItems: any[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("lineItems") || "[]"));
+    lineItems = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    lineItems = [];
+  }
 
   if (!staffId || lineItems.length === 0) {
     return redirect(withEmbeddedParamsFromRequest(request, "/app/quote"));
@@ -214,39 +221,46 @@ export async function action({ request }: { request: Request }) {
   const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
 
-  const quote = await prisma.quote.create({
-    data: {
-      customerName,
-      customerEmail,
-      customerPhone,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      reference,
-      subtotal,
-      discountTotal,
-      vatAmount,
-      total,
-      vatType: vatType as any,
-      staffId,
-      lineItems: {
-        create: lineItems.map((item: any) => ({
-          shopifyVariantId: item.id,
-          title: item.title,
-          sku: item.sku,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          discount: Number(item.discount || 0),
-          lineTotal:
-            Number(item.unitPrice) * Number(item.quantity) -
-            Number(item.discount || 0),
-        })),
+  let quote;
+  try {
+    quote = await prisma.quote.create({
+      data: {
+        customerName,
+        customerEmail,
+        customerPhone,
+        address1,
+        address2,
+        city,
+        county,
+        postcode,
+        country,
+        reference,
+        subtotal,
+        discountTotal,
+        vatAmount,
+        total,
+        vatType: vatType as any,
+        staffId,
+        lineItems: {
+          create: lineItems.map((item: any) => ({
+            shopifyVariantId: item.id,
+            title: item.title,
+            sku: item.sku,
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+            discount: Number(item.discount || 0),
+            lineTotal:
+              Number(item.unitPrice) * Number(item.quantity) -
+              Number(item.discount || 0),
+          })),
+        },
       },
-    },
-  });
+    });
+  } catch (error: any) {
+    console.error("Quote save failed:", error);
+    const message = encodeURIComponent(String(error?.message || "Quote save failed"));
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quote?quoteError=${message}`));
+  }
 
   if (customerEmail) {
     try {
@@ -272,6 +286,8 @@ export async function action({ request }: { request: Request }) {
 export default function QuotePage() {
   const { staff, variants, customers, productSearch, customerSearch } =
     useLoaderData<typeof loader>();
+  const [searchParams] = useSearchParams();
+  const quoteError = searchParams.get("quoteError");
 
   const [productSearchTerm, setProductSearchTerm] = useState(productSearch || "");
   const [customerSearchTerm, setCustomerSearchTerm] = useState(customerSearch || "");
@@ -426,6 +442,7 @@ export default function QuotePage() {
   return (
     <AppProvider i18n={{}}>
       <Page title="Create Quote">
+        {quoteError ? <Banner tone="critical">{quoteError}</Banner> : null}
         <Layout>
           <Layout.Section>
             <BlockStack gap="400">
