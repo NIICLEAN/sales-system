@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { useLoaderData, useSearchParams } from "react-router";
+import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getSaleShippingMeta } from "../services/saleShippingMeta.server";
+import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
+import { generateShippingLabel } from "../services/shippingLabel.server";
 
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
@@ -22,6 +23,109 @@ function formatDate(value: string | Date) {
     dateStyle: "short",
     timeZone: "Europe/London",
   }).format(new Date(value));
+}
+
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
+export async function action({ request, params }: { request: Request; params: { invoiceId: string } }) {
+  await authenticate.admin(request);
+
+  const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "").trim();
+  const invoiceId = Number(params.invoiceId || 0);
+
+  if (intent !== "generateShippingLabel" || !invoiceId) {
+    return null;
+  }
+
+  try {
+    const sale = await prisma.sale.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        shopifyOrderId: true,
+        shopifyOrderName: true,
+        customerName: true,
+        postcode: true,
+        country: true,
+      },
+    });
+
+    if (!sale) {
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice not found")}`,
+        ),
+      );
+    }
+
+    const shippingMeta = await getSaleShippingMeta(invoiceId);
+    if (shippingMeta.shippingMethod !== "Delivery") {
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Shipping labels are only available for delivery orders")}`,
+        ),
+      );
+    }
+
+    const label = await generateShippingLabel({
+      invoiceId,
+      shopifyOrderId: sale.shopifyOrderId,
+      shopifyOrderName: sale.shopifyOrderName,
+      customerName: sale.customerName,
+      postcode: sale.postcode,
+      country: sale.country,
+    });
+
+    if (!label) {
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Shipping label integration is not configured")}`,
+        ),
+      );
+    }
+
+    await upsertSaleShippingMeta({
+      saleId: invoiceId,
+      shippingMethod: shippingMeta.shippingMethod,
+      trackingNumber: shippingMeta.trackingNumber,
+      fulfillmentStatus: shippingMeta.fulfillmentStatus,
+      deliveryMethod: shippingMeta.deliveryMethod,
+      deliveryStatus: "Label generated",
+    });
+
+    return redirect(
+      withEmbeddedParamsFromRequest(
+        request,
+        `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent("Shipping label generated")}&labelUrl=${encodeURIComponent(label.labelUrl)}`,
+      ),
+    );
+  } catch (error: any) {
+    console.error("Generate shipping label failed:", error);
+    return redirect(
+      withEmbeddedParamsFromRequest(
+        request,
+        `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(String(error?.message || "Shipping label generation failed"))}`,
+      ),
+    );
+  }
 }
 
 export async function loader({
@@ -150,6 +254,9 @@ export async function loader({
 export default function PrintInvoicePage() {
   const { invoice, logoUrl, error } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
+  const labelStatus = searchParams.get("labelStatus");
+  const labelMessage = searchParams.get("labelMessage");
+  const labelUrl = searchParams.get("labelUrl");
 
   function withEmbeddedParams(path: string) {
     const [pathname, queryString = ""] = path.split("?");
@@ -270,6 +377,21 @@ export default function PrintInvoicePage() {
 
   return (
     <div className={`page ${effectivePrintMode === "invoice" ? "single-sheet-print" : ""}`}>
+      {labelStatus && labelMessage ? (
+        <div style={{ marginBottom: 12 }}>
+          <Banner tone={labelStatus === "success" ? "success" : "critical"}>
+            {labelMessage}
+            {labelStatus === "success" && labelUrl ? (
+              <div style={{ marginTop: 8 }}>
+                <a href={labelUrl} target="_blank" rel="noreferrer">
+                  Open Shipping Label
+                </a>
+              </div>
+            ) : null}
+          </Banner>
+        </div>
+      ) : null}
+
       <style>{`
         body {
           margin: 0;
@@ -292,6 +414,9 @@ export default function PrintInvoicePage() {
 
         .actions {
           margin-bottom: 30px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
         }
 
         button {
@@ -854,6 +979,13 @@ export default function PrintInvoicePage() {
         >
           Print Two Sheets
         </button>
+
+        {invoice.shippingMethod === "Delivery" ? (
+          <Form method="post">
+            <input type="hidden" name="_intent" value="generateShippingLabel" />
+            <button type="submit" className="secondary">Generate Shipping Label</button>
+          </Form>
+        ) : null}
 
         <button type="button" onClick={downloadPdf}>
           Download PDF
