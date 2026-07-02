@@ -534,6 +534,11 @@ export async function action({ request }: ActionFunctionArgs) {
                 startsWith: "SHOPIFY:",
               },
             },
+            {
+              shopifyOrderName: {
+                not: null,
+              },
+            },
           ],
         },
         select: {
@@ -541,26 +546,37 @@ export async function action({ request }: ActionFunctionArgs) {
           shopifyOrderId: true,
           shopifyOrderName: true,
           reference: true,
+          customerName: true,
+          total: true,
+          createdAt: true,
         },
         orderBy: { createdAt: "desc" },
-        take: 150,
+        take: 500,
       });
 
       const orderLookupResponse = await admin.graphql(
         `
-          query ShippingOrderLookup($query: String!) {
-            orders(first: 250, query: $query, reverse: true, sortKey: CREATED_AT) {
+          query ShippingOrderLookup {
+            orders(first: 250, reverse: true, sortKey: CREATED_AT) {
               edges {
                 node {
                   id
                   name
                   legacyResourceId
+                  createdAt
+                  customer {
+                    displayName
+                  }
+                  currentTotalPriceSet {
+                    shopMoney {
+                      amount
+                    }
+                  }
                 }
               }
             }
           }
         `,
-        { variables: { query: "tag:'Invoice App'" } },
       );
 
       const orderLookupJson = (await orderLookupResponse.json()) as any;
@@ -569,6 +585,9 @@ export async function action({ request }: ActionFunctionArgs) {
           id: String(edge?.node?.id || "").trim(),
           name: String(edge?.node?.name || "").trim(),
           legacyResourceId: String(edge?.node?.legacyResourceId || "").trim(),
+          createdAt: new Date(String(edge?.node?.createdAt || new Date().toISOString())),
+          customerName: String(edge?.node?.customer?.displayName || "").trim().toLowerCase(),
+          total: Number(edge?.node?.currentTotalPriceSet?.shopMoney?.amount ?? 0),
         })) || [];
 
       const orderIdByName = new Map<string, string>();
@@ -584,6 +603,9 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       let updatedCount = 0;
+      let unresolvedCount = 0;
+      let missingInShopifyCount = 0;
+      let erroredCount = 0;
 
       for (const sale of sales) {
         const referenceValue = String(sale.reference || "").trim();
@@ -602,8 +624,26 @@ export async function action({ request }: ActionFunctionArgs) {
           (legacyFromReference ? orderIdByLegacyNumber.get(legacyFromReference) : null) ||
           null;
 
-        const orderId = fromDirectId || nameMatchId || legacyMatchId;
-        if (!orderId) continue;
+        const saleCustomerName = String(sale.customerName || "").trim().toLowerCase();
+        const saleTotal = Number(sale.total || 0);
+        const closestByCustomerAndTotal = lookupOrders
+          .filter((order: any) => {
+            if (!order.id) return false;
+            if (!saleCustomerName || !order.customerName) return false;
+            if (saleCustomerName !== order.customerName) return false;
+            return Math.abs(Number(order.total || 0) - saleTotal) < 0.01;
+          })
+          .sort(
+            (a: any, b: any) =>
+              Math.abs(new Date(a.createdAt).getTime() - new Date(sale.createdAt).getTime()) -
+              Math.abs(new Date(b.createdAt).getTime() - new Date(sale.createdAt).getTime()),
+          )[0]?.id || null;
+
+        const orderId = fromDirectId || nameMatchId || legacyMatchId || closestByCustomerAndTotal;
+        if (!orderId) {
+          unresolvedCount += 1;
+          continue;
+        }
 
         try {
           const response = await admin.graphql(
@@ -639,7 +679,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
           const json = (await response.json()) as any;
           const order = json?.data?.order;
-          if (!order) continue;
+          if (!order) {
+            missingInShopifyCount += 1;
+            continue;
+          }
 
           const orderType = getCustomAttributeValue(order.customAttributes || [], "Order Type");
           const normalizedOrderType = String(orderType || "").trim().toLowerCase();
@@ -688,14 +731,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
           updatedCount += 1;
         } catch (error) {
+          erroredCount += 1;
           console.error(`Failed pulling shipping for sale ${sale.id}:`, error);
         }
       }
 
+      const syncSummary = encodeURIComponent(
+        `Pulled shipping details for ${updatedCount} invoice(s). Unresolved: ${unresolvedCount}, Missing in Shopify: ${missingInShopifyCount}, Errors: ${erroredCount}`,
+      );
+
       return redirect(
         withEmbeddedParamsFromRequest(
           request,
-          `/app/invoices?syncStatus=success&syncMessage=Pulled%20shipping%20details%20for%20${updatedCount}%20invoice(s)`,
+          `/app/invoices?syncStatus=success&syncMessage=${syncSummary}`,
         ),
       );
     } catch (error: any) {
