@@ -18,7 +18,7 @@ import "@shopify/polaris/build/esm/styles.css";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
-import { createSaleCompat } from "../services/saleCompat.server";
+import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 
 function toNumber(value: unknown) {
@@ -57,6 +57,12 @@ function parseMoneyString(value: unknown) {
 function getCustomAttributeValue(attributes: Array<{ key?: string | null; value?: string | null }> | null | undefined, key: string) {
   const match = attributes?.find((attribute) => String(attribute?.key || "").trim().toLowerCase() === key.toLowerCase());
   return String(match?.value || "").trim();
+}
+
+function toSentenceCase(value: string) {
+  if (!value) return "-";
+  const normalized = value.replace(/_/g, " ").toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function withEmbeddedParamsFromRequest(request: Request, path: string) {
@@ -470,9 +476,9 @@ export async function action({ request }: ActionFunctionArgs) {
         const bestMatch = candidates[0];
         if (!bestMatch) continue;
 
-        await prisma.sale.update({
-          where: { id: invoice.id },
-          data: {
+        await updateSaleCompat({
+          saleId: invoice.id,
+          sale: {
             shopifyOrderId: invoice.shopifyOrderId || bestMatch.id,
             shopifyOrderName: invoice.shopifyOrderName || bestMatch.name,
           },
@@ -523,9 +529,13 @@ export async function action({ request }: ActionFunctionArgs) {
                 order(id: $id) {
                   id
                   tags
+                  displayFulfillmentStatus
                   customAttributes {
                     key
                     value
+                  }
+                  shippingLine {
+                    title
                   }
                   shippingAddress {
                     address1
@@ -571,10 +581,26 @@ export async function action({ request }: ActionFunctionArgs) {
               ?.map((tracking: any) => String(tracking?.number || "").trim())
               ?.find((value: string) => Boolean(value)) || null;
 
+          const hasTracking = Boolean(trackingNumber);
+          const deliveryMethod =
+            shippingMethod === "Collection"
+              ? "Shipping not required"
+              : String(order?.shippingLine?.title || "Standard Delivery").trim();
+          const fulfillmentStatus = toSentenceCase(String(order?.displayFulfillmentStatus || ""));
+          const deliveryStatus =
+            shippingMethod === "Collection"
+              ? "Shipping not required"
+              : hasTracking
+                ? "Tracking added"
+                : "Awaiting tracking";
+
           await upsertSaleShippingMeta({
             saleId: sale.id,
             shippingMethod,
             trackingNumber,
+            fulfillmentStatus,
+            deliveryStatus,
+            deliveryMethod,
           });
 
           updatedCount += 1;
@@ -770,6 +796,9 @@ export async function loader({ request }: { request: Request }) {
         : null,
       shippingMethod: shippingMetaBySaleId.get(invoice.id)?.shippingMethod || "Collection",
       trackingNumber: shippingMetaBySaleId.get(invoice.id)?.trackingNumber || null,
+      fulfillmentStatus: shippingMetaBySaleId.get(invoice.id)?.fulfillmentStatus || null,
+      deliveryStatus: shippingMetaBySaleId.get(invoice.id)?.deliveryStatus || null,
+      deliveryMethod: shippingMetaBySaleId.get(invoice.id)?.deliveryMethod || null,
     }));
 
     const customInvoices = includeCustom
@@ -1104,7 +1133,10 @@ export default function InvoicesPage() {
 
                     <IndexTable.Cell>
                       <BlockStack gap="100">
-                        <Text as="span">{invoice.shippingMethod || "Collection"}</Text>
+                        <Text as="span">Method: {invoice.shippingMethod || "Collection"}</Text>
+                        <Text as="span" tone="subdued">Fulfillment: {invoice.fulfillmentStatus || "-"}</Text>
+                        <Text as="span" tone="subdued">Delivery: {invoice.deliveryStatus || "-"}</Text>
+                        <Text as="span" tone="subdued">Type: {invoice.deliveryMethod || "-"}</Text>
                         {invoice.trackingNumber ? (
                           <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
                         ) : null}

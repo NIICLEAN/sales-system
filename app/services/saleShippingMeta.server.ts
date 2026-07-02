@@ -8,6 +8,9 @@ type SaleShippingMetaRow = {
   saleId: number;
   shippingMethod: string | null;
   trackingNumber: string | null;
+  fulfillmentStatus: string | null;
+  deliveryStatus: string | null;
+  deliveryMethod: string | null;
 };
 
 let tableReady = false;
@@ -20,10 +23,28 @@ async function ensureTable() {
       "saleId" INTEGER PRIMARY KEY,
       "shippingMethod" TEXT,
       "trackingNumber" TEXT,
+      "fulfillmentStatus" TEXT,
+      "deliveryStatus" TEXT,
+      "deliveryMethod" TEXT,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT NOW(),
       CONSTRAINT "SaleShippingMeta_saleId_fkey"
         FOREIGN KEY ("saleId") REFERENCES "Sale"("id") ON DELETE CASCADE
     )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "SaleShippingMeta"
+    ADD COLUMN IF NOT EXISTS "fulfillmentStatus" TEXT
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "SaleShippingMeta"
+    ADD COLUMN IF NOT EXISTS "deliveryStatus" TEXT
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "SaleShippingMeta"
+    ADD COLUMN IF NOT EXISTS "deliveryMethod" TEXT
   `);
 
   tableReady = true;
@@ -37,23 +58,39 @@ export async function upsertSaleShippingMeta({
   saleId,
   shippingMethod,
   trackingNumber,
+  fulfillmentStatus,
+  deliveryStatus,
+  deliveryMethod,
 }: {
   saleId: number;
   shippingMethod: string;
   trackingNumber?: string | null;
+  fulfillmentStatus?: string | null;
+  deliveryStatus?: string | null;
+  deliveryMethod?: string | null;
 }) {
   await ensureTable();
 
   const normalizedMethod = normalizeShippingMethod(String(shippingMethod || "Collection"));
   const normalizedTracking = String(trackingNumber || "").trim() || null;
+  const normalizedFulfillmentStatus = String(fulfillmentStatus || "").trim() || null;
+  const normalizedDeliveryStatus = String(deliveryStatus || "").trim() || null;
+  const normalizedDeliveryMethod = String(deliveryMethod || "").trim() || null;
 
   await prisma.$executeRaw(Prisma.sql`
-    INSERT INTO "SaleShippingMeta" ("saleId", "shippingMethod", "trackingNumber", "updatedAt")
-    VALUES (${saleId}, ${normalizedMethod}, ${normalizedTracking}, NOW())
+    INSERT INTO "SaleShippingMeta" (
+      "saleId", "shippingMethod", "trackingNumber", "fulfillmentStatus", "deliveryStatus", "deliveryMethod", "updatedAt"
+    )
+    VALUES (
+      ${saleId}, ${normalizedMethod}, ${normalizedTracking}, ${normalizedFulfillmentStatus}, ${normalizedDeliveryStatus}, ${normalizedDeliveryMethod}, NOW()
+    )
     ON CONFLICT ("saleId")
     DO UPDATE SET
       "shippingMethod" = EXCLUDED."shippingMethod",
       "trackingNumber" = EXCLUDED."trackingNumber",
+      "fulfillmentStatus" = EXCLUDED."fulfillmentStatus",
+      "deliveryStatus" = EXCLUDED."deliveryStatus",
+      "deliveryMethod" = EXCLUDED."deliveryMethod",
       "updatedAt" = NOW()
   `);
 }
@@ -62,7 +99,7 @@ export async function getSaleShippingMeta(saleId: number) {
   await ensureTable();
 
   const rows = await prisma.$queryRaw<SaleShippingMetaRow[]>(Prisma.sql`
-    SELECT "saleId", "shippingMethod", "trackingNumber"
+    SELECT "saleId", "shippingMethod", "trackingNumber", "fulfillmentStatus", "deliveryStatus", "deliveryMethod"
     FROM "SaleShippingMeta"
     WHERE "saleId" = ${saleId}
     LIMIT 1
@@ -73,12 +110,18 @@ export async function getSaleShippingMeta(saleId: number) {
     return {
       shippingMethod: "Collection" as ShippingMethod,
       trackingNumber: null,
+      fulfillmentStatus: null,
+      deliveryStatus: null,
+      deliveryMethod: null,
     };
   }
 
   return {
     shippingMethod: normalizeShippingMethod(String(row.shippingMethod || "Collection")),
     trackingNumber: row.trackingNumber || null,
+    fulfillmentStatus: row.fulfillmentStatus || null,
+    deliveryStatus: row.deliveryStatus || null,
+    deliveryMethod: row.deliveryMethod || null,
   };
 }
 
@@ -86,23 +129,38 @@ export async function getSaleShippingMetaBySaleIds(saleIds: number[]) {
   await ensureTable();
 
   if (saleIds.length === 0) {
-    return new Map<number, { shippingMethod: ShippingMethod; trackingNumber: string | null }>();
+    return new Map<number, {
+      shippingMethod: ShippingMethod;
+      trackingNumber: string | null;
+      fulfillmentStatus: string | null;
+      deliveryStatus: string | null;
+      deliveryMethod: string | null;
+    }>();
   }
 
   const uniqueIds = Array.from(new Set(saleIds)).filter((id) => Number.isFinite(id));
 
   const rows = await prisma.$queryRaw<SaleShippingMetaRow[]>(Prisma.sql`
-    SELECT "saleId", "shippingMethod", "trackingNumber"
+    SELECT "saleId", "shippingMethod", "trackingNumber", "fulfillmentStatus", "deliveryStatus", "deliveryMethod"
     FROM "SaleShippingMeta"
     WHERE "saleId" IN (${Prisma.join(uniqueIds)})
   `);
 
-  const map = new Map<number, { shippingMethod: ShippingMethod; trackingNumber: string | null }>();
+  const map = new Map<number, {
+    shippingMethod: ShippingMethod;
+    trackingNumber: string | null;
+    fulfillmentStatus: string | null;
+    deliveryStatus: string | null;
+    deliveryMethod: string | null;
+  }>();
 
   for (const row of rows) {
     map.set(row.saleId, {
       shippingMethod: normalizeShippingMethod(String(row.shippingMethod || "Collection")),
       trackingNumber: row.trackingNumber || null,
+      fulfillmentStatus: row.fulfillmentStatus || null,
+      deliveryStatus: row.deliveryStatus || null,
+      deliveryMethod: row.deliveryMethod || null,
     });
   }
 

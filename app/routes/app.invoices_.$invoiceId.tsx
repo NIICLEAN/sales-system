@@ -124,6 +124,9 @@ export async function loader({
       staff,
       shippingMethod: shippingMeta.shippingMethod,
       trackingNumber: shippingMeta.trackingNumber,
+      fulfillmentStatus: shippingMeta.fulfillmentStatus,
+      deliveryStatus: shippingMeta.deliveryStatus,
+      deliveryMethod: shippingMeta.deliveryMethod,
       paymentSummary,
       lineItems,
     };
@@ -921,6 +924,15 @@ export default function PrintInvoicePage() {
           <div className="label">Shipping</div>
           <div className="value">{invoice.shippingMethod || "Collection"}</div>
           <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
+            Fulfillment: {invoice.fulfillmentStatus || "-"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
+            Delivery: {invoice.deliveryStatus || "-"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
+            Type: {invoice.deliveryMethod || "-"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
             Tracking: {invoice.trackingNumber || "-"}
           </div>
         </div>
@@ -1070,6 +1082,12 @@ export default function PrintInvoicePage() {
             {invoice.country || "-"}
             <br />
             Shipping: {invoice.shippingMethod || "Collection"}
+            <br />
+            Fulfillment: {invoice.fulfillmentStatus || "-"}
+            <br />
+            Delivery: {invoice.deliveryStatus || "-"}
+            <br />
+            Type: {invoice.deliveryMethod || "-"}
             <br />
             Tracking: {invoice.trackingNumber || "-"}
           </div>
