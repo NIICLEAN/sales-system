@@ -21,7 +21,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
-import { createSaleCompat } from "../services/saleCompat.server";
+import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 
 const VAT_RATE = 0.2;
 
@@ -305,40 +305,52 @@ if (params.invoiceId || editInvoiceId) {
   let customers: any[] = [];
 
   if (productSearch.trim()) {
-    const productsResponse = await admin.graphql(
-      `
-        query ProductVariants($query: String) {
-          productVariants(first: 25, query: $query) {
-            edges {
-              node {
-                id
-                title
-                sku
-                price
-                image {
-                  url
-                  altText
-                }
-                product {
+    try {
+      const productsResponse = await admin.graphql(
+        `
+          query ProductVariants($query: String) {
+            productVariants(first: 25, query: $query) {
+              edges {
+                node {
+                  id
                   title
-                  featuredImage {
+                  sku
+                  price
+                  image {
                     url
                     altText
+                  }
+                  product {
+                    title
+                    featuredImage {
+                      url
+                      altText
+                    }
                   }
                 }
               }
             }
           }
-        }
-      `,
-      { variables: { query: productSearch } },
-    );
+        `,
+        { variables: { query: productSearch } },
+      );
 
-    const productsJson = await productsResponse.json();
+      const productsJson = (await productsResponse.json()) as any;
 
-    variants =
-      productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
-      [];
+      if (productsJson.errors) {
+        console.error(
+          "Product search GraphQL errors:",
+          JSON.stringify(productsJson.errors, null, 2),
+        );
+      }
+
+      variants =
+        productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
+        [];
+    } catch (error) {
+      console.error("Product search failed:", error);
+      variants = [];
+    }
   }
 
   if (customerSearch.trim()) {
@@ -586,17 +598,17 @@ const tags = [
 
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
-  await prisma.saleLineItem.deleteMany({
-    where: {
-      saleId: invoiceId,
+  const existingSale = await prisma.sale.findUnique({
+    where: { id: invoiceId },
+    select: {
+      shopifyOrderId: true,
+      amountPaid: true,
     },
   });
 
-  await prisma.sale.update({
-    where: {
-      id: invoiceId,
-    },
-    data: {
+  await updateSaleCompat({
+    saleId: invoiceId,
+    sale: {
       customerId: shopifyCustomerId,
       customerName,
       customerEmail,
@@ -619,32 +631,22 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       paymentStatus,
       depositPaid,
       staffId,
-
-      lineItems: {
-        create: lineItems.map((item: any) => ({
-          shopifyVariantId: item.type === "custom" ? null : item.id,
-          title: item.title,
-          sku: item.sku,
-          imageUrl: item.imageUrl || null,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          discount: Number(item.discount || 0),
-          lineTotal: roundMoney(
-            Number(item.unitPrice) * Number(item.quantity) -
-              Number(item.discount || 0),
-          ),
-          isCustom: item.type === "custom",
-        })),
-      },
     },
-  });
-
-  const existingSale = await prisma.sale.findUnique({
-    where: { id: invoiceId },
-    select: {
-      shopifyOrderId: true,
-      amountPaid: true,
-    },
+    replaceLineItems: true,
+    lineItems: lineItems.map((item: any) => ({
+      shopifyVariantId: item.type === "custom" ? null : item.id,
+      title: item.title,
+      sku: item.sku,
+      imageUrl: item.imageUrl || null,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      discount: Number(item.discount || 0),
+      lineTotal: roundMoney(
+        Number(item.unitPrice) * Number(item.quantity) -
+          Number(item.discount || 0),
+      ),
+      isCustom: item.type === "custom",
+    })),
   });
 
   if (existingSale?.shopifyOrderId) {

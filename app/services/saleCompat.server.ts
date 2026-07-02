@@ -42,6 +42,8 @@ type SaleInsertInput = {
   createdAt?: Date;
 };
 
+type SaleUpdateInput = Partial<SaleInsertInput>;
+
 const tableColumnCache = new Map<string, Promise<Set<string>>>();
 
 async function getTableColumns(tableName: string) {
@@ -93,6 +95,62 @@ export async function createSaleCompat({
   }
 
   if (lineItems.length === 0) {
+    return { id: saleId };
+  }
+
+  const lineItemColumns = await getTableColumns("SaleLineItem");
+
+  for (const lineItem of lineItems) {
+    const lineItemEntries = Object.entries({ saleId, ...lineItem }).filter(
+      ([columnName, value]) => lineItemColumns.has(columnName) && value !== undefined,
+    );
+
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "SaleLineItem" (${Prisma.join(lineItemEntries.map(([columnName]) => toColumnSql(columnName)))})
+      VALUES (${Prisma.join(lineItemEntries.map(([, value]) => Prisma.sql`${value}`))})
+    `);
+  }
+
+  return { id: saleId };
+}
+
+export async function updateSaleCompat({
+  saleId,
+  sale,
+  lineItems,
+  replaceLineItems = false,
+}: {
+  saleId: number;
+  sale: SaleUpdateInput;
+  lineItems?: SaleLineItemInput[];
+  replaceLineItems?: boolean;
+}) {
+  const saleColumns = await getTableColumns("Sale");
+
+  const saleEntries = Object.entries(sale).filter(
+    ([columnName, value]) => saleColumns.has(columnName) && value !== undefined,
+  );
+
+  if (saleEntries.length > 0) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "Sale"
+      SET ${Prisma.join(
+        saleEntries.map(
+          ([columnName, value]) => Prisma.sql`${toColumnSql(columnName)} = ${value}`,
+        ),
+        ", ",
+      )}
+      WHERE "id" = ${saleId}
+    `);
+  }
+
+  if (!replaceLineItems) {
+    return { id: saleId };
+  }
+
+  await prisma.saleLineItem.deleteMany({ where: { saleId } });
+
+  if (!lineItems || lineItems.length === 0) {
     return { id: saleId };
   }
 
