@@ -60,6 +60,12 @@ export async function action({ request, params }: { request: Request; params: { 
         shopifyOrderId: true,
         shopifyOrderName: true,
         customerName: true,
+        customerEmail: true,
+        customerPhone: true,
+        address1: true,
+        address2: true,
+        city: true,
+        county: true,
         postcode: true,
         country: true,
       },
@@ -89,8 +95,15 @@ export async function action({ request, params }: { request: Request; params: { 
       shopifyOrderId: sale.shopifyOrderId,
       shopifyOrderName: sale.shopifyOrderName,
       customerName: sale.customerName,
+      customerEmail: sale.customerEmail,
+      customerPhone: sale.customerPhone,
+      address1: sale.address1,
+      address2: sale.address2,
+      city: sale.city,
+      county: sale.county,
       postcode: sale.postcode,
       country: sale.country,
+      deliveryMethod: shippingMeta.deliveryMethod,
     });
 
     if (!label) {
