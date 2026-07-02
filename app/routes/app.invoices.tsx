@@ -65,6 +65,14 @@ function toSentenceCase(value: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function toShopifyOrderGid(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("gid://shopify/Order/")) return raw;
+  if (/^\d+$/.test(raw)) return `gid://shopify/Order/${raw}`;
+  return null;
+}
+
 function withEmbeddedParamsFromRequest(request: Request, path: string) {
   const requestUrl = new URL(request.url);
   const [pathname, queryString = ""] = path.split("?");
@@ -504,13 +512,23 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       const sales = await prisma.sale.findMany({
         where: {
-          shopifyOrderId: {
-            not: null,
-          },
+          OR: [
+            {
+              shopifyOrderId: {
+                not: null,
+              },
+            },
+            {
+              reference: {
+                startsWith: "SHOPIFY:",
+              },
+            },
+          ],
         },
         select: {
           id: true,
           shopifyOrderId: true,
+          reference: true,
         },
         orderBy: { createdAt: "desc" },
         take: 150,
@@ -519,8 +537,14 @@ export async function action({ request }: ActionFunctionArgs) {
       let updatedCount = 0;
 
       for (const sale of sales) {
-        const orderId = String(sale.shopifyOrderId || "").trim();
-        if (!orderId.startsWith("gid://shopify/Order/")) continue;
+        const referenceValue = String(sale.reference || "").trim();
+        const referenceOrderId = referenceValue.startsWith("SHOPIFY:")
+          ? referenceValue.replace(/^SHOPIFY:/, "").trim()
+          : "";
+        const orderId =
+          toShopifyOrderGid(String(sale.shopifyOrderId || "").trim()) ||
+          toShopifyOrderGid(referenceOrderId);
+        if (!orderId) continue;
 
         try {
           const response = await admin.graphql(
