@@ -3,6 +3,7 @@ import { useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getSaleShippingMeta } from "../services/saleShippingMeta.server";
 
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
@@ -71,7 +72,7 @@ export async function loader({
       throw new Response("Invoice not found", { status: 404 });
     }
 
-    const [staff, lineItems] = await Promise.all([
+    const [staff, lineItems, shippingMeta] = await Promise.all([
       prisma.staff.findUnique({
         where: { id: sale.staffId },
         select: { name: true },
@@ -90,6 +91,7 @@ export async function loader({
           lineTotal: true,
         },
       }),
+      getSaleShippingMeta(invoiceId),
     ]);
 
     let recordedPaymentCount = 0;
@@ -120,6 +122,8 @@ export async function loader({
     const invoice = {
       ...sale,
       staff,
+      shippingMethod: shippingMeta.shippingMethod,
+      trackingNumber: shippingMeta.trackingNumber,
       paymentSummary,
       lineItems,
     };
@@ -350,7 +354,7 @@ export default function PrintInvoicePage() {
 
         .meta-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(5, 1fr);
           border: 1px solid #dfe3e8;
           border-radius: 12px;
           overflow: hidden;
@@ -912,6 +916,14 @@ export default function PrintInvoicePage() {
             {paymentStatus}
           </div>
         </div>
+
+        <div className="meta-cell">
+          <div className="label">Shipping</div>
+          <div className="value">{invoice.shippingMethod || "Collection"}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
+            Tracking: {invoice.trackingNumber || "-"}
+          </div>
+        </div>
       </div>
 
       <div className="address-grid">
@@ -1056,6 +1068,10 @@ export default function PrintInvoicePage() {
             {invoice.postcode || "-"}
             <br />
             {invoice.country || "-"}
+            <br />
+            Shipping: {invoice.shippingMethod || "Collection"}
+            <br />
+            Tracking: {invoice.trackingNumber || "-"}
           </div>
 
           <div className="packing-line" />

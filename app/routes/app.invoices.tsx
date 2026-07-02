@@ -19,6 +19,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
 import { createSaleCompat } from "../services/saleCompat.server";
+import { getSaleShippingMetaBySaleIds } from "../services/saleShippingMeta.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -658,12 +659,15 @@ export async function loader({ request }: { request: Request }) {
       : [];
 
     const staffById = new Map(staffRecords.map((staff) => [staff.id, staff.name]));
+    const shippingMetaBySaleId = await getSaleShippingMetaBySaleIds(localInvoices.map((invoice) => invoice.id));
 
     const invoices = localInvoices.map((invoice) => ({
       ...invoice,
       staff: staffById.has(invoice.staffId)
         ? { name: staffById.get(invoice.staffId) }
         : null,
+      shippingMethod: shippingMetaBySaleId.get(invoice.id)?.shippingMethod || "Collection",
+      trackingNumber: shippingMetaBySaleId.get(invoice.id)?.trackingNumber || null,
     }));
 
     const customInvoices = includeCustom
@@ -951,6 +955,7 @@ export default function InvoicesPage() {
                   { title: "Invoice" },
                   { title: "Customer" },
                   { title: "Salesperson" },
+                  { title: "Shipping" },
                   { title: "Payment" },
                   { title: "Total" },
                   { title: "Date" },
@@ -988,6 +993,15 @@ export default function InvoicesPage() {
 
                     <IndexTable.Cell>
                       {invoice.staff?.name || "-"}
+                    </IndexTable.Cell>
+
+                    <IndexTable.Cell>
+                      <BlockStack gap="100">
+                        <Text as="span">{invoice.shippingMethod || "Collection"}</Text>
+                        {invoice.trackingNumber ? (
+                          <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
+                        ) : null}
+                      </BlockStack>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>{invoice.paymentMethod}</IndexTable.Cell>

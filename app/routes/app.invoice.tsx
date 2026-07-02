@@ -22,6 +22,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
+import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 
 const VAT_RATE = 0.2;
 
@@ -293,7 +294,7 @@ if (params.invoiceId || editInvoiceId) {
   });
 
   if (sale) {
-    const [lineItems, staffRecord] = await Promise.all([
+    const [lineItems, staffRecord, shippingMeta] = await Promise.all([
       prisma.saleLineItem.findMany({
         where: { saleId: sale.id },
         orderBy: { id: "asc" },
@@ -301,12 +302,15 @@ if (params.invoiceId || editInvoiceId) {
       prisma.staff.findUnique({
         where: { id: sale.staffId },
       }),
+      getSaleShippingMeta(sale.id),
     ]);
 
     existingInvoice = {
       ...sale,
       lineItems,
       staff: staffRecord,
+      shippingMethod: shippingMeta.shippingMethod,
+      trackingNumber: shippingMeta.trackingNumber || "",
       vatType: "Standard",
     } as any;
   }
@@ -443,6 +447,8 @@ const editModeInvoiceId = Number(params.invoiceId || editInvoiceId || 0);
 const manualTotalInput = roundMoney(
   Math.max(0, Number(String(formData.get("manualTotal") || "0").replace(/,/g, ""))),
 );
+const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
+const trackingNumber = String(formData.get("trackingNumber") || "").trim();
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -556,6 +562,25 @@ const manualTotalInput = roundMoney(
     }
   }
 
+  const shouldCreateFallbackLineFromManualTotal =
+    isEditMode && lineItems.length === 0 && manualTotalInput > 0;
+
+  if (shouldCreateFallbackLineFromManualTotal) {
+    lineItems = [
+      {
+        id: `manual-total-${editModeInvoiceId || Date.now()}`,
+        type: "custom",
+        title: "Manual invoice total",
+        sku: "",
+        quantity: 1,
+        unitPrice: manualTotalInput,
+        discount: 0,
+        imageUrl: "",
+        lineTotal: manualTotalInput,
+      },
+    ];
+  }
+
   const amountPaid = roundMoney(
     Math.max(
       0,
@@ -659,6 +684,14 @@ const manualTotalInput = roundMoney(
       total = roundMoney(existingFinancials.total);
       netTotal = roundMoney(subtotal - discountTotal);
     }
+  }
+
+  if (shouldCreateFallbackLineFromManualTotal) {
+    subtotal = manualTotalInput;
+    discountTotal = 0;
+    vatAmount = 0;
+    total = manualTotalInput;
+    netTotal = manualTotalInput;
   }
   const balanceDue = roundMoney(Math.max(total - amountPaid, 0));
   const paymentStatus = getPaymentStatus(total, amountPaid);
@@ -868,6 +901,16 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
     console.error("Failed to record payment:", err);
   }
 
+  try {
+    await upsertSaleShippingMeta({
+      saleId: invoiceId,
+      shippingMethod,
+      trackingNumber,
+    });
+  } catch (err) {
+    console.error("Failed to save shipping meta:", err);
+  }
+
   return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}`));
 }
 
@@ -991,6 +1034,16 @@ try {
   console.error("Failed to record payment:", err);
 }
 
+try {
+  await upsertSaleShippingMeta({
+    saleId: sale.id,
+    shippingMethod,
+    trackingNumber,
+  });
+} catch (err) {
+  console.error("Failed to save shipping meta:", err);
+}
+
   if (printMode === "none") {
     return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}`));
   }
@@ -1101,7 +1154,15 @@ const [paymentMethod, setPaymentMethod] = useState(
 
 // leave collected for now
 const [fulfilmentMethod, setFulfilmentMethod] =
-  useState("Collected");
+  useState(existingInvoice?.shippingMethod === "Delivery" ? "Delivery" : "Collected");
+
+const [shippingMethod, setShippingMethod] = useState(
+  existingInvoice?.shippingMethod === "Delivery" ? "Delivery" : "Collection",
+);
+
+const [trackingNumber, setTrackingNumber] = useState(
+  existingInvoice?.trackingNumber || "",
+);
 
 const [items, setItems] = useState<any[]>(
   existingInvoice?.lineItems?.map((item: any) => ({
@@ -1887,6 +1948,32 @@ const [showAddress, setShowAddress] = useState(
                           options={fulfilmentOptions}
                           value={fulfilmentMethod}
                           onChange={setFulfilmentMethod}
+                        />
+                      </div>
+                    </InlineStack>
+
+                    <InlineStack gap="300">
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          label="Shipping status"
+                          name="shippingMethod"
+                          options={[
+                            { label: "Collection", value: "Collection" },
+                            { label: "Delivery", value: "Delivery" },
+                          ]}
+                          value={shippingMethod}
+                          onChange={setShippingMethod}
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <TextField
+                          label="Tracking number"
+                          name="trackingNumber"
+                          value={trackingNumber}
+                          onChange={setTrackingNumber}
+                          autoComplete="off"
+                          placeholder="Optional"
                         />
                       </div>
                     </InlineStack>
