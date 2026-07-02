@@ -439,6 +439,7 @@ const formData = await request.formData();
 const editInvoiceId = String(formData.get("editInvoiceId") || "").trim();
 const isEditMode = Boolean(params.invoiceId || editInvoiceId);
 const printMode = String(formData.get("printMode") || "invoice").trim().toLowerCase();
+const editModeInvoiceId = Number(params.invoiceId || editInvoiceId || 0);
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -486,7 +487,71 @@ const printMode = String(formData.get("printMode") || "invoice").trim().toLowerC
   formData.get("fulfilmentMethod") || "Collected",
 );
 
-  const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
+  let lineItems: any[] = [];
+  let existingFinancials: {
+    subtotal: number;
+    discountTotal: number;
+    vatAmount: number;
+    total: number;
+  } | null = null;
+
+  try {
+    const parsed = JSON.parse(String(formData.get("lineItems") || "[]"));
+    lineItems = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    lineItems = [];
+  }
+
+  if (isEditMode && lineItems.length === 0) {
+    if (editModeInvoiceId > 0) {
+      const existingSale = await prisma.sale.findUnique({
+        where: { id: editModeInvoiceId },
+        select: {
+          subtotal: true,
+          discountTotal: true,
+          vatAmount: true,
+          total: true,
+        },
+      });
+
+      if (existingSale) {
+        existingFinancials = {
+          subtotal: Number(existingSale.subtotal || 0),
+          discountTotal: Number(existingSale.discountTotal || 0),
+          vatAmount: Number(existingSale.vatAmount || 0),
+          total: Number(existingSale.total || 0),
+        };
+      }
+
+      const existingLineItems = await prisma.saleLineItem.findMany({
+        where: { saleId: editModeInvoiceId },
+        orderBy: { id: "asc" },
+        select: {
+          shopifyVariantId: true,
+          title: true,
+          sku: true,
+          imageUrl: true,
+          quantity: true,
+          unitPrice: true,
+          discount: true,
+          lineTotal: true,
+          isCustom: true,
+        },
+      });
+
+      lineItems = existingLineItems.map((item) => ({
+        id: item.shopifyVariantId || "",
+        type: item.isCustom ? "custom" : "product",
+        title: item.title,
+        sku: item.sku || "",
+        imageUrl: item.imageUrl || null,
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        discount: Number(item.discount || 0),
+        lineTotal: Number(item.lineTotal || 0),
+      }));
+    }
+  }
 
   const amountPaid = roundMoney(
     Math.max(
@@ -558,7 +623,7 @@ const printMode = String(formData.get("printMode") || "invoice").trim().toLowerC
     shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
   }
 
-  const subtotal = roundMoney(
+  let subtotal = roundMoney(
     lineItems.reduce(
       (sum: number, item: any) =>
         sum + Number(item.unitPrice) * Number(item.quantity),
@@ -566,16 +631,24 @@ const printMode = String(formData.get("printMode") || "invoice").trim().toLowerC
     ),
   );
 
-  const discountTotal = roundMoney(
+  let discountTotal = roundMoney(
     lineItems.reduce(
       (sum: number, item: any) => sum + Number(item.discount || 0),
       0,
     ),
   );
 
-  const netTotal = roundMoney(subtotal - discountTotal);
-  const vatAmount = isVatExempt ? 0 : roundMoney(netTotal * VAT_RATE);
-  const total = roundMoney(netTotal + vatAmount);
+  let netTotal = roundMoney(subtotal - discountTotal);
+  let vatAmount = isVatExempt ? 0 : roundMoney(netTotal * VAT_RATE);
+  let total = roundMoney(netTotal + vatAmount);
+
+  if (isEditMode && lineItems.length === 0 && existingFinancials) {
+    subtotal = roundMoney(existingFinancials.subtotal);
+    discountTotal = roundMoney(existingFinancials.discountTotal);
+    vatAmount = roundMoney(existingFinancials.vatAmount);
+    total = roundMoney(existingFinancials.total);
+    netTotal = roundMoney(subtotal - discountTotal);
+  }
   const balanceDue = roundMoney(Math.max(total - amountPaid, 0));
   const paymentStatus = getPaymentStatus(total, amountPaid);
 
