@@ -687,8 +687,13 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
     select: {
       shopifyOrderId: true,
       amountPaid: true,
+      staffId: true,
     },
   });
+
+  const resolvedStaffId = Number(staffId) > 0
+    ? Number(staffId)
+    : Number(existingSale?.staffId || 0);
 
   await updateSaleCompat({
     saleId: invoiceId,
@@ -714,7 +719,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       balanceDue,
       paymentStatus,
       depositPaid,
-      staffId,
+      staffId: resolvedStaffId,
     },
     replaceLineItems: true,
     lineItems: lineItems.map((item: any) => ({
