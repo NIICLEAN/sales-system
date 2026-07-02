@@ -83,6 +83,7 @@ export async function loader({
           id: true,
           title: true,
           sku: true,
+          imageUrl: true,
           quantity: true,
           unitPrice: true,
           discount: true,
@@ -120,10 +121,7 @@ export async function loader({
       ...sale,
       staff,
       paymentSummary,
-      lineItems: lineItems.map((item) => ({
-        ...item,
-        imageUrl: null,
-      })),
+      lineItems,
     };
 
     return {
@@ -950,6 +948,27 @@ export default function PrintInvoicePage() {
 
           <div className="packing-line" />
 
+          <div className="packing-section-title">Ship To</div>
+          <div className="packing-from">
+            <strong>{invoice.customerName || "Walk-in customer"}</strong>
+            <br />
+            {invoice.customerEmail || "-"}
+            <br />
+            {invoice.customerPhone || "-"}
+            <br />
+            {invoice.address1 || "-"}
+            <br />
+            {invoice.address2 || ""}
+            {invoice.address2 ? <br /> : null}
+            {`${invoice.city || ""} ${invoice.county || ""}`.trim() || "-"}
+            <br />
+            {invoice.postcode || "-"}
+            <br />
+            {invoice.country || "-"}
+          </div>
+
+          <div className="packing-line" />
+
           <div className="packing-section-title">Order Details</div>
 
           <table className="packing-table">
@@ -964,33 +983,41 @@ export default function PrintInvoicePage() {
             </thead>
 
             <tbody>
-              {invoice.lineItems.map((item: any) => (
-                <tr key={`packing-${item.id}`}>
-                  <td style={{ textAlign: "center", fontWeight: 700 }}>
-                    {item.quantity}
-                  </td>
+              {invoice.lineItems.length > 0 ? (
+                invoice.lineItems.map((item: any) => (
+                  <tr key={`packing-${item.id}`}>
+                    <td style={{ textAlign: "center", fontWeight: 700 }}>
+                      {item.quantity}
+                    </td>
 
-                  <td style={{ textAlign: "center" }}>
-                    {item.imageUrl ? (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.title}
-                        className="packing-img"
-                      />
-                    ) : (
-                      "-"
-                    )}
-                  </td>
+                    <td style={{ textAlign: "center" }}>
+                      {item.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.title}
+                          className="packing-img"
+                        />
+                      ) : (
+                        "-"
+                      )}
+                    </td>
 
-                  <td>
-                    <div className="packing-item">{item.title}</div>
-                    <div className="packing-sku">SKU: {item.sku || "-"}</div>
-                  </td>
+                    <td>
+                      <div className="packing-item">{item.title}</div>
+                      <div className="packing-sku">SKU: {item.sku || "-"}</div>
+                    </td>
 
-                  <td style={{ textAlign: "center" }}>—</td>
-                  <td style={{ textAlign: "center" }}>☐</td>
+                    <td style={{ textAlign: "center" }}>—</td>
+                    <td style={{ textAlign: "center" }}>☐</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", fontWeight: 600 }}>
+                    No order lines found for this invoice.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
