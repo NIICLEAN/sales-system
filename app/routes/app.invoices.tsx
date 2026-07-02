@@ -607,6 +607,43 @@ export async function action({ request }: ActionFunctionArgs) {
       let missingInShopifyCount = 0;
       let erroredCount = 0;
 
+      const pullOrderShippingQuery = `
+        query PullOrderShipping($id: ID!) {
+          order(id: $id) {
+            id
+            tags
+            displayFulfillmentStatus
+            customAttributes {
+              key
+              value
+            }
+            shippingAddress {
+              address1
+            }
+            fulfillments(first: 10) {
+              nodes {
+                trackingInfo {
+                  number
+                  company
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const pullOrderShippingFallbackQuery = `
+        query PullOrderShippingFallback($id: ID!) {
+          order(id: $id) {
+            id
+            tags
+            shippingAddress {
+              address1
+            }
+          }
+        }
+      `;
+
       for (const sale of sales) {
         const referenceValue = String(sale.reference || "").trim();
         const referenceOrderId = referenceValue.startsWith("SHOPIFY:")
@@ -646,45 +683,35 @@ export async function action({ request }: ActionFunctionArgs) {
         }
 
         try {
-          const response = await admin.graphql(
-            `
-              query PullOrderShipping($id: ID!) {
-                order(id: $id) {
-                  id
-                  tags
-                  displayFulfillmentStatus
-                  customAttributes {
-                    key
-                    value
-                  }
-                  shippingLine {
-                    title
-                  }
-                  shippingAddress {
-                    address1
-                  }
-                  fulfillments(first: 10) {
-                    nodes {
-                      trackingInfo {
-                        number
-                        company
-                      }
-                    }
-                  }
-                }
-              }
-            `,
-            { variables: { id: orderId } },
-          );
+          let order: any = null;
+          let usedFallbackQuery = false;
 
-          const json = (await response.json()) as any;
-          const order = json?.data?.order;
+          try {
+            const response = await admin.graphql(pullOrderShippingQuery, {
+              variables: { id: orderId },
+            });
+            const json = (await response.json()) as any;
+            order = json?.data?.order;
+          } catch (primaryQueryError) {
+            // Some stores/scopes reject newer order fields; fallback keeps shipping sync working.
+            console.error(`Primary shipping query failed for sale ${sale.id}, retrying with fallback fields:`, primaryQueryError);
+
+            const fallbackResponse = await admin.graphql(pullOrderShippingFallbackQuery, {
+              variables: { id: orderId },
+            });
+            const fallbackJson = (await fallbackResponse.json()) as any;
+            order = fallbackJson?.data?.order;
+            usedFallbackQuery = true;
+          }
+
           if (!order) {
             missingInShopifyCount += 1;
             continue;
           }
 
-          const orderType = getCustomAttributeValue(order.customAttributes || [], "Order Type");
+          const orderType = usedFallbackQuery
+            ? ""
+            : getCustomAttributeValue(order.customAttributes || [], "Order Type");
           const normalizedOrderType = String(orderType || "").trim().toLowerCase();
           const orderTags = Array.isArray(order?.tags)
             ? order.tags.map((tag: any) => String(tag || "").trim().toLowerCase())
@@ -701,24 +728,31 @@ export async function action({ request }: ActionFunctionArgs) {
             shippingMethod = "Delivery";
           }
 
-          const trackingNumber =
-            order?.fulfillments?.nodes
-              ?.flatMap((fulfillment: any) => fulfillment?.trackingInfo || [])
-              ?.map((tracking: any) => String(tracking?.number || "").trim())
-              ?.find((value: string) => Boolean(value)) || null;
+          const trackingNumber = usedFallbackQuery
+            ? null
+            : order?.fulfillments?.nodes
+                ?.flatMap((fulfillment: any) => fulfillment?.trackingInfo || [])
+                ?.map((tracking: any) => String(tracking?.number || "").trim())
+                ?.find((value: string) => Boolean(value)) || null;
 
           const hasTracking = Boolean(trackingNumber);
           const deliveryMethod =
             shippingMethod === "Collection"
               ? "Shipping not required"
-              : String(order?.shippingLine?.title || "Standard Delivery").trim();
-          const fulfillmentStatus = toSentenceCase(String(order?.displayFulfillmentStatus || ""));
+              : usedFallbackQuery
+                ? "Delivery"
+                : "Standard Delivery";
+          const fulfillmentStatus = usedFallbackQuery
+            ? "-"
+            : toSentenceCase(String(order?.displayFulfillmentStatus || ""));
           const deliveryStatus =
             shippingMethod === "Collection"
               ? "Shipping not required"
               : hasTracking
                 ? "Tracking added"
-                : "Awaiting tracking";
+                : usedFallbackQuery
+                  ? "Awaiting shipment update"
+                  : "Awaiting tracking";
 
           await upsertSaleShippingMeta({
             saleId: sale.id,
