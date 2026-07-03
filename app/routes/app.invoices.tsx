@@ -20,6 +20,7 @@ import prisma from "../db.server";
 import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
+import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -348,6 +349,33 @@ export async function action({ request }: ActionFunctionArgs) {
       return redirect(
         withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`),
       );
+    }
+  }
+
+  if (intent === "deleteInvoice") {
+    const invoiceId = Number(formData.get("invoiceId") || 0);
+
+    if (!invoiceId) {
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=Invalid%20invoice%20selected%20for%20deletion",
+        ),
+      );
+    }
+
+    try {
+      await deleteInvoiceWithRelations(invoiceId);
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Deleted invoice INV-${invoiceId}`)}`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Failed to delete invoice:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to delete invoice"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
     }
   }
 
@@ -1511,6 +1539,21 @@ export default function InvoicesPage() {
 >
   Edit
 </Button>
+
+                        <Form
+                          method="post"
+                          onSubmit={(event) => {
+                            if (!window.confirm(`Delete invoice INV-${invoice.id}? This cannot be undone.`)) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="_intent" value="deleteInvoice" />
+                          <input type="hidden" name="invoiceId" value={invoice.id} />
+                          <Button submit tone="critical">
+                            Delete
+                          </Button>
+                        </Form>
                       </InlineStack>
                     </IndexTable.Cell>
                   </IndexTable.Row>

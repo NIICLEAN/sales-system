@@ -5,6 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { generateShippingLabel } from "../services/shippingLabel.server";
+import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
 
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
@@ -48,7 +49,31 @@ export async function action({ request, params }: { request: Request; params: { 
   const intent = String(formData.get("_intent") || "").trim();
   const invoiceId = Number(params.invoiceId || 0);
 
-  if (intent !== "generateShippingLabel" || !invoiceId) {
+  if (!invoiceId) {
+    return null;
+  }
+
+  if (intent === "deleteInvoice") {
+    try {
+      await deleteInvoiceWithRelations(invoiceId);
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Deleted invoice INV-${invoiceId}`)}`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Delete invoice failed:", error);
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(String(error?.message || "Failed to delete invoice"))}`,
+        ),
+      );
+    }
+  }
+
+  if (intent !== "generateShippingLabel") {
     return null;
   }
 
@@ -1007,6 +1032,22 @@ export default function PrintInvoicePage() {
         <button type="button" onClick={downloadPdf}>
           Download PDF
         </button>
+
+        <Form method="post">
+          <input type="hidden" name="_intent" value="deleteInvoice" />
+          <button
+            type="submit"
+            className="secondary"
+            style={{ borderColor: "#b00020", color: "#b00020" }}
+            onClick={(event) => {
+              if (!window.confirm(`Delete invoice INV-${invoice.id}? This cannot be undone.`)) {
+                event.preventDefault();
+              }
+            }}
+          >
+            Delete Invoice
+          </button>
+        </Form>
 
         <button
           type="button"
