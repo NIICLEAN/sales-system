@@ -67,6 +67,13 @@ function toSentenceCase(value: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function normalizeDeliveryStatus(shippingMethod: "Collection" | "Delivery", deliveryStatus: string) {
+  if (shippingMethod === "Collection") return "Shipping not required";
+  const allowed = new Set(["Delivery required", "In progress", "Fulfilled"]);
+  const value = String(deliveryStatus || "").trim();
+  return allowed.has(value) ? value : "Delivery required";
+}
+
 function toShopifyOrderGid(value: string | null | undefined) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -376,6 +383,64 @@ export async function action({ request }: ActionFunctionArgs) {
     } catch (error: any) {
       console.error("Failed to delete invoice:", error);
       const message = encodeURIComponent(String(error?.message || "Failed to delete invoice"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
+  if (intent === "updateShippingMeta") {
+    const invoiceId = Number(formData.get("invoiceId") || 0);
+    const nextShippingMethod =
+      String(formData.get("shippingMethod") || "Collection") === "Delivery"
+        ? "Delivery"
+        : "Collection";
+    const nextDeliveryStatus = normalizeDeliveryStatus(
+      nextShippingMethod,
+      String(formData.get("deliveryStatus") || ""),
+    );
+    const nextTrackingNumberRaw = String(formData.get("trackingNumber") || "").trim();
+    const nextTrackingNumber = nextShippingMethod === "Delivery" ? nextTrackingNumberRaw : "";
+
+    if (!invoiceId) {
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          "/app/invoices?syncStatus=error&syncMessage=Invalid%20invoice%20selected%20for%20shipping%20update",
+        ),
+      );
+    }
+
+    try {
+      const existingMeta = await getSaleShippingMetaBySaleIds([invoiceId]);
+      const currentMeta = existingMeta.get(invoiceId);
+
+      await upsertSaleShippingMeta({
+        saleId: invoiceId,
+        shippingMethod: nextShippingMethod,
+        deliveryStatus: nextDeliveryStatus,
+        trackingNumber: nextTrackingNumber || null,
+        trackingUrl: nextTrackingNumber ? currentMeta?.trackingUrl || null : null,
+        carrierName: currentMeta?.carrierName || null,
+        deliveryMethod:
+          nextShippingMethod === "Delivery"
+            ? currentMeta?.deliveryMethod || "Delivery"
+            : "Shipping not required",
+        fulfillmentStatus:
+          nextShippingMethod === "Collection"
+            ? "Fulfilled"
+            : nextDeliveryStatus === "Fulfilled"
+              ? "Fulfilled"
+              : "Unfulfilled",
+      });
+
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Updated shipping for INV-${invoiceId}`)}`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Failed to update shipping meta:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to update shipping"));
       return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
     }
   }
@@ -1681,6 +1746,52 @@ export default function InvoicesPage() {
                         {invoice.trackingUrl ? (
                           <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
                         ) : null}
+
+                        <div style={{ marginTop: 8 }}>
+                          <Form method="post">
+                            <input type="hidden" name="_intent" value="updateShippingMeta" />
+                            <input type="hidden" name="invoiceId" value={invoice.id} />
+
+                            <BlockStack gap="200">
+                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                Shipping / Delivery
+                                <select
+                                  name="shippingMethod"
+                                  defaultValue={invoice.shippingMethod || "Collection"}
+                                  style={{ width: "100%", marginTop: 4 }}
+                                >
+                                  <option value="Collection">Collection</option>
+                                  <option value="Delivery">Delivery</option>
+                                </select>
+                              </label>
+
+                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                Delivery status
+                                <select
+                                  name="deliveryStatus"
+                                  defaultValue={invoice.deliveryStatus || "Delivery required"}
+                                  style={{ width: "100%", marginTop: 4 }}
+                                >
+                                  <option value="Delivery required">Delivery required</option>
+                                  <option value="In progress">In progress</option>
+                                  <option value="Fulfilled">Fulfilled</option>
+                                </select>
+                              </label>
+
+                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                Tracking number
+                                <input
+                                  name="trackingNumber"
+                                  defaultValue={invoice.trackingNumber || ""}
+                                  placeholder="Enter tracking number"
+                                  style={{ width: "100%", marginTop: 4 }}
+                                />
+                              </label>
+
+                              <Button submit size="slim">Save shipping</Button>
+                            </BlockStack>
+                          </Form>
+                        </div>
                       </BlockStack>
                     </IndexTable.Cell>
 
