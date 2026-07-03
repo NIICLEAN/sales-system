@@ -23,6 +23,7 @@ import prisma from "../db.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
+import { getInvoiceDiscountMeta, upsertInvoiceDiscountMeta } from "../services/invoiceDiscountMeta.server";
 
 const VAT_RATE = 0.2;
 
@@ -52,6 +53,26 @@ function getShippingServiceValueFromLabel(label: string) {
   if (!normalized) return "";
   const match = SHIPPING_SERVICE_OPTIONS.find((option) => option.label.toLowerCase() === normalized);
   return match?.value || "";
+}
+
+function buildShippingLineItem(shippingMethod: string, shippingServiceLabel: string, shippingCharge: number) {
+  if (shippingMethod !== "Delivery" || shippingCharge <= 0) return null;
+
+  return {
+    id: `shipping-${shippingServiceLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    type: "custom",
+    title: shippingServiceLabel || "Shipping",
+    sku: "SHIPPING",
+    quantity: 1,
+    unitPrice: roundMoney(shippingCharge),
+    discount: 0,
+    imageUrl: "",
+    isShipping: true,
+  };
+}
+
+function addShippingLineItem(items: Array<any>, shippingLineItem: any | null) {
+  return shippingLineItem ? [...items, shippingLineItem] : items;
 }
 
 function getRecentInvoiceSubmission(submissionKey: string) {
@@ -414,6 +435,7 @@ if (params.invoiceId || editInvoiceId) {
       }),
       getSaleShippingMeta(sale.id),
     ]);
+      const discountMeta = await getInvoiceDiscountMeta(sale.id);
 
     existingInvoice = {
       ...sale,
@@ -422,6 +444,9 @@ if (params.invoiceId || editInvoiceId) {
       shippingMethod: shippingMeta.shippingMethod,
       deliveryMethod: shippingMeta.deliveryMethod || "",
       trackingNumber: shippingMeta.trackingNumber || "",
+        invoiceDiscountType: discountMeta.discountType || "amount",
+        invoiceDiscountValue: discountMeta.discountValue ?? 0,
+        invoiceDiscountAmount: discountMeta.discountAmount ?? 0,
       vatType: "Standard",
     } as any;
   }
@@ -562,6 +587,8 @@ const manualTotalInput = roundMoney(
 const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
 const shippingServiceValue = String(formData.get("shippingService") || "").trim();
 const trackingNumber = String(formData.get("trackingNumber") || "").trim();
+const invoiceDiscountType = String(formData.get("invoiceDiscountType") || "amount").trim() === "percent" ? "percent" : "amount";
+const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDiscountValue") || "0").replace(/,/g, "")) || 0);
 
   if (!isEditMode && submissionKey) {
     const previousSubmission = getRecentInvoiceSubmission(submissionKey);
@@ -833,6 +860,20 @@ const trackingNumber = String(formData.get("trackingNumber") || "").trim();
   const balanceDue = roundMoney(Math.max(total - amountPaid, 0));
   const paymentStatus = getPaymentStatus(total, amountPaid);
 
+  const invoiceDiscountAmount = roundMoney(
+    invoiceDiscountType === "percent"
+      ? Math.max(0, roundMoney((subtotal - discountTotal + shippingCharge) * (invoiceDiscountValue / 100)))
+      : Math.min(Math.max(0, invoiceDiscountValue), Math.max(0, subtotal - discountTotal + shippingCharge)),
+  );
+
+  const invoiceNetTotal = roundMoney(Math.max(0, subtotal - discountTotal + shippingCharge - invoiceDiscountAmount));
+  const invoiceVatAmount = isVatExempt ? 0 : roundMoney(invoiceNetTotal * VAT_RATE);
+  const invoiceTotal = roundMoney(invoiceNetTotal + invoiceVatAmount);
+  const invoiceBalanceDue = roundMoney(Math.max(invoiceTotal - amountPaid, 0));
+
+  const shippingLineItem = buildShippingLineItem(shippingMethod, shippingServiceLabel, shippingCharge);
+  const invoiceLineItems = addShippingLineItem(lineItems, shippingLineItem);
+
   const hasManualShippingAddress =
     address1 || address2 || city || county || postcode || country;
 
@@ -862,7 +903,7 @@ const tags = [
     shippingCharge,
   });
 
-  const shouldCreateShopifyOrder = amountPaid > 0 && total > 0 && lineItems.length > 0;
+  const shouldCreateShopifyOrder = amountPaid > 0 && invoiceTotal > 0 && invoiceLineItems.length > 0;
 
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
@@ -898,15 +939,15 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       subtotal,
       discountTotal,
       vatAmount,
-      total,
+      total: invoiceTotal,
       amountPaid,
-      balanceDue,
-      paymentStatus,
+      balanceDue: invoiceBalanceDue,
+      paymentStatus: getPaymentStatus(invoiceTotal, amountPaid),
       depositPaid,
       staffId: resolvedStaffId,
     },
     replaceLineItems: true,
-    lineItems: lineItems.map((item: any) => ({
+    lineItems: invoiceLineItems.map((item: any) => ({
       shopifyVariantId: item.type === "custom" ? null : item.id,
       title: item.title,
       sku: item.sku,
@@ -1000,8 +1041,8 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         county,
         postcode,
         country,
-        lineItems,
-        paymentStatus,
+        lineItems: invoiceLineItems,
+        paymentStatus: getPaymentStatus(invoiceTotal, amountPaid),
       });
 
       await prisma.sale.update({
@@ -1010,6 +1051,13 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           shopifyOrderId: shopifyOrder?.id || null,
           shopifyOrderName: shopifyOrder?.name || null,
         },
+      });
+
+      await upsertInvoiceDiscountMeta({
+        saleId: invoiceId,
+        discountType: invoiceDiscountType,
+        discountValue: invoiceDiscountValue,
+        discountAmount: invoiceDiscountAmount,
       });
 
       if (shippingMethod === "Collection" && shopifyOrder?.id) {
@@ -1103,51 +1151,58 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
 
 const sale = await createSaleCompat({
   sale: {
-      shopifyOrderId: shopifyOrder?.id || null,
-      shopifyOrderName: shopifyOrder?.name || null,
-      customerId: shopifyCustomerId,
-      customerName,
-      customerEmail,
-      customerVatNumber,
-      customerPhone,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      reference,
-      paymentMethod,
-      subtotal,
-      discountTotal,
-      vatAmount,
-      total,
-      amountPaid,
-      balanceDue,
-      paymentStatus,
-      depositPaid,
-      staffId,
-      createdAt: new Date(),
-    },
-      lineItems: lineItems.map((item: any) => ({
-          shopifyVariantId: item.type === "custom" ? null : item.id,
-          title: item.title,
-          sku: item.sku,
-          imageUrl: item.imageUrl || null,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          discount: Number(item.discount || 0),
-          lineTotal: roundMoney(
-            Number(item.unitPrice) * Number(item.quantity) -
-              Number(item.discount || 0),
-          ),
-          isCustom: item.type === "custom",
-        })),
+    shopifyOrderId: shopifyOrder?.id || null,
+    shopifyOrderName: shopifyOrder?.name || null,
+    customerId: shopifyCustomerId,
+    customerName,
+    customerEmail,
+    customerVatNumber,
+    customerPhone,
+    address1,
+    address2,
+    city,
+    county,
+    postcode,
+    country,
+    reference,
+    paymentMethod,
+    subtotal,
+    discountTotal,
+    vatAmount,
+      total: invoiceTotal,
+    amountPaid,
+      balanceDue: invoiceBalanceDue,
+      paymentStatus: getPaymentStatus(invoiceTotal, amountPaid),
+    depositPaid,
+    staffId,
+    createdAt: new Date(),
+  },
+  lineItems: invoiceLineItems.map((item: any) => ({
+    shopifyVariantId: item.type === "custom" ? null : item.id,
+    title: item.title,
+    sku: item.sku,
+    imageUrl: item.imageUrl || null,
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unitPrice),
+    discount: Number(item.discount || 0),
+    lineTotal: roundMoney(
+      Number(item.unitPrice) * Number(item.quantity) -
+        Number(item.discount || 0),
+    ),
+    isCustom: item.type === "custom",
+  })),
   });
 
   if (!isEditMode && submissionKey) {
     setRecentInvoiceSubmission(submissionKey, sale.id);
   }
+
+  await upsertInvoiceDiscountMeta({
+    saleId: sale.id,
+    discountType: invoiceDiscountType,
+    discountValue: invoiceDiscountValue,
+    discountAmount: invoiceDiscountAmount,
+  });
 
   // Adjust Shopify inventory for any non-custom line items
   if (shouldCreateShopifyOrder) {
@@ -1350,6 +1405,18 @@ const [trackingNumber, setTrackingNumber] = useState(
   existingInvoice?.trackingNumber || "",
 );
 
+const [invoiceDiscountEnabled, setInvoiceDiscountEnabled] = useState(
+  Boolean(existingInvoice?.invoiceDiscountAmount),
+);
+
+const [invoiceDiscountType, setInvoiceDiscountType] = useState(
+  existingInvoice?.invoiceDiscountType || "amount",
+);
+
+const [invoiceDiscountValue, setInvoiceDiscountValue] = useState(
+  String(existingInvoice?.invoiceDiscountValue || 0),
+);
+
 const [items, setItems] = useState<any[]>(
   existingInvoice?.lineItems?.map((item: any) => ({
     type: item.isCustom ? "custom" : "shopify",
@@ -1503,7 +1570,15 @@ const [showAddress, setShowAddress] = useState(
         ? getShippingServiceByValue(shippingService)
         : null;
     const shippingCharge = roundMoney(Number(selectedShippingService?.price || 0));
-    const netTotal = roundMoney(subtotal - discount + shippingCharge);
+    const invoiceDiscountBase = roundMoney(Math.max(0, subtotal - discount + shippingCharge));
+    const invoiceDiscountAmount = invoiceDiscountEnabled
+      ? roundMoney(
+          invoiceDiscountType === "percent"
+            ? invoiceDiscountBase * (Math.max(0, Number(invoiceDiscountValue || 0)) / 100)
+            : Math.min(Math.max(0, Number(invoiceDiscountValue || 0)), invoiceDiscountBase),
+        )
+      : 0;
+    const netTotal = roundMoney(Math.max(0, subtotal - discount + shippingCharge - invoiceDiscountAmount));
     const vatAmount = (vatType === "Exempt" || vatType === "CrossBorder")
       ? 0
       : roundMoney(netTotal * VAT_RATE);
@@ -1525,6 +1600,7 @@ const [showAddress, setShowAddress] = useState(
         vatAmount: 0,
         total: overrideTotal,
         shippingCharge,
+        invoiceDiscountAmount: 0,
         paid: overridePaid,
         balanceDue: overrideBalanceDue,
         paymentStatus: overrideStatus,
@@ -1538,11 +1614,12 @@ const [showAddress, setShowAddress] = useState(
       vatAmount,
       total,
       shippingCharge,
+      invoiceDiscountAmount,
       paid,
       balanceDue,
       paymentStatus,
     };
-  }, [items, vatType, amountPaid, isEditMode, manualTotal, shippingMethod, shippingService]);
+  }, [items, vatType, amountPaid, isEditMode, manualTotal, shippingMethod, shippingService, invoiceDiscountEnabled, invoiceDiscountType, invoiceDiscountValue]);
 
   const deliveryRequiresService = shippingMethod === "Delivery" && !shippingService;
 
@@ -1948,6 +2025,9 @@ const [showAddress, setShowAddress] = useState(
           />
           <input type="hidden" name="lineItems" value={JSON.stringify(items)} />
           <input type="hidden" name="manualTotal" value={manualTotal} />
+          <input type="hidden" name="invoiceDiscountEnabled" value={invoiceDiscountEnabled ? "1" : "0"} />
+          <input type="hidden" name="invoiceDiscountType" value={invoiceDiscountType} />
+          <input type="hidden" name="invoiceDiscountValue" value={invoiceDiscountValue} />
           <input type="hidden" name="customerId" value={customerId} />
           <input
   type="hidden"
@@ -2280,6 +2360,11 @@ const [showAddress, setShowAddress] = useState(
                       </InlineStack>
 
                       <InlineStack align="space-between">
+                        <Text as="p">Invoice discount</Text>
+                        <Text as="p">-{money(totals.invoiceDiscountAmount || 0)}</Text>
+                      </InlineStack>
+
+                      <InlineStack align="space-between">
                         <Text as="p">VAT</Text>
                         <Text as="p">{money(totals.vatAmount)}</Text>
                       </InlineStack>
@@ -2336,6 +2421,44 @@ const [showAddress, setShowAddress] = useState(
                         type="number"
                         prefix="£"
                       />
+
+                      <Button onClick={() => setInvoiceDiscountEnabled((current) => !current)}>
+                        {invoiceDiscountEnabled ? "Remove discount" : "Add discount"}
+                      </Button>
+
+                      {invoiceDiscountEnabled ? (
+                        <BlockStack gap="300">
+                          <InlineStack gap="300">
+                            <div style={{ flex: 1 }}>
+                              <Select
+                                label="Discount type"
+                                options={[
+                                  { label: "Amount off (£)", value: "amount" },
+                                  { label: "Percentage off (%)", value: "percent" },
+                                ]}
+                                value={invoiceDiscountType}
+                                onChange={setInvoiceDiscountType}
+                              />
+                            </div>
+
+                            <div style={{ flex: 1 }}>
+                              <TextField
+                                label={invoiceDiscountType === "percent" ? "Discount percentage" : "Discount amount"}
+                                value={invoiceDiscountValue}
+                                onChange={setInvoiceDiscountValue}
+                                autoComplete="off"
+                                type="number"
+                                prefix={invoiceDiscountType === "percent" ? undefined : "£"}
+                                suffix={invoiceDiscountType === "percent" ? "%" : undefined}
+                              />
+                            </div>
+                          </InlineStack>
+
+                          <Text as="p" tone="subdued">
+                            Discount applied: {money(totals.invoiceDiscountAmount || 0)}
+                          </Text>
+                        </BlockStack>
+                      ) : null}
 
                       <Checkbox
                         label="Deposit paid"
