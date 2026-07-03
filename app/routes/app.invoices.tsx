@@ -7,6 +7,7 @@ import {
   Card,
   Banner,
   Select,
+  TextField,
   IndexTable,
   Text,
   Button,
@@ -1077,6 +1078,11 @@ export async function loader({ request }: { request: Request }) {
     const { admin } = await authenticate.admin(request);
 
     const url = new URL(request.url);
+    const query = String(url.searchParams.get("query") || "").trim();
+    const paymentFilter = String(url.searchParams.get("paymentStatus") || "all").trim();
+    const shippingFilter = String(url.searchParams.get("shippingMethod") || "all").trim();
+    const page = Math.max(1, Number(url.searchParams.get("page") || "1") || 1);
+    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("perPage") || "25") || 25));
     const shopDomain = String(
       url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain") || "",
     ).trim();
@@ -1091,6 +1097,56 @@ export async function loader({ request }: { request: Request }) {
     const includeLocal = !xeroConfigured || source !== "custom";
     const includeCustom = xeroConfigured && source !== "local";
 
+    const localWhere: any = {};
+    const localFilters: any[] = [];
+    let shippingFilteredIds: number[] | null = null;
+
+    if (query) {
+      const normalizedQuery = query.toLowerCase();
+      const invoiceId = Number(query.replace(/^inv-/i, ""));
+
+      localFilters.push({
+        OR: [
+          { customerName: { contains: query, mode: "insensitive" } },
+          { shopifyOrderName: { contains: query, mode: "insensitive" } },
+          { reference: { contains: query, mode: "insensitive" } },
+          { paymentMethod: { contains: query, mode: "insensitive" } },
+          { paymentStatus: { contains: query, mode: "insensitive" } },
+          ...(Number.isFinite(invoiceId) && invoiceId > 0 ? [{ id: invoiceId }] : []),
+          ...(normalizedQuery.includes("paid")
+            ? [{ paymentStatus: { contains: normalizedQuery, mode: "insensitive" } }]
+            : []),
+        ],
+      });
+    }
+
+    if (paymentFilter !== "all") {
+      localFilters.push({ paymentStatus: paymentFilter });
+    }
+
+    if (shippingFilter !== "all") {
+      try {
+        const shippingRows = await prisma.$queryRaw<Array<{ saleId: number }>>`
+          SELECT "saleId"
+          FROM "SaleShippingMeta"
+          WHERE "shippingMethod" = ${shippingFilter === "Delivery" ? "Delivery" : "Collection"}
+        `;
+
+        shippingFilteredIds = shippingRows.map((row) => row.saleId);
+      } catch (error) {
+        console.error("Failed to load shipping filter ids:", error);
+        shippingFilteredIds = [];
+      }
+    }
+
+    if (shippingFilteredIds) {
+      localFilters.push({ id: { in: shippingFilteredIds } });
+    }
+
+    if (localFilters.length > 0) {
+      localWhere.AND = localFilters;
+    }
+
     let xeroConnected = false;
     if (xeroConfigured) {
       try {
@@ -1103,9 +1159,18 @@ export async function loader({ request }: { request: Request }) {
       }
     }
 
+    const localInvoiceCount = includeLocal
+      ? await prisma.sale.count({
+          where: localWhere,
+        })
+      : 0;
+
     const localInvoices = includeLocal
       ? await prisma.sale.findMany({
+          where: localWhere,
           orderBy: { createdAt: "desc" },
+          skip: (page - 1) * perPage,
+          take: perPage,
           select: {
             id: true,
             customerName: true,
@@ -1245,6 +1310,12 @@ export async function loader({ request }: { request: Request }) {
 
     return {
       invoices,
+      localInvoiceCount,
+      page,
+      perPage,
+      query,
+      paymentFilter,
+      shippingFilter,
       customInvoices,
       legacyWorksInvoices,
       shopifyLegacyInvoices,
@@ -1261,6 +1332,12 @@ export async function loader({ request }: { request: Request }) {
     console.error("Failed to load invoices:", error);
     return {
       invoices: [],
+      localInvoiceCount: 0,
+      page: 1,
+      perPage: 25,
+      query: "",
+      paymentFilter: "all",
+      shippingFilter: "all",
       customInvoices: [],
       legacyWorksInvoices: [],
       shopifyLegacyInvoices: [],
@@ -1275,6 +1352,12 @@ export async function loader({ request }: { request: Request }) {
 export default function InvoicesPage() {
   const {
     invoices,
+    localInvoiceCount,
+    page,
+    perPage,
+    query,
+    paymentFilter,
+    shippingFilter,
     customInvoices,
     legacyWorksInvoices,
     shopifyLegacyInvoices,
@@ -1290,6 +1373,23 @@ export default function InvoicesPage() {
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
   const connectXero = searchParams.get("connectXero") === "1";
+  const totalPages = Math.max(1, Math.ceil((localInvoiceCount || 0) / perPage));
+
+  function updateInvoicesQuery(updates: Record<string, string | number | null | undefined>) {
+    const params = new URLSearchParams(location.search);
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === undefined || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, String(value));
+      }
+    }
+
+    params.delete("syncStatus");
+    params.delete("syncMessage");
+    navigate(withEmbeddedParams(`/app/invoices?${params.toString()}`));
+  }
 
   function withEmbeddedParams(path: string) {
     const [pathname, queryString = ""] = path.split("?");
@@ -1389,6 +1489,96 @@ export default function InvoicesPage() {
                       onClick={() => navigate(withEmbeddedParams("/app/invoice"))}
                     >
                       Create Invoice
+                    </Button>
+                  </InlineStack>
+                </InlineStack>
+
+                <Form method="get">
+                  <BlockStack gap="300">
+                    <input type="hidden" name="source" value={source} />
+                    <InlineStack gap="300" blockAlign="end">
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <TextField
+                          label="Search invoices"
+                          name="query"
+                          value={query}
+                          onChange={(value: string) => updateInvoicesQuery({ query: value, page: 1 })}
+                          autoComplete="off"
+                          placeholder="Search customer, invoice ref, payment method"
+                        />
+                      </div>
+
+                      <div style={{ width: 190 }}>
+                        <Select
+                          label="Payment status"
+                          name="paymentStatus"
+                          value={paymentFilter}
+                          options={[
+                            { label: "All payment statuses", value: "all" },
+                            { label: "Paid", value: "Paid" },
+                            { label: "Partially Paid", value: "Partially Paid" },
+                            { label: "Unpaid", value: "Unpaid" },
+                          ]}
+                          onChange={(value) => updateInvoicesQuery({ paymentStatus: value, page: 1 })}
+                        />
+                      </div>
+
+                      <div style={{ width: 180 }}>
+                        <Select
+                          label="Shipping"
+                          name="shippingMethod"
+                          value={shippingFilter}
+                          options={[
+                            { label: "All shipping", value: "all" },
+                            { label: "Collection", value: "Collection" },
+                            { label: "Delivery", value: "Delivery" },
+                          ]}
+                          onChange={(value) => updateInvoicesQuery({ shippingMethod: value, page: 1 })}
+                        />
+                      </div>
+
+                      <div style={{ width: 120 }}>
+                        <Select
+                          label="Per page"
+                          name="perPage"
+                          value={String(perPage)}
+                          options={[
+                            { label: "25", value: "25" },
+                            { label: "50", value: "50" },
+                            { label: "100", value: "100" },
+                          ]}
+                          onChange={(value) => updateInvoicesQuery({ perPage: value, page: 1 })}
+                        />
+                      </div>
+
+                      <Button
+                        onClick={() => updateInvoicesQuery({ query: "", paymentStatus: "all", shippingMethod: "all", page: 1, perPage: 25 })}
+                      >
+                        Clear filters
+                      </Button>
+                    </InlineStack>
+                  </BlockStack>
+                </Form>
+
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="p" tone="subdued">
+                    Showing {(localInvoiceCount ? ((page - 1) * perPage) + 1 : 0)}-
+                    {Math.min(page * perPage, localInvoiceCount || 0)} of {localInvoiceCount || 0}
+                  </Text>
+
+                  <InlineStack gap="200">
+                    <Button
+                      disabled={page <= 1}
+                      onClick={() => updateInvoicesQuery({ page: page - 1 })}
+                    >
+                      Previous
+                    </Button>
+
+                    <Button
+                      disabled={page >= totalPages}
+                      onClick={() => updateInvoicesQuery({ page: page + 1 })}
+                    >
+                      Next
                     </Button>
                   </InlineStack>
                 </InlineStack>
