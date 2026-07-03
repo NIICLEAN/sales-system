@@ -625,6 +625,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 trackingInfo {
                   number
                   company
+                  url
                 }
               }
             }
@@ -728,12 +729,14 @@ export async function action({ request }: ActionFunctionArgs) {
             shippingMethod = "Delivery";
           }
 
-          const trackingNumber = usedFallbackQuery
+          const firstTracking = usedFallbackQuery
             ? null
             : order?.fulfillments?.nodes
                 ?.flatMap((fulfillment: any) => fulfillment?.trackingInfo || [])
-                ?.map((tracking: any) => String(tracking?.number || "").trim())
-                ?.find((value: string) => Boolean(value)) || null;
+                ?.find((tracking: any) => String(tracking?.number || "").trim());
+          const trackingNumber = firstTracking ? String(firstTracking?.number || "").trim() || null : null;
+          const carrierName = firstTracking ? String(firstTracking?.company || "").trim() || null : null;
+          const trackingUrl = firstTracking ? String(firstTracking?.url || "").trim() || null : null;
 
           const hasTracking = Boolean(trackingNumber);
           const deliveryMethod =
@@ -758,6 +761,8 @@ export async function action({ request }: ActionFunctionArgs) {
             saleId: sale.id,
             shippingMethod,
             trackingNumber,
+            trackingUrl,
+            carrierName,
             fulfillmentStatus,
             deliveryStatus,
             deliveryMethod,
@@ -962,6 +967,8 @@ export async function loader({ request }: { request: Request }) {
         : null,
       shippingMethod: shippingMetaBySaleId.get(invoice.id)?.shippingMethod || "Collection",
       trackingNumber: shippingMetaBySaleId.get(invoice.id)?.trackingNumber || null,
+      trackingUrl: shippingMetaBySaleId.get(invoice.id)?.trackingUrl || null,
+      carrierName: shippingMetaBySaleId.get(invoice.id)?.carrierName || null,
       fulfillmentStatus: shippingMetaBySaleId.get(invoice.id)?.fulfillmentStatus || null,
       deliveryStatus: shippingMetaBySaleId.get(invoice.id)?.deliveryStatus || null,
       deliveryMethod: shippingMetaBySaleId.get(invoice.id)?.deliveryMethod || null,
@@ -1302,8 +1309,14 @@ export default function InvoicesPage() {
                       <BlockStack gap="100">
                         <Text as="span" fontWeight="medium">{invoice.shippingMethod || "Collection"}</Text>
                         <Text as="span" tone="subdued">{invoice.deliveryMethod || "-"}</Text>
+                        {invoice.carrierName ? (
+                          <Text as="span" tone="subdued">Carrier: {invoice.carrierName}</Text>
+                        ) : null}
                         {invoice.trackingNumber ? (
                           <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
+                        ) : null}
+                        {invoice.trackingUrl ? (
+                          <Text as="span" tone="subdued">Tracking URL: {invoice.trackingUrl}</Text>
                         ) : null}
                       </BlockStack>
                     </IndexTable.Cell>

@@ -115,7 +115,9 @@ export async function action({ request, params }: { request: Request; params: { 
       );
     }
 
-    await upsertSaleShippingMeta({
+      await upsertSaleShippingMeta({
+        trackingUrl: shippingMeta.trackingUrl,
+        carrierName: shippingMeta.carrierName,
       saleId: invoiceId,
       shippingMethod: shippingMeta.shippingMethod,
       trackingNumber: shippingMeta.trackingNumber,
@@ -241,6 +243,8 @@ export async function loader({
       staff,
       shippingMethod: shippingMeta.shippingMethod,
       trackingNumber: shippingMeta.trackingNumber,
+        trackingUrl: shippingMeta.trackingUrl,
+        carrierName: shippingMeta.carrierName,
       fulfillmentStatus: shippingMeta.fulfillmentStatus,
       deliveryStatus: shippingMeta.deliveryStatus,
       deliveryMethod: shippingMeta.deliveryMethod,
@@ -1078,8 +1082,16 @@ export default function PrintInvoicePage() {
             Type: {invoice.deliveryMethod || "-"}
           </div>
           <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
+            Carrier: {invoice.carrierName || "-"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
             Tracking: {invoice.trackingNumber || "-"}
           </div>
+          {invoice.trackingUrl ? (
+            <div style={{ marginTop: 4, fontSize: 12 }}>
+              <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1234,7 +1246,11 @@ export default function PrintInvoicePage() {
             <br />
             Type: {invoice.deliveryMethod || "-"}
             <br />
+            Carrier: {invoice.carrierName || "-"}
+            <br />
             Tracking: {invoice.trackingNumber || "-"}
+            <br />
+            Tracking URL: {invoice.trackingUrl || "-"}
           </div>
 
           <div className="packing-line" />
