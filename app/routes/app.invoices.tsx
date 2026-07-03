@@ -2073,28 +2073,27 @@ export default function InvoicesPage() {
                       }}
                     />
 
-                    {editingShippingMethod === "Delivery" ? (
-                      <>
-                        <Select
-                          label="Delivery status"
-                          options={[
-                            { label: "Delivery required", value: "Delivery required" },
-                            { label: "In progress", value: "In progress" },
-                            { label: "Fulfilled", value: "Fulfilled" },
-                          ]}
-                          value={editingDeliveryStatus}
-                          onChange={setEditingDeliveryStatus}
-                        />
+                    <Select
+                      label="Delivery status"
+                      options={[
+                        { label: "Shipping not required", value: "Shipping not required" },
+                        { label: "Delivery required", value: "Delivery required" },
+                        { label: "In progress", value: "In progress" },
+                        { label: "Fulfilled", value: "Fulfilled" },
+                      ]}
+                      value={editingShippingMethod === "Delivery" ? editingDeliveryStatus : "Shipping not required"}
+                      onChange={setEditingDeliveryStatus}
+                      disabled={editingShippingMethod !== "Delivery"}
+                    />
 
-                        <TextField
-                          label="Tracking number"
-                          value={editingTrackingNumber}
-                          onChange={setEditingTrackingNumber}
-                          autoComplete="off"
-                          placeholder="Enter tracking number"
-                        />
-                      </>
-                    ) : null}
+                    <TextField
+                      label="Tracking number"
+                      value={editingTrackingNumber}
+                      onChange={setEditingTrackingNumber}
+                      autoComplete="off"
+                      placeholder={editingShippingMethod === "Delivery" ? "Enter tracking number" : "Available for delivery orders"}
+                      disabled={editingShippingMethod !== "Delivery"}
+                    />
                   </BlockStack>
                 </Form>
               </Modal.Section>
