@@ -241,19 +241,24 @@ async function createShopifyOrderFromInvoice({
     lineItems: lineItems.map((item: any) => {
       const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
       const netDiscount = roundMoney(Number(item.discount || 0));
+      const grossUnitPrice = getGrossPrice(netUnitPrice, isVatExempt);
+      const grossDiscount = isVatExempt
+        ? netDiscount
+        : roundMoney(netDiscount * (1 + VAT_RATE));
 
       return {
         quantity: Number(item.quantity),
         title: item.title || "Custom item",
         sku: item.sku || undefined,
         originalUnitPriceWithCurrency: {
-          amount: Number(netUnitPrice ?? 0).toFixed(2),
+          amount: Number(grossUnitPrice ?? 0).toFixed(2),
           currencyCode: "GBP",
         },
-        taxable: !isVatExempt,
-        appliedDiscount: netDiscount
+        // Prices sent to Shopify are VAT-inclusive from V2, so avoid extra tax layering.
+        taxable: false,
+        appliedDiscount: grossDiscount
           ? {
-              value: netDiscount,
+              value: grossDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
@@ -1184,7 +1189,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       county,
       postcode,
       country,
-      lineItems,
+      lineItems: invoiceLineItems,
       paymentStatus,
     });
 
