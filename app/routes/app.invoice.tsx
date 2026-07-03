@@ -38,6 +38,12 @@ const SHIPPING_SERVICE_OPTIONS = [
   { value: "pallet-international", label: "Pallet international", price: 495 },
 ];
 
+const DELIVERY_STATUS_OPTIONS = [
+  { label: "Delivery required", value: "Delivery required", tone: "critical" as const },
+  { label: "In progress", value: "In progress", tone: "warning" as const },
+  { label: "Fulfilled", value: "Fulfilled", tone: "success" as const },
+];
+
 const money = (value: number) => `£${Number(value ?? 0).toFixed(2)}`;
 
 function roundMoney(value: number) {
@@ -53,6 +59,13 @@ function getShippingServiceValueFromLabel(label: string) {
   if (!normalized) return "";
   const match = SHIPPING_SERVICE_OPTIONS.find((option) => option.label.toLowerCase() === normalized);
   return match?.value || "";
+}
+
+function getDeliveryStatusTone(status: string) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "fulfilled") return "success";
+  if (normalized === "in progress") return "warning";
+  return "critical";
 }
 
 function buildShippingLineItem(shippingMethod: string, shippingServiceLabel: string, shippingCharge: number) {
@@ -138,6 +151,8 @@ function buildOrderCustomAttributes({
   fulfilmentMethod,
   shippingServiceLabel,
   shippingCharge,
+  trackingNumber,
+  deliveryWorkflowStatus,
 }: {
   paymentMethod: string;
   paymentStatus: string;
@@ -152,6 +167,8 @@ function buildOrderCustomAttributes({
   fulfilmentMethod: string;
   shippingServiceLabel: string;
   shippingCharge: number;
+  trackingNumber: string;
+  deliveryWorkflowStatus: string;
 }) {
   return [
     { key: "Payment Method", value: paymentMethod },
@@ -170,6 +187,8 @@ function buildOrderCustomAttributes({
     { key: "Order Type", value: fulfilmentMethod },
     { key: "Shipping Service", value: shippingServiceLabel || "-" },
     { key: "Shipping Charge", value: money(shippingCharge) },
+    { key: "Delivery Workflow", value: deliveryWorkflowStatus || "-" },
+    { key: "Tracking Number", value: trackingNumber || "-" },
   ];
 }
 
@@ -587,6 +606,7 @@ const manualTotalInput = roundMoney(
 const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
 const shippingServiceValue = String(formData.get("shippingService") || "").trim();
 const trackingNumber = String(formData.get("trackingNumber") || "").trim();
+const deliveryWorkflowStatusInput = String(formData.get("deliveryWorkflowStatus") || "Delivery required").trim();
 const invoiceDiscountType = String(formData.get("invoiceDiscountType") || "amount").trim() === "percent" ? "percent" : "amount";
 const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDiscountValue") || "0").replace(/,/g, "")) || 0);
 
@@ -657,6 +677,12 @@ const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDisc
     const shippingServiceLabel =
       shippingMethod === "Delivery"
         ? selectedShippingService?.label || "Delivery"
+        : "Shipping not required";
+    const deliveryWorkflowStatus =
+      shippingMethod === "Delivery"
+        ? ["Delivery required", "In progress", "Fulfilled"].includes(deliveryWorkflowStatusInput)
+          ? deliveryWorkflowStatusInput
+          : "Delivery required"
         : "Shipping not required";
 
   let lineItems: any[] = [];
@@ -901,9 +927,12 @@ const tags = [
     fulfilmentMethod,
     shippingServiceLabel,
     shippingCharge,
+    trackingNumber,
+    deliveryWorkflowStatus,
   });
 
-  const shouldCreateShopifyOrder = amountPaid > 0 && invoiceTotal > 0 && invoiceLineItems.length > 0;
+  const shouldCreateShopifyOrder = invoiceTotal > 0 && invoiceLineItems.length > 0;
+  const shouldAutoFulfillOrder = shippingMethod === "Collection" || fulfilmentMethod === "Phone";
 
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
@@ -1016,7 +1045,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       });
     }
 
-    if (shippingMethod === "Collection") {
+    if (shouldAutoFulfillOrder) {
       await autoFulfillCollectionOrder({
         admin,
         orderId: existingSale.shopifyOrderId,
@@ -1060,7 +1089,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         discountAmount: invoiceDiscountAmount,
       });
 
-      if (shippingMethod === "Collection" && shopifyOrder?.id) {
+      if (shouldAutoFulfillOrder && shopifyOrder?.id) {
         await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
       }
     } catch (error) {
@@ -1106,12 +1135,8 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       shippingMethod,
       trackingNumber,
       deliveryMethod: shippingServiceLabel,
-      deliveryStatus:
-        shippingMethod === "Collection"
-          ? "Shipping not required"
-          : trackingNumber
-            ? "Tracking added"
-            : "Awaiting tracking",
+      deliveryStatus: deliveryWorkflowStatus,
+      fulfillmentStatus: shouldAutoFulfillOrder ? "Fulfilled" : "Unfulfilled",
     });
   } catch (err) {
     console.error("Failed to save shipping meta:", err);
@@ -1144,7 +1169,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       paymentStatus,
     });
 
-    if (shippingMethod === "Collection" && shopifyOrder?.id) {
+    if (shouldAutoFulfillOrder && shopifyOrder?.id) {
       await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
     }
   }
@@ -1261,12 +1286,8 @@ try {
     shippingMethod,
     trackingNumber,
     deliveryMethod: shippingServiceLabel,
-    deliveryStatus:
-      shippingMethod === "Collection"
-        ? "Shipping not required"
-        : trackingNumber
-          ? "Tracking added"
-          : "Awaiting tracking",
+    deliveryStatus: deliveryWorkflowStatus,
+    fulfillmentStatus: shouldAutoFulfillOrder ? "Fulfilled" : "Unfulfilled",
   });
 } catch (err) {
   console.error("Failed to save shipping meta:", err);
@@ -1405,6 +1426,12 @@ const [trackingNumber, setTrackingNumber] = useState(
   existingInvoice?.trackingNumber || "",
 );
 
+const [deliveryWorkflowStatus, setDeliveryWorkflowStatus] = useState(
+  existingInvoice?.shippingMethod === "Delivery"
+    ? (existingInvoice?.deliveryStatus || "Delivery required")
+    : "Shipping not required",
+);
+
 const [invoiceDiscountEnabled, setInvoiceDiscountEnabled] = useState(
   Boolean(existingInvoice?.invoiceDiscountAmount),
 );
@@ -1468,6 +1495,7 @@ const [showAddress, setShowAddress] = useState(
   { label: "Collected", value: "Collected" },
   { label: "Collecting", value: "Collecting" },
   { label: "Delivery", value: "Delivery" },
+  { label: "Phone", value: "Phone" },
 ];
 
   function selectCustomer(customer: any) {
@@ -2262,6 +2290,9 @@ const [showAddress, setShowAddress] = useState(
                             setShippingMethod(value);
                             if (value !== "Delivery") {
                               setShippingService("");
+                              setDeliveryWorkflowStatus("Shipping not required");
+                            } else {
+                              setDeliveryWorkflowStatus("Delivery required");
                             }
                           }}
                         />
@@ -2285,17 +2316,50 @@ const [showAddress, setShowAddress] = useState(
                         </div>
                       ) : null}
 
-                      <div style={{ flex: 1 }}>
-                        <TextField
-                          label="Tracking number"
-                          name="trackingNumber"
-                          value={trackingNumber}
-                          onChange={setTrackingNumber}
-                          autoComplete="off"
-                          placeholder="Optional"
-                        />
-                      </div>
+                      {shippingMethod === "Delivery" ? (
+                        <div style={{ flex: 1 }}>
+                          <Box
+                            padding="300"
+                            borderWidth="025"
+                            borderRadius="200"
+                            background={
+                              getDeliveryStatusTone(deliveryWorkflowStatus) === "success"
+                                ? "bg-fill-success-secondary"
+                                : getDeliveryStatusTone(deliveryWorkflowStatus) === "warning"
+                                  ? "bg-fill-warning-secondary"
+                                  : "bg-fill-critical-secondary"
+                            }
+                          >
+                            <Select
+                              label="Delivery workflow"
+                              options={DELIVERY_STATUS_OPTIONS.map((option) => ({
+                                label: option.label,
+                                value: option.value,
+                              }))}
+                              value={deliveryWorkflowStatus}
+                              onChange={setDeliveryWorkflowStatus}
+                            />
+                          </Box>
+                        </div>
+                      ) : null}
                     </InlineStack>
+
+                    {shippingMethod === "Delivery" ? (
+                      <TextField
+                        label="Tracking number"
+                        name="trackingNumber"
+                        value={trackingNumber}
+                        onChange={setTrackingNumber}
+                        autoComplete="off"
+                        placeholder="Enter courier tracking number"
+                      />
+                    ) : null}
+
+                    <input
+                      type="hidden"
+                      name="deliveryWorkflowStatus"
+                      value={shippingMethod === "Delivery" ? deliveryWorkflowStatus : "Shipping not required"}
+                    />
 
                     {deliveryRequiresService ? (
                       <Text as="p" tone="critical">
