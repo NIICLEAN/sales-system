@@ -26,6 +26,9 @@ import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShi
 
 const VAT_RATE = 0.2;
 
+const recentInvoiceSubmissions = new Map<string, { createdAt: number; saleId?: number }>();
+const INVOICE_SUBMISSION_TTL_MS = 5 * 60 * 1000;
+
 const SHIPPING_SERVICE_OPTIONS = [
   { value: "ireland-delivery", label: "Ireland Delivery", price: 14.95 },
   { value: "ni-uk-delivery", label: "NI / UK Delivery", price: 12.95 },
@@ -49,6 +52,25 @@ function getShippingServiceValueFromLabel(label: string) {
   if (!normalized) return "";
   const match = SHIPPING_SERVICE_OPTIONS.find((option) => option.label.toLowerCase() === normalized);
   return match?.value || "";
+}
+
+function getRecentInvoiceSubmission(submissionKey: string) {
+  const now = Date.now();
+
+  for (const [key, value] of recentInvoiceSubmissions.entries()) {
+    if (now - value.createdAt > INVOICE_SUBMISSION_TTL_MS) {
+      recentInvoiceSubmissions.delete(key);
+    }
+  }
+
+  return recentInvoiceSubmissions.get(submissionKey) || null;
+}
+
+function setRecentInvoiceSubmission(submissionKey: string, saleId?: number) {
+  recentInvoiceSubmissions.set(submissionKey, {
+    createdAt: Date.now(),
+    saleId,
+  });
 }
 
 function getPaymentStatus(total: any, amountPaid: any) {
@@ -531,6 +553,7 @@ const formData = await request.formData();
 
 const editInvoiceId = String(formData.get("editInvoiceId") || "").trim();
 const isEditMode = Boolean(params.invoiceId || editInvoiceId);
+const submissionKey = String(formData.get("submissionKey") || "").trim();
 const printMode = String(formData.get("printMode") || "invoice").trim().toLowerCase();
 const editModeInvoiceId = Number(params.invoiceId || editInvoiceId || 0);
 const manualTotalInput = roundMoney(
@@ -539,6 +562,20 @@ const manualTotalInput = roundMoney(
 const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
 const shippingServiceValue = String(formData.get("shippingService") || "").trim();
 const trackingNumber = String(formData.get("trackingNumber") || "").trim();
+
+  if (!isEditMode && submissionKey) {
+    const previousSubmission = getRecentInvoiceSubmission(submissionKey);
+
+    if (previousSubmission?.saleId) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${previousSubmission.saleId}`));
+    }
+
+    if (previousSubmission) {
+      return redirect(withEmbeddedParamsFromRequest(request, "/app/invoices"));
+    }
+
+    setRecentInvoiceSubmission(submissionKey);
+  }
   const staffId = Number(formData.get("staffId"));
   const selectedCustomerId = String(formData.get("customerId") || "").trim();
 
@@ -1108,6 +1145,10 @@ const sale = await createSaleCompat({
         })),
   });
 
+  if (!isEditMode && submissionKey) {
+    setRecentInvoiceSubmission(submissionKey, sale.id);
+  }
+
   // Adjust Shopify inventory for any non-custom line items
   if (shouldCreateShopifyOrder) {
     try {
@@ -1205,9 +1246,16 @@ const {
 const isEditMode = Boolean(existingInvoice);
 const formRef = useRef<HTMLFormElement | null>(null);
 const printModeRef = useRef<HTMLInputElement | null>(null);
+const customerDetailsRef = useRef<HTMLDivElement | null>(null);
 const [showPrintOptions, setShowPrintOptions] = useState(false);
+const [isSubmitting, setIsSubmitting] = useState(false);
+const [submissionKey] = useState(
+  () => `inv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+);
 
 function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
+  if (isSubmitting) return;
+  setIsSubmitting(true);
   if (printModeRef.current) {
     printModeRef.current.value = mode;
   }
@@ -1369,6 +1417,13 @@ const [showAddress, setShowAddress] = useState(
     setCounty(address.province || "");
     setPostcode(address.zip || "");
     setCountry(address.country || "");
+
+    window.requestAnimationFrame(() => {
+      customerDetailsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   }
 
   function clearSelectedCustomer() {
@@ -1870,7 +1925,14 @@ const [showAddress, setShowAddress] = useState(
       </Layout>
 
       <div style={{ marginTop: 16 }}>
-        <Form method="post" ref={formRef}>
+        <Form
+          method="post"
+          ref={formRef}
+          onSubmit={() => {
+            setIsSubmitting(true);
+          }}
+        >
+          <input type="hidden" name="submissionKey" value={submissionKey} />
           <input
             ref={printModeRef}
             type="hidden"
@@ -1890,6 +1952,7 @@ const [showAddress, setShowAddress] = useState(
           <Layout>
             <Layout.Section>
               <BlockStack gap="400">
+                <div ref={customerDetailsRef} />
                 <Card>
                   <BlockStack gap="400">
                     <InlineStack align="space-between" blockAlign="center">
@@ -2290,14 +2353,14 @@ const [showAddress, setShowAddress] = useState(
                     </InlineStack>
 
                     {isEditMode ? (
-                      <Button submit variant="primary" fullWidth disabled={deliveryRequiresService}>
+                      <Button submit variant="primary" fullWidth disabled={deliveryRequiresService || isSubmitting}>
                         Save Changes
                       </Button>
                     ) : (
                       <Button
                         variant="primary"
                         fullWidth
-                        disabled={deliveryRequiresService}
+                        disabled={deliveryRequiresService || isSubmitting}
                         onClick={() => setShowPrintOptions(true)}
                       >
                         Save Proforma
@@ -2318,16 +2381,17 @@ const [showAddress, setShowAddress] = useState(
                           <InlineStack gap="200" wrap>
                             <Button
                               variant="primary"
+                              disabled={isSubmitting}
                               onClick={() => submitProformaWithPrintMode("invoice")}
                             >
                               Print one sheet (invoice)
                             </Button>
 
-                            <Button onClick={() => submitProformaWithPrintMode("both")}>
+                            <Button disabled={isSubmitting} onClick={() => submitProformaWithPrintMode("both")}>
                               Print two sheets
                             </Button>
 
-                            <Button onClick={() => submitProformaWithPrintMode("none")}>
+                            <Button disabled={isSubmitting} onClick={() => submitProformaWithPrintMode("none")}>
                               Save without printing
                             </Button>
                           </InlineStack>
