@@ -84,6 +84,43 @@ function extractLegacyOrderNumber(value: string | null | undefined) {
   return null;
 }
 
+function normalizeText(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function roundToPennies(value: unknown) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function lineItemsSignature(lineItems: Array<any>) {
+  return [...lineItems]
+    .map((item) => ({
+      title: normalizeText(item.title),
+      sku: normalizeText(item.sku),
+      quantity: Number(item.quantity || 0),
+      unitPrice: roundToPennies(item.unitPrice),
+      discount: roundToPennies(item.discount),
+      isCustom: Boolean(item.isCustom),
+    }))
+    .sort((a, b) =>
+      `${a.title}|${a.sku}|${a.quantity}|${a.unitPrice}|${a.discount}|${a.isCustom}`
+        .localeCompare(`${b.title}|${b.sku}|${b.quantity}|${b.unitPrice}|${b.discount}|${b.isCustom}`),
+    )
+    .map((item) => `${item.title}|${item.sku}|${item.quantity}|${item.unitPrice}|${item.discount}|${item.isCustom}`)
+    .join("||");
+}
+
+function invoiceDuplicateSignature(invoice: any) {
+  return [
+    normalizeText(invoice.customerName),
+    roundToPennies(invoice.total),
+    normalizeText(invoice.paymentMethod),
+    Number(invoice.staffId || 0),
+    normalizeText(invoice.reference),
+    lineItemsSignature(invoice.lineItems || []),
+  ].join("__");
+}
+
 function withEmbeddedParamsFromRequest(request: Request, path: string) {
   const requestUrl = new URL(request.url);
   const [pathname, queryString = ""] = path.split("?");
@@ -792,6 +829,93 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "deleteDuplicateInvoices") {
+    try {
+      const candidates = await prisma.sale.findMany({
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          customerName: true,
+          total: true,
+          paymentMethod: true,
+          staffId: true,
+          reference: true,
+          createdAt: true,
+          lineItems: {
+            select: {
+              title: true,
+              sku: true,
+              quantity: true,
+              unitPrice: true,
+              discount: true,
+              isCustom: true,
+            },
+          },
+        },
+      });
+
+      const groups = new Map<string, Array<any>>();
+      for (const invoice of candidates) {
+        const key = invoiceDuplicateSignature(invoice);
+        const list = groups.get(key) || [];
+        list.push(invoice);
+        groups.set(key, list);
+      }
+
+      const duplicateIds: number[] = [];
+      const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
+
+      for (const invoices of groups.values()) {
+        if (invoices.length < 2) continue;
+
+        const sorted = [...invoices].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        );
+
+        let keeper = sorted[0];
+
+        for (let i = 1; i < sorted.length; i += 1) {
+          const current = sorted[i];
+          const delta = Math.abs(
+            new Date(current.createdAt).getTime() - new Date(keeper.createdAt).getTime(),
+          );
+
+          if (delta <= DUPLICATE_WINDOW_MS) {
+            duplicateIds.push(current.id);
+          } else {
+            keeper = current;
+          }
+        }
+      }
+
+      if (!duplicateIds.length) {
+        return redirect(
+          withEmbeddedParamsFromRequest(
+            request,
+            "/app/invoices?syncStatus=success&syncMessage=No%20duplicate%20invoices%20found",
+          ),
+        );
+      }
+
+      await prisma.$transaction([
+        prisma.payment.deleteMany({ where: { saleId: { in: duplicateIds } } }),
+        prisma.saleLineItem.deleteMany({ where: { saleId: { in: duplicateIds } } }),
+        prisma.sale.deleteMany({ where: { id: { in: duplicateIds } } }),
+      ]);
+
+      return redirect(
+        withEmbeddedParamsFromRequest(
+          request,
+          `/app/invoices?syncStatus=success&syncMessage=Deleted%20${duplicateIds.length}%20duplicate%20invoice(s)`,
+        ),
+      );
+    } catch (error: any) {
+      console.error("Failed to delete duplicate invoices:", error);
+      const message = encodeURIComponent(String(error?.message || "Failed to delete duplicate invoices"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -1206,6 +1330,11 @@ export default function InvoicesPage() {
                     <Form method="post">
                       <input type="hidden" name="_intent" value="pullShippingFromShopify" />
                       <Button submit>Pull Shipping</Button>
+                    </Form>
+
+                    <Form method="post">
+                      <input type="hidden" name="_intent" value="deleteDuplicateInvoices" />
+                      <Button submit tone="critical">Delete Duplicates</Button>
                     </Form>
 
                     <Button
