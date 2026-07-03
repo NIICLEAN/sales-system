@@ -412,7 +412,13 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     try {
-      const existingMeta = await getSaleShippingMetaBySaleIds([invoiceId]);
+      const [existingMeta, sale] = await Promise.all([
+        getSaleShippingMetaBySaleIds([invoiceId]),
+        prisma.sale.findUnique({
+          where: { id: invoiceId },
+          select: { shopifyOrderId: true },
+        }),
+      ]);
       const currentMeta = existingMeta.get(invoiceId);
 
       await upsertSaleShippingMeta({
@@ -434,10 +440,116 @@ export async function action({ request }: ActionFunctionArgs) {
               : "Unfulfilled",
       });
 
+      let shopifySyncFailed = false;
+      const orderGid = toShopifyOrderGid(sale?.shopifyOrderId || null);
+
+      if (orderGid) {
+        try {
+          const readOrderResponse = await admin.graphql(
+            `
+              query ReadOrderForShippingSync($id: ID!) {
+                order(id: $id) {
+                  id
+                  tags
+                  customAttributes {
+                    key
+                    value
+                  }
+                }
+              }
+            `,
+            { variables: { id: orderGid } },
+          );
+
+          const readOrderJson = (await readOrderResponse.json()) as any;
+          const order = readOrderJson?.data?.order;
+
+          if (order?.id) {
+            const existingAttributes = Array.isArray(order.customAttributes)
+              ? order.customAttributes
+              : [];
+            const attrMap = new Map<string, string>();
+
+            for (const attr of existingAttributes) {
+              const key = String(attr?.key || "").trim();
+              if (!key) continue;
+              attrMap.set(key, String(attr?.value || ""));
+            }
+
+            attrMap.set("Order Type", nextShippingMethod === "Delivery" ? "Delivery" : "Collected");
+            attrMap.set("Shipping Service", nextShippingMethod === "Delivery" ? currentMeta?.deliveryMethod || "Delivery" : "Shipping not required");
+            attrMap.set("Delivery Workflow", nextDeliveryStatus);
+            attrMap.set("Tracking Number", nextTrackingNumber || "-");
+
+            const syncAttributes = Array.from(attrMap.entries()).map(([key, value]) => ({ key, value }));
+
+            const existingTags = Array.isArray(order.tags)
+              ? order.tags.map((tag: any) => String(tag || "").trim()).filter(Boolean)
+              : [];
+
+            const tagsToRemove = new Set([
+              "delivery",
+              "collection",
+              "collected",
+              "delivery-required",
+              "in-progress",
+              "fulfilled",
+              "shipping-not-required",
+            ]);
+
+            const keptTags = existingTags.filter((tag: string) => !tagsToRemove.has(tag.toLowerCase()));
+            const syncTags = [
+              ...keptTags,
+              nextShippingMethod.toLowerCase(),
+              nextDeliveryStatus.toLowerCase().replace(/\s+/g, "-"),
+            ];
+
+            const updateOrderResponse = await admin.graphql(
+              `
+                mutation UpdateOrderShippingMeta($input: OrderInput!) {
+                  orderUpdate(input: $input) {
+                    order {
+                      id
+                    }
+                    userErrors {
+                      field
+                      message
+                    }
+                  }
+                }
+              `,
+              {
+                variables: {
+                  input: {
+                    id: order.id,
+                    customAttributes: syncAttributes,
+                    tags: syncTags,
+                  },
+                },
+              },
+            );
+
+            const updateOrderJson = (await updateOrderResponse.json()) as any;
+            const updateErrors = updateOrderJson?.data?.orderUpdate?.userErrors || [];
+            if (updateErrors.length > 0) {
+              shopifySyncFailed = true;
+              console.error("Failed syncing shipping to Shopify order:", updateErrors);
+            }
+          }
+        } catch (shopifyError) {
+          shopifySyncFailed = true;
+          console.error("Shopify order shipping sync failed:", shopifyError);
+        }
+      }
+
       return redirect(
         withEmbeddedParamsFromRequest(
           request,
-          `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Updated shipping for INV-${invoiceId}`)}`,
+          `/app/invoices?syncStatus=${shopifySyncFailed ? "warning" : "success"}&syncMessage=${encodeURIComponent(
+            shopifySyncFailed
+              ? `Updated shipping for INV-${invoiceId}, but Shopify order sync failed`
+              : `Updated shipping for INV-${invoiceId}`,
+          )}`,
         ),
       );
     } catch (error: any) {
@@ -1697,7 +1809,7 @@ export default function InvoicesPage() {
             ) : null}
 
             {syncStatus && syncMessage ? (
-              <Banner tone={syncStatus === "success" ? "success" : "critical"}>
+              <Banner tone={syncStatus === "success" ? "success" : syncStatus === "warning" ? "warning" : "critical"}>
                 {syncMessage}
               </Banner>
             ) : null}
