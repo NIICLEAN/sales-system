@@ -1831,6 +1831,7 @@ export default function InvoicesPage() {
                   { title: "Invoice Number" },
                   { title: "Customer / Staff" },
                   { title: "Shipping / Delivery" },
+                  { title: "Delivery Status" },
                   { title: "Payment / Total" },
                   { title: "Actions" },
                 ]}
@@ -1884,6 +1885,30 @@ export default function InvoicesPage() {
                         ) : null}
 
                       </BlockStack>
+                    </IndexTable.Cell>
+
+                    <IndexTable.Cell>
+                      <div
+                        style={{
+                          borderRadius: 8,
+                          padding: "6px 8px",
+                          textAlign: "center",
+                          fontWeight: 600,
+                          color: "#fff",
+                          background:
+                            invoice.deliveryStatus === "Fulfilled"
+                              ? "#1f7a1f"
+                              : invoice.deliveryStatus === "In progress"
+                                ? "#b26b00"
+                                : invoice.deliveryStatus === "Shipping not required"
+                                  ? "#5a6268"
+                                  : "#b00020",
+                          width: "fit-content",
+                          minWidth: 130,
+                        }}
+                      >
+                        {invoice.deliveryStatus || (invoice.shippingMethod === "Collection" ? "Shipping not required" : "Delivery required")}
+                      </div>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
