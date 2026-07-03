@@ -1438,13 +1438,9 @@ export default function InvoicesPage() {
                 itemCount={invoices.length}
                 headings={[
                   { title: "Invoice Number" },
-                  { title: "Name" },
-                  { title: "Sales person" },
+                  { title: "Customer / Staff" },
                   { title: "Shipping / Delivery" },
-                  { title: "Payment type" },
-                  { title: "Total" },
-                  { title: "Date" },
-                  { title: "Paid status" },
+                  { title: "Payment / Total" },
                   { title: "Actions" },
                 ]}
                 selectable={false}
@@ -1475,10 +1471,11 @@ export default function InvoicesPage() {
                       </BlockStack>
                     </IndexTable.Cell>
 
-                    <IndexTable.Cell>{invoice.customerName}</IndexTable.Cell>
-
                     <IndexTable.Cell>
-                      {invoice.staff?.name || "-"}
+                      <BlockStack gap="100">
+                        <Text as="span">{invoice.customerName || "-"}</Text>
+                        <Text as="span" tone="subdued">{invoice.staff?.name || "-"}</Text>
+                      </BlockStack>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
@@ -1492,53 +1489,49 @@ export default function InvoicesPage() {
                           <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
                         ) : null}
                         {invoice.trackingUrl ? (
-                          <Text as="span" tone="subdued">Tracking URL: {invoice.trackingUrl}</Text>
+                          <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
                         ) : null}
                       </BlockStack>
                     </IndexTable.Cell>
 
-                    <IndexTable.Cell>{invoice.paymentMethod}</IndexTable.Cell>
-
                     <IndexTable.Cell>
-                      £{Number(invoice.total ?? 0).toFixed(2)}
+                      <BlockStack gap="100">
+                        <Text as="span">{invoice.paymentMethod || "-"}</Text>
+                        <Text as="span" fontWeight="medium">£{Number(invoice.total ?? 0).toFixed(2)}</Text>
+                        <Text as="span" tone="subdued">{formatDateTime(invoice.createdAt)}</Text>
+                        <div
+                          style={{
+                            borderRadius: 8,
+                            padding: "6px 8px",
+                            textAlign: "center",
+                            fontWeight: 600,
+                            color: "#fff",
+                            background:
+                              invoice.paymentStatus === "Paid"
+                                ? "#1f7a1f"
+                                : invoice.paymentStatus === "Partially Paid"
+                                  ? "#b26b00"
+                                  : "#b00020",
+                            width: "fit-content",
+                            minWidth: 84,
+                          }}
+                        >
+                          {invoice.paymentStatus || "Unpaid"}
+                        </div>
+                      </BlockStack>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
-                      {formatDateTime(invoice.createdAt)}
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <div
-                        style={{
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          textAlign: "center",
-                          fontWeight: 600,
-                          color: "#fff",
-                          background:
-                            invoice.paymentStatus === "Paid"
-                              ? "#1f7a1f"
-                              : invoice.paymentStatus === "Partially Paid"
-                                ? "#b26b00"
-                                : "#b00020",
-                          minWidth: 92,
-                        }}
-                      >
-                        {invoice.paymentStatus || "Unpaid"}
-                      </div>
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <InlineStack gap="200">
+                      <BlockStack gap="100">
                         <Button onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>
-                            View
+                          View
                         </Button>
 
-<Button
-  onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}
->
-  Edit
-</Button>
+                        <Button
+                          onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}
+                        >
+                          Edit
+                        </Button>
 
                         <Form
                           method="post"
@@ -1554,7 +1547,7 @@ export default function InvoicesPage() {
                             Delete
                           </Button>
                         </Form>
-                      </InlineStack>
+                      </BlockStack>
                     </IndexTable.Cell>
                   </IndexTable.Row>
                 ))}
