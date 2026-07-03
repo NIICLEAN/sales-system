@@ -1670,7 +1670,7 @@ const [showAddress, setShowAddress] = useState(
                     style={{
                       maxHeight: 460,
                       overflowY: "auto",
-                      overflowX: "auto",
+                      overflowX: "hidden",
                     }}
                   >
                     <IndexTable
@@ -1680,10 +1680,8 @@ const [showAddress, setShowAddress] = useState(
                       }}
                       itemCount={variants.length}
                       headings={[
-                        { title: "Image" },
                         { title: "Product" },
-                        { title: "SKU" },
-                        { title: "Net Price" },
+                        { title: "Price" },
                         { title: "Action" },
                       ]}
                       selectable={false}
@@ -1706,43 +1704,51 @@ const [showAddress, setShowAddress] = useState(
                             position={index}
                           >
                             <IndexTable.Cell>
-                              {imageUrl ? (
-                                <img
-                                  src={imageUrl}
-                                  alt={imageAlt}
-                                  style={{
-                                    width: 56,
-                                    height: 56,
-                                    objectFit: "cover",
-                                    borderRadius: 8,
-                                    border: "1px solid #ddd",
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    width: 56,
-                                    height: 56,
-                                    borderRadius: 8,
-                                    border: "1px solid #ddd",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: 11,
-                                    color: "#777",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  No image
-                                </div>
-                              )}
+                              <InlineStack gap="300" blockAlign="center">
+                                {imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt={imageAlt}
+                                    style={{
+                                      width: 44,
+                                      height: 44,
+                                      objectFit: "cover",
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: 44,
+                                      height: 44,
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 10,
+                                      color: "#777",
+                                      textAlign: "center",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    No image
+                                  </div>
+                                )}
+
+                                <BlockStack gap="100">
+                                  <Text as="span" fontWeight="medium">
+                                    {variant.product.title} - {variant.title}
+                                  </Text>
+                                  <Text as="span" tone="subdued">
+                                    SKU: {variant.sku || "-"}
+                                  </Text>
+                                </BlockStack>
+                              </InlineStack>
                             </IndexTable.Cell>
 
-                            <IndexTable.Cell>
-                              {variant.product.title} - {variant.title}
-                            </IndexTable.Cell>
-
-                            <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
                             <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
 
                             <IndexTable.Cell>
