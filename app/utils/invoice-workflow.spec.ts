@@ -8,10 +8,12 @@ import {
 } from "./invoice-workflow";
 
 describe("invoice workflow guards", () => {
-  it("creates a Shopify order for valid invoice totals even when unpaid", () => {
-    expect(shouldCreateShopifyOrder(100, 1)).toBe(true);
-    expect(shouldCreateShopifyOrder(100, 0)).toBe(false);
-    expect(shouldCreateShopifyOrder(0, 1)).toBe(false);
+  it("only creates a Shopify order when the invoice is paid", () => {
+    expect(shouldCreateShopifyOrder(100, 1, "Unpaid")).toBe(false);
+    expect(shouldCreateShopifyOrder(100, 1, "Partially Paid")).toBe(false);
+    expect(shouldCreateShopifyOrder(100, 1, "Paid")).toBe(true);
+    expect(shouldCreateShopifyOrder(100, 0, "Paid")).toBe(false);
+    expect(shouldCreateShopifyOrder(0, 1, "Paid")).toBe(false);
   });
 
   it("auto-fulfills collection and phone orders", () => {

@@ -4,8 +4,8 @@ export const DELIVERY_WORKFLOW_VALUES = [
   "Fulfilled",
 ] as const;
 
-export function shouldCreateShopifyOrder(invoiceTotal: number, lineItemsLength: number) {
-  return Number(invoiceTotal || 0) > 0 && Number(lineItemsLength || 0) > 0;
+export function shouldCreateShopifyOrder(invoiceTotal: number, lineItemsLength: number, paymentStatus: string) {
+  return Number(invoiceTotal || 0) > 0 && Number(lineItemsLength || 0) > 0 && paymentStatus === "Paid";
 }
 
 export function shouldAutoFulfillOrder(shippingMethod: string, fulfilmentMethod: string) {

@@ -955,7 +955,7 @@ const tags = [
     deliveryWorkflowStatus,
   });
 
-  const createShopifyOrder = shouldCreateShopifyOrder(invoiceTotal, invoiceLineItems.length);
+  const createShopifyOrder = shouldCreateShopifyOrder(invoiceTotal, invoiceLineItems.length, paymentStatus);
   const autoFulfillOrder = shouldAutoFulfillOrder(shippingMethod, fulfilmentMethod);
 
 if (isEditMode) {
