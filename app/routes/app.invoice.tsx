@@ -24,6 +24,12 @@ import { adjustInventoryForLineItems } from "../services/shopifyInventory.server
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { getInvoiceDiscountMeta, upsertInvoiceDiscountMeta } from "../services/invoiceDiscountMeta.server";
+import {
+  calculateInvoiceVat,
+  normalizeDeliveryWorkflowStatus,
+  shouldAutoFulfillOrder,
+  shouldCreateShopifyOrder,
+} from "../utils/invoice-workflow";
 
 const VAT_RATE = 0.2;
 
@@ -678,12 +684,10 @@ const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDisc
       shippingMethod === "Delivery"
         ? selectedShippingService?.label || "Delivery"
         : "Shipping not required";
-    const deliveryWorkflowStatus =
-      shippingMethod === "Delivery"
-        ? ["Delivery required", "In progress", "Fulfilled"].includes(deliveryWorkflowStatusInput)
-          ? deliveryWorkflowStatusInput
-          : "Delivery required"
-        : "Shipping not required";
+    const deliveryWorkflowStatus = normalizeDeliveryWorkflowStatus(
+      shippingMethod,
+      deliveryWorkflowStatusInput,
+    );
 
   let lineItems: any[] = [];
   let existingFinancials: {
@@ -893,7 +897,7 @@ const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDisc
   );
 
   const invoiceNetTotal = roundMoney(Math.max(0, subtotal - discountTotal + shippingCharge - invoiceDiscountAmount));
-  const invoiceVatAmount = isVatExempt ? 0 : roundMoney(invoiceNetTotal * VAT_RATE);
+  const invoiceVatAmount = calculateInvoiceVat(invoiceNetTotal, isVatExempt, VAT_RATE);
   const invoiceTotal = roundMoney(invoiceNetTotal + invoiceVatAmount);
   const invoiceBalanceDue = roundMoney(Math.max(invoiceTotal - amountPaid, 0));
 
@@ -931,8 +935,8 @@ const tags = [
     deliveryWorkflowStatus,
   });
 
-  const shouldCreateShopifyOrder = invoiceTotal > 0 && invoiceLineItems.length > 0;
-  const shouldAutoFulfillOrder = shippingMethod === "Collection" || fulfilmentMethod === "Phone";
+  const createShopifyOrder = shouldCreateShopifyOrder(invoiceTotal, invoiceLineItems.length);
+  const autoFulfillOrder = shouldAutoFulfillOrder(shippingMethod, fulfilmentMethod);
 
 if (isEditMode) {
 const invoiceId = Number(params.invoiceId || editInvoiceId);
@@ -1045,13 +1049,13 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       });
     }
 
-    if (shouldAutoFulfillOrder) {
+    if (autoFulfillOrder) {
       await autoFulfillCollectionOrder({
         admin,
         orderId: existingSale.shopifyOrderId,
       });
     }
-  } else if (shouldCreateShopifyOrder) {
+  } else if (createShopifyOrder) {
     try {
       const shopifyOrder = await createShopifyOrderFromInvoice({
         admin,
@@ -1089,7 +1093,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         discountAmount: invoiceDiscountAmount,
       });
 
-      if (shouldAutoFulfillOrder && shopifyOrder?.id) {
+      if (autoFulfillOrder && shopifyOrder?.id) {
         await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
       }
     } catch (error) {
@@ -1136,7 +1140,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       trackingNumber,
       deliveryMethod: shippingServiceLabel,
       deliveryStatus: deliveryWorkflowStatus,
-      fulfillmentStatus: shouldAutoFulfillOrder ? "Fulfilled" : "Unfulfilled",
+      fulfillmentStatus: autoFulfillOrder ? "Fulfilled" : "Unfulfilled",
     });
   } catch (err) {
     console.error("Failed to save shipping meta:", err);
@@ -1147,7 +1151,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
 
   let shopifyOrder = null;
 
-  if (shouldCreateShopifyOrder) {
+  if (createShopifyOrder) {
     shopifyOrder = await createShopifyOrderFromInvoice({
       admin,
       shopifyCustomerId,
@@ -1169,7 +1173,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       paymentStatus,
     });
 
-    if (shouldAutoFulfillOrder && shopifyOrder?.id) {
+    if (autoFulfillOrder && shopifyOrder?.id) {
       await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
     }
   }
@@ -1230,7 +1234,7 @@ const sale = await createSaleCompat({
   });
 
   // Adjust Shopify inventory for any non-custom line items
-  if (shouldCreateShopifyOrder) {
+  if (createShopifyOrder) {
     try {
       const variantAdjustments = lineItems
         .filter((i: any) => i.type !== "custom" && i.id)
@@ -1287,7 +1291,7 @@ try {
     trackingNumber,
     deliveryMethod: shippingServiceLabel,
     deliveryStatus: deliveryWorkflowStatus,
-    fulfillmentStatus: shouldAutoFulfillOrder ? "Fulfilled" : "Unfulfilled",
+    fulfillmentStatus: autoFulfillOrder ? "Fulfilled" : "Unfulfilled",
   });
 } catch (err) {
   console.error("Failed to save shipping meta:", err);
