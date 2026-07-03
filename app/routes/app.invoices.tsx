@@ -1747,51 +1747,57 @@ export default function InvoicesPage() {
                           <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
                         ) : null}
 
-                        <div style={{ marginTop: 8 }}>
-                          <Form method="post">
-                            <input type="hidden" name="_intent" value="updateShippingMeta" />
-                            <input type="hidden" name="invoiceId" value={invoice.id} />
+                        <details style={{ marginTop: 8 }}>
+                          <summary style={{ cursor: "pointer", fontSize: 12, color: "#4b5870" }}>
+                            Edit shipping
+                          </summary>
 
-                            <BlockStack gap="200">
-                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                Shipping / Delivery
-                                <select
-                                  name="shippingMethod"
-                                  defaultValue={invoice.shippingMethod || "Collection"}
-                                  style={{ width: "100%", marginTop: 4 }}
-                                >
-                                  <option value="Collection">Collection</option>
-                                  <option value="Delivery">Delivery</option>
-                                </select>
-                              </label>
+                          <div style={{ marginTop: 8, maxWidth: 260 }}>
+                            <Form method="post">
+                              <input type="hidden" name="_intent" value="updateShippingMeta" />
+                              <input type="hidden" name="invoiceId" value={invoice.id} />
 
-                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                Delivery status
-                                <select
-                                  name="deliveryStatus"
-                                  defaultValue={invoice.deliveryStatus || "Delivery required"}
-                                  style={{ width: "100%", marginTop: 4 }}
-                                >
-                                  <option value="Delivery required">Delivery required</option>
-                                  <option value="In progress">In progress</option>
-                                  <option value="Fulfilled">Fulfilled</option>
-                                </select>
-                              </label>
+                              <BlockStack gap="200">
+                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                  Shipping / Delivery
+                                  <select
+                                    name="shippingMethod"
+                                    defaultValue={invoice.shippingMethod || "Collection"}
+                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
+                                  >
+                                    <option value="Collection">Collection</option>
+                                    <option value="Delivery">Delivery</option>
+                                  </select>
+                                </label>
 
-                              <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                Tracking number
-                                <input
-                                  name="trackingNumber"
-                                  defaultValue={invoice.trackingNumber || ""}
-                                  placeholder="Enter tracking number"
-                                  style={{ width: "100%", marginTop: 4 }}
-                                />
-                              </label>
+                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                  Delivery status
+                                  <select
+                                    name="deliveryStatus"
+                                    defaultValue={invoice.deliveryStatus || "Delivery required"}
+                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
+                                  >
+                                    <option value="Delivery required">Delivery required</option>
+                                    <option value="In progress">In progress</option>
+                                    <option value="Fulfilled">Fulfilled</option>
+                                  </select>
+                                </label>
 
-                              <Button submit size="slim">Save shipping</Button>
-                            </BlockStack>
-                          </Form>
-                        </div>
+                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
+                                  Tracking number
+                                  <input
+                                    name="trackingNumber"
+                                    defaultValue={invoice.trackingNumber || ""}
+                                    placeholder="Enter tracking number"
+                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
+                                  />
+                                </label>
+
+                                <Button submit size="slim">Save shipping</Button>
+                              </BlockStack>
+                            </Form>
+                          </div>
+                        </details>
                       </BlockStack>
                     </IndexTable.Cell>
 
