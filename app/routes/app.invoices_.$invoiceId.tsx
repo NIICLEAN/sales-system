@@ -50,7 +50,7 @@ function withEmbeddedParamsFromRequest(request: Request, path: string) {
 }
 
 export async function action({ request, params }: { request: Request; params: { invoiceId: string } }) {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const formData = await request.formData();
   const intent = String(formData.get("_intent") || "").trim();
@@ -82,8 +82,6 @@ export async function action({ request, params }: { request: Request; params: { 
 
   if (intent === "generateNcpNumber") {
     try {
-      const { admin } = await authenticate.admin(request);
-
       const sale = await prisma.sale.findUnique({
         where: { id: invoiceId },
         select: {
