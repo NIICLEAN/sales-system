@@ -300,6 +300,7 @@ export default function QuotePage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerVatNumber, setCustomerVatNumber] = useState("");
+  const [vatType, setVatType] = useState("Standard");
   const [selectedCustomer, setSelectedCustomer] = useState<{
     id: string;
     name: string;
@@ -428,7 +429,7 @@ export default function QuotePage() {
     );
 
     const netTotal = subtotal - discount;
-    const vatAmount = netTotal * 0.2;
+    const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
 
     return {
       subtotal,
@@ -437,7 +438,7 @@ export default function QuotePage() {
       vatAmount,
       total: netTotal + vatAmount,
     };
-  }, [items]);
+  }, [items, vatType]);
 
   return (
     <AppProvider i18n={{}}>
@@ -968,11 +969,11 @@ export default function QuotePage() {
                                     { label: "VAT exempt", value: "Exempt" },
                                     { label: "Cross-border", value: "CrossBorder" },
                                   ]}
-                                  onChange={() => {}}
-                                  value={"Standard"}
+                                  onChange={setVatType}
+                                  value={vatType}
                                 />
 
-                                <input type="hidden" name="vatType" value={"Standard"} />
+                                <input type="hidden" name="vatType" value={vatType} />
                               </div>
                           </InlineStack>
 
