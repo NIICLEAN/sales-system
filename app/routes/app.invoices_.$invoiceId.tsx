@@ -3,6 +3,7 @@ import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getInvoiceDiscountMeta } from "../services/invoiceDiscountMeta.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { generateShippingLabel } from "../services/shippingLabel.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
@@ -237,6 +238,7 @@ export async function loader({
       }),
       getSaleShippingMeta(invoiceId),
     ]);
+    const discountMeta = await getInvoiceDiscountMeta(invoiceId);
 
     let recordedPaymentCount = 0;
     let recordedPaymentTotal = 0;
@@ -268,11 +270,14 @@ export async function loader({
       staff,
       shippingMethod: shippingMeta.shippingMethod,
       trackingNumber: shippingMeta.trackingNumber,
-        trackingUrl: shippingMeta.trackingUrl,
-        carrierName: shippingMeta.carrierName,
+      trackingUrl: shippingMeta.trackingUrl,
+      carrierName: shippingMeta.carrierName,
       fulfillmentStatus: shippingMeta.fulfillmentStatus,
       deliveryStatus: shippingMeta.deliveryStatus,
       deliveryMethod: shippingMeta.deliveryMethod,
+      invoiceDiscountType: discountMeta.discountType || "amount",
+      invoiceDiscountValue: discountMeta.discountValue ?? 0,
+      invoiceDiscountAmount: discountMeta.discountAmount ?? 0,
       paymentSummary,
       lineItems,
     };
@@ -1111,6 +1116,15 @@ export default function PrintInvoicePage() {
         </div>
 
         <div className="meta-cell">
+          <div className="label">Invoice Discount</div>
+          <div className="value">
+            {invoice.invoiceDiscountType === "percent"
+              ? `${invoice.invoiceDiscountValue || 0}%`
+              : money(invoice.invoiceDiscountAmount || 0)}
+          </div>
+        </div>
+
+        <div className="meta-cell">
           <div className="label">Shipping</div>
           <div className="value">{invoice.shippingMethod || "Collection"}</div>
           <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
@@ -1194,6 +1208,11 @@ export default function PrintInvoicePage() {
         <div className="totals-row">
           <span>Discount</span>
           <span>{money(invoice.discountTotal)}</span>
+        </div>
+
+        <div className="totals-row">
+          <span>Invoice Discount</span>
+          <span>-{money(invoice.invoiceDiscountAmount || 0)}</span>
         </div>
 
         <div className="totals-row">

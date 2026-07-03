@@ -367,6 +367,11 @@ export async function generateInvoicePdf(invoiceId: number) {
       </div>
 
       <div class="totals-row">
+        <span>Invoice Discount</span>
+        <span>-${money((invoice as any).invoiceDiscountAmount || 0)}</span>
+      </div>
+
+      <div class="totals-row">
         <span>VAT</span>
         <span>${money(invoice.vatAmount)}</span>
       </div>
