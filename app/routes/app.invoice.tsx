@@ -127,13 +127,13 @@ function getGrossPrice(netPrice: any, isVatExempt: boolean) {
   return isVatExempt ? roundMoney(net) : roundMoney(net * (1 + VAT_RATE));
 }
 
-function withEmbeddedParamsFromRequest(request: Request, path: string) {
+function withEmbeddedParamsFromRequest(request: Request, path: string, fallbackParams?: Record<string, string>) {
   const requestUrl = new URL(request.url);
   const [pathname, queryString = ""] = path.split("?");
   const nextParams = new URLSearchParams(queryString);
 
   for (const key of ["shop", "host", "embedded", "id_token"]) {
-    const value = requestUrl.searchParams.get(key);
+    const value = requestUrl.searchParams.get(key) || fallbackParams?.[key] || "";
     if (value && !nextParams.has(key)) {
       nextParams.set(key, value);
     }
@@ -404,6 +404,12 @@ export async function loader({
   const url = new URL(request.url);
   const productSearch = url.searchParams.get("productSearch") || "";
   const customerSearch = url.searchParams.get("customerSearch") || "";
+  const embeddedParams = {
+    shop: url.searchParams.get("shop") || "",
+    host: url.searchParams.get("host") || "",
+    embedded: url.searchParams.get("embedded") || "",
+    id_token: url.searchParams.get("id_token") || "",
+  };
 
   const editInvoiceId = url.searchParams.get("editInvoiceId");
   
@@ -587,6 +593,7 @@ return {
   customers,
   customerSearch,
   existingInvoice,
+  embeddedParams,
 };
 }
 
@@ -615,16 +622,24 @@ const trackingNumber = String(formData.get("trackingNumber") || "").trim();
 const deliveryWorkflowStatusInput = String(formData.get("deliveryWorkflowStatus") || "Delivery required").trim();
 const invoiceDiscountType = String(formData.get("invoiceDiscountType") || "amount").trim() === "percent" ? "percent" : "amount";
 const invoiceDiscountValue = Math.max(0, Number(String(formData.get("invoiceDiscountValue") || "0").replace(/,/g, "")) || 0);
+const embeddedParamsFromForm = {
+  shop: String(formData.get("shop") || "").trim(),
+  host: String(formData.get("host") || "").trim(),
+  embedded: String(formData.get("embedded") || "").trim(),
+  id_token: String(formData.get("id_token") || "").trim(),
+};
+const redirectWithEmbedded = (path: string) =>
+  redirect(withEmbeddedParamsFromRequest(request, path, embeddedParamsFromForm));
 
   if (!isEditMode && submissionKey) {
     const previousSubmission = getRecentInvoiceSubmission(submissionKey);
 
     if (previousSubmission?.saleId) {
-      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${previousSubmission.saleId}`));
+      return redirectWithEmbedded(`/app/invoices/${previousSubmission.saleId}`);
     }
 
     if (previousSubmission) {
-      return redirect(withEmbeddedParamsFromRequest(request, "/app/invoices"));
+      return redirectWithEmbedded("/app/invoices");
     }
 
     setRecentInvoiceSubmission(submissionKey);
@@ -1146,7 +1161,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
     console.error("Failed to save shipping meta:", err);
   }
 
-  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}`));
+  return redirectWithEmbedded(`/app/invoices/${invoiceId}`);
 }
 
   let shopifyOrder = null;
@@ -1298,7 +1313,7 @@ try {
 }
 
   if (printMode === "none") {
-    return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}`));
+    return redirectWithEmbedded(`/app/invoices/${sale.id}`);
   }
 
   const printParams = new URLSearchParams({
@@ -1310,7 +1325,7 @@ try {
     printParams.set("printMode", printMode);
   }
 
-  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}?${printParams.toString()}`));
+  return redirectWithEmbedded(`/app/invoices/${sale.id}?${printParams.toString()}`);
 }
 
 export default function InvoicePage() {
@@ -1321,6 +1336,7 @@ const {
   customers,
   customerSearch,
   existingInvoice,
+  embeddedParams,
 } = useLoaderData<typeof loader>();
 
 const isEditMode = Boolean(existingInvoice);
@@ -2061,6 +2077,10 @@ const [showAddress, setShowAddress] = useState(
           <input type="hidden" name="invoiceDiscountType" value={invoiceDiscountType} />
           <input type="hidden" name="invoiceDiscountValue" value={invoiceDiscountValue} />
           <input type="hidden" name="customerId" value={customerId} />
+          <input type="hidden" name="shop" value={embeddedParams.shop || ""} />
+          <input type="hidden" name="host" value={embeddedParams.host || ""} />
+          <input type="hidden" name="embedded" value={embeddedParams.embedded || ""} />
+          <input type="hidden" name="id_token" value={embeddedParams.id_token || ""} />
           <input
   type="hidden"
   name="editInvoiceId"
