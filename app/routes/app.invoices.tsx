@@ -1,5 +1,6 @@
 import { Form, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
+import { useRef, useState } from "react";
 import {
   AppProvider,
   Page,
@@ -13,6 +14,7 @@ import {
   Button,
   InlineStack,
   BlockStack,
+  Modal,
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
@@ -1434,6 +1436,12 @@ export default function InvoicesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const shippingFormRef = useRef<HTMLFormElement | null>(null);
+  const [shippingEditorOpen, setShippingEditorOpen] = useState(false);
+  const [editingInvoiceId, setEditingInvoiceId] = useState(0);
+  const [editingShippingMethod, setEditingShippingMethod] = useState("Collection");
+  const [editingDeliveryStatus, setEditingDeliveryStatus] = useState("Delivery required");
+  const [editingTrackingNumber, setEditingTrackingNumber] = useState("");
 
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
@@ -1506,6 +1514,22 @@ export default function InvoicesPage() {
       return;
     }
     window.location.href = path;
+  }
+
+  function openShippingEditor(invoice: any) {
+    setEditingInvoiceId(Number(invoice.id || 0));
+    setEditingShippingMethod(invoice.shippingMethod === "Delivery" ? "Delivery" : "Collection");
+    setEditingDeliveryStatus(
+      invoice.shippingMethod === "Delivery"
+        ? (invoice.deliveryStatus || "Delivery required")
+        : "Shipping not required",
+    );
+    setEditingTrackingNumber(String(invoice.trackingNumber || ""));
+    setShippingEditorOpen(true);
+  }
+
+  function closeShippingEditor() {
+    setShippingEditorOpen(false);
   }
 
   return (
@@ -1747,57 +1771,6 @@ export default function InvoicesPage() {
                           <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
                         ) : null}
 
-                        <details style={{ marginTop: 8 }}>
-                          <summary style={{ cursor: "pointer", fontSize: 12, color: "#4b5870" }}>
-                            Edit shipping
-                          </summary>
-
-                          <div style={{ marginTop: 8, maxWidth: 260 }}>
-                            <Form method="post">
-                              <input type="hidden" name="_intent" value="updateShippingMeta" />
-                              <input type="hidden" name="invoiceId" value={invoice.id} />
-
-                              <BlockStack gap="200">
-                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                  Shipping / Delivery
-                                  <select
-                                    name="shippingMethod"
-                                    defaultValue={invoice.shippingMethod || "Collection"}
-                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
-                                  >
-                                    <option value="Collection">Collection</option>
-                                    <option value="Delivery">Delivery</option>
-                                  </select>
-                                </label>
-
-                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                  Delivery status
-                                  <select
-                                    name="deliveryStatus"
-                                    defaultValue={invoice.deliveryStatus || "Delivery required"}
-                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
-                                  >
-                                    <option value="Delivery required">Delivery required</option>
-                                    <option value="In progress">In progress</option>
-                                    <option value="Fulfilled">Fulfilled</option>
-                                  </select>
-                                </label>
-
-                                <label style={{ fontSize: 12, color: "#4a4a4a" }}>
-                                  Tracking number
-                                  <input
-                                    name="trackingNumber"
-                                    defaultValue={invoice.trackingNumber || ""}
-                                    placeholder="Enter tracking number"
-                                    style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
-                                  />
-                                </label>
-
-                                <Button submit size="slim">Save shipping</Button>
-                              </BlockStack>
-                            </Form>
-                          </div>
-                        </details>
                       </BlockStack>
                     </IndexTable.Cell>
 
@@ -1838,6 +1811,10 @@ export default function InvoicesPage() {
                           onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}
                         >
                           Edit
+                        </Button>
+
+                        <Button onClick={() => openShippingEditor(invoice)}>
+                          Edit shipping
                         </Button>
 
                         <Form
@@ -2050,6 +2027,78 @@ export default function InvoicesPage() {
                 No invoices were found in local Sales, legacy Works Orders, custom schedule invoices, or Shopify tagged orders.
               </Banner>
             ) : null}
+
+            <Modal
+              open={shippingEditorOpen}
+              onClose={closeShippingEditor}
+              title={editingInvoiceId ? `Edit Shipping INV-${editingInvoiceId}` : "Edit Shipping"}
+              primaryAction={{
+                content: "Save shipping",
+                onAction: () => shippingFormRef.current?.requestSubmit(),
+              }}
+              secondaryActions={[{ content: "Cancel", onAction: closeShippingEditor }]}
+            >
+              <Modal.Section>
+                <Form method="post" ref={shippingFormRef}>
+                  <input type="hidden" name="_intent" value="updateShippingMeta" />
+                  <input type="hidden" name="invoiceId" value={editingInvoiceId} />
+                  <input type="hidden" name="shippingMethod" value={editingShippingMethod} />
+                  <input
+                    type="hidden"
+                    name="deliveryStatus"
+                    value={editingShippingMethod === "Delivery" ? editingDeliveryStatus : "Shipping not required"}
+                  />
+                  <input
+                    type="hidden"
+                    name="trackingNumber"
+                    value={editingShippingMethod === "Delivery" ? editingTrackingNumber : ""}
+                  />
+
+                  <BlockStack gap="300">
+                    <Select
+                      label="Shipping / Delivery"
+                      options={[
+                        { label: "Collection", value: "Collection" },
+                        { label: "Delivery", value: "Delivery" },
+                      ]}
+                      value={editingShippingMethod}
+                      onChange={(value) => {
+                        setEditingShippingMethod(value === "Delivery" ? "Delivery" : "Collection");
+                        if (value !== "Delivery") {
+                          setEditingDeliveryStatus("Shipping not required");
+                          setEditingTrackingNumber("");
+                        } else if (editingDeliveryStatus === "Shipping not required") {
+                          setEditingDeliveryStatus("Delivery required");
+                        }
+                      }}
+                    />
+
+                    {editingShippingMethod === "Delivery" ? (
+                      <>
+                        <Select
+                          label="Delivery status"
+                          options={[
+                            { label: "Delivery required", value: "Delivery required" },
+                            { label: "In progress", value: "In progress" },
+                            { label: "Fulfilled", value: "Fulfilled" },
+                          ]}
+                          value={editingDeliveryStatus}
+                          onChange={setEditingDeliveryStatus}
+                        />
+
+                        <TextField
+                          label="Tracking number"
+                          value={editingTrackingNumber}
+                          onChange={setEditingTrackingNumber}
+                          autoComplete="off"
+                          placeholder="Enter tracking number"
+                        />
+                      </>
+                    ) : null}
+                  </BlockStack>
+                </Form>
+              </Modal.Section>
+            </Modal>
           </Layout.Section>
         </Layout>
       </Page>
