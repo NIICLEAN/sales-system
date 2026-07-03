@@ -120,7 +120,7 @@ export async function action({ request, params }: { request: Request; params: { 
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("This invoice already has an NCP number")}`));
       }
 
-      if (sale.paymentStatus !== "Paid") {
+      if (String(sale.paymentStatus || "").toLowerCase() !== "paid") {
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("NCP numbers are only generated for paid invoices")}`));
       }
 
@@ -1172,7 +1172,7 @@ export default function PrintInvoicePage() {
           </Form>
         ) : null}
 
-        {!invoice.shopifyOrderName && invoice.paymentStatus === "Paid" ? (
+        {!invoice.shopifyOrderId && String(invoice.paymentStatus || "").toLowerCase() === "paid" ? (
           <Form method="post">
             <input type="hidden" name="_intent" value="generateNcpNumber" />
             <button type="submit" className="secondary">Generate NCP Number</button>
