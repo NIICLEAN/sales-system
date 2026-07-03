@@ -1708,6 +1708,9 @@ const [showAddress, setShowAddress] = useState(
                       name="productSearch"
                       value={searchTerm}
                     />
+                    {existingInvoice?.id ? (
+                      <input type="hidden" name="editInvoiceId" value={String(existingInvoice.id)} />
+                    ) : null}
 
                     <Button submit>Search Customer</Button>
                   </InlineStack>
@@ -1782,6 +1785,9 @@ const [showAddress, setShowAddress] = useState(
                       name="customerSearch"
                       value={customerSearchTerm}
                     />
+                    {existingInvoice?.id ? (
+                      <input type="hidden" name="editInvoiceId" value={String(existingInvoice.id)} />
+                    ) : null}
 
                     <Button submit>Search Product</Button>
                   </InlineStack>
