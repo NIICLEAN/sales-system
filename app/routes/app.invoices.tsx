@@ -897,8 +897,25 @@ export async function action({ request }: ActionFunctionArgs) {
         );
       }
 
+      let skippedPaymentCleanup = false;
+
+      try {
+        await prisma.payment.deleteMany({ where: { saleId: { in: duplicateIds } } });
+      } catch (error: any) {
+        const message = String(error?.message || "");
+        const missingPaymentTable =
+          message.includes('The table `public.Payment` does not exist') ||
+          (message.toLowerCase().includes("table") && message.includes("Payment") && message.toLowerCase().includes("does not exist"));
+
+        if (missingPaymentTable) {
+          skippedPaymentCleanup = true;
+          console.warn("Skipping payment cleanup because Payment table is missing.");
+        } else {
+          throw error;
+        }
+      }
+
       await prisma.$transaction([
-        prisma.payment.deleteMany({ where: { saleId: { in: duplicateIds } } }),
         prisma.saleLineItem.deleteMany({ where: { saleId: { in: duplicateIds } } }),
         prisma.sale.deleteMany({ where: { id: { in: duplicateIds } } }),
       ]);
@@ -906,7 +923,9 @@ export async function action({ request }: ActionFunctionArgs) {
       return redirect(
         withEmbeddedParamsFromRequest(
           request,
-          `/app/invoices?syncStatus=success&syncMessage=Deleted%20${duplicateIds.length}%20duplicate%20invoice(s)`,
+          `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(
+            `Deleted ${duplicateIds.length} duplicate invoice(s)${skippedPaymentCleanup ? " (payment cleanup skipped on legacy database)" : ""}`,
+          )}`,
         ),
       );
     } catch (error: any) {
