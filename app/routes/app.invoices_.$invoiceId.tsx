@@ -8,6 +8,12 @@ import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShi
 import { generateShippingLabel } from "../services/shippingLabel.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
 
+const VAT_RATE = 0.2;
+
+function getGrossPrice(netPrice: number, isVatExempt: boolean) {
+  return isVatExempt ? netPrice : Math.round(netPrice * (1 + VAT_RATE) * 100) / 100;
+}
+
 function money(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
 }
@@ -71,6 +77,138 @@ export async function action({ request, params }: { request: Request; params: { 
           `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(String(error?.message || "Failed to delete invoice"))}`,
         ),
       );
+    }
+  }
+
+  if (intent === "generateNcpNumber") {
+    try {
+      const { admin } = await authenticate.admin(request);
+
+      const sale = await prisma.sale.findUnique({
+        where: { id: invoiceId },
+        select: {
+          id: true,
+          shopifyOrderId: true,
+          customerId: true,
+          customerName: true,
+          customerEmail: true,
+          customerVatNumber: true,
+          customerPhone: true,
+          reference: true,
+          paymentMethod: true,
+          paymentStatus: true,
+          amountPaid: true,
+          lineItems: {
+            select: {
+              shopifyVariantId: true,
+              title: true,
+              sku: true,
+              quantity: true,
+              unitPrice: true,
+              discount: true,
+              isCustom: true,
+            },
+          },
+        },
+      });
+
+      if (!sale) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice not found")}`));
+      }
+
+      if (sale.shopifyOrderId) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("This invoice already has an NCP number")}`));
+      }
+
+      if (sale.paymentStatus !== "Paid") {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("NCP numbers are only generated for paid invoices")}`));
+      }
+
+      const isVatExempt = Boolean(sale.customerVatNumber);
+
+      const draftOrderInput: any = {
+        customerId: sale.customerId || undefined,
+        email: sale.customerEmail || undefined,
+        phone: sale.customerPhone || undefined,
+        taxExempt: isVatExempt,
+        note: sale.reference || undefined,
+        tags: ["Invoice App", sale.paymentMethod, sale.paymentStatus].filter(Boolean),
+        customAttributes: [
+          { key: "Payment Method", value: sale.paymentMethod || "-" },
+          { key: "Payment Status", value: sale.paymentStatus || "Paid" },
+          { key: "Amount Paid", value: `£${Number(sale.amountPaid || 0).toFixed(2)}` },
+          { key: "VAT Number", value: sale.customerVatNumber || "-" },
+        ],
+        lineItems: (sale.lineItems || []).map((item: any) => {
+          const netUnitPrice = Math.round(Number(item.unitPrice || 0) * 100) / 100;
+          const grossUnitPrice = getGrossPrice(netUnitPrice, isVatExempt);
+          const netDiscount = Math.round(Number(item.discount || 0) * 100) / 100;
+          const grossDiscount = isVatExempt ? netDiscount : Math.round(netDiscount * (1 + VAT_RATE) * 100) / 100;
+          return {
+            quantity: Number(item.quantity || 1),
+            title: item.title || "Custom item",
+            sku: item.sku || undefined,
+            originalUnitPriceWithCurrency: { amount: grossUnitPrice.toFixed(2), currencyCode: "GBP" },
+            taxable: false,
+            appliedDiscount: grossDiscount ? { value: grossDiscount, valueType: "FIXED_AMOUNT", title: "Manual discount" } : null,
+          };
+        }),
+      };
+
+      const createDraftResponse = await admin.graphql(
+        `
+          mutation CreateDraftOrder($input: DraftOrderInput!) {
+            draftOrderCreate(input: $input) {
+              draftOrder { id name }
+              userErrors { field message }
+            }
+          }
+        `,
+        { variables: { input: draftOrderInput } },
+      );
+
+      const createDraftJson = (await createDraftResponse.json()) as any;
+      const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
+
+      if (createErrors.length > 0) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(createErrors.map((e: any) => e.message).join(", "))}`));
+      }
+
+      const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
+
+      const completeDraftResponse = await admin.graphql(
+        `
+          mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
+            draftOrderComplete(id: $id, paymentPending: $paymentPending) {
+              draftOrder { id order { id name } }
+              userErrors { field message }
+            }
+          }
+        `,
+        { variables: { id: draftOrderId, paymentPending: false } },
+      );
+
+      const completeDraftJson = (await completeDraftResponse.json()) as any;
+      const completeErrors = completeDraftJson.data?.draftOrderComplete?.userErrors || [];
+
+      if (completeErrors.length > 0) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(completeErrors.map((e: any) => e.message).join(", "))}`));
+      }
+
+      const shopifyOrder = completeDraftJson.data.draftOrderComplete.draftOrder.order;
+
+      await prisma.sale.update({
+        where: { id: invoiceId },
+        data: {
+          shopifyOrderId: shopifyOrder?.id || null,
+          shopifyOrderName: shopifyOrder?.name || null,
+        },
+      });
+
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent(`NCP number generated: ${shopifyOrder?.name || ""}`)}`) );
+    } catch (error: any) {
+      console.error("Generate NCP number failed:", error);
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(String(error?.message || "Failed to generate NCP number"))}`) );
     }
   }
 
@@ -1031,6 +1169,13 @@ export default function PrintInvoicePage() {
           <Form method="post">
             <input type="hidden" name="_intent" value="generateShippingLabel" />
             <button type="submit" className="secondary">Generate Shipping Label</button>
+          </Form>
+        ) : null}
+
+        {!invoice.shopifyOrderName && invoice.paymentStatus === "Paid" ? (
+          <Form method="post">
+            <input type="hidden" name="_intent" value="generateNcpNumber" />
+            <button type="submit" className="secondary">Generate NCP Number</button>
           </Form>
         ) : null}
 
