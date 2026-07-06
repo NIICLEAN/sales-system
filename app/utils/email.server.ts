@@ -153,7 +153,9 @@ html: `
     attachments: [
       {
         filename: `Invoice-INV-${invoiceId}.pdf`,
-        content: pdfBuffer,
+        content: pdfBuffer.toString("base64"),
+        contentType: "application/pdf",
+        encoding: "base64",
       },
     ],
   });
@@ -226,7 +228,9 @@ export async function sendQuoteEmail({
     attachments: [
       {
         filename: `Quote-QUO-${quoteId}.pdf`,
-        content: pdfBuffer,
+        content: pdfBuffer.toString("base64"),
+        contentType: "application/pdf",
+        encoding: "base64",
       },
     ],
   });
