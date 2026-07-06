@@ -1828,10 +1828,9 @@ export default function InvoicesPage() {
                 resourceName={{ singular: "invoice", plural: "invoices" }}
                 itemCount={invoices.length}
                 headings={[
-                  { title: "Invoice Number" },
+                  { title: "Invoice" },
                   { title: "Customer / Staff" },
-                  { title: "Shipping / Delivery" },
-                  { title: "Delivery Status" },
+                  { title: "Shipping / Status" },
                   { title: "Payment / Total" },
                   { title: "Actions" },
                 ]}
@@ -1873,42 +1872,34 @@ export default function InvoicesPage() {
                     <IndexTable.Cell>
                       <BlockStack gap="100">
                         <Text as="span" fontWeight="medium">{invoice.shippingMethod || "Collection"}</Text>
-                        <Text as="span" tone="subdued">{invoice.deliveryMethod || "-"}</Text>
-                        {invoice.carrierName ? (
-                          <Text as="span" tone="subdued">Carrier: {invoice.carrierName}</Text>
-                        ) : null}
+                        {invoice.deliveryMethod ? <Text as="span" tone="subdued">{invoice.deliveryMethod}</Text> : null}
                         {invoice.trackingNumber ? (
-                          <Text as="span" tone="subdued">Tracking: {invoice.trackingNumber}</Text>
+                          <Text as="span" tone="subdued">#{invoice.trackingNumber}</Text>
                         ) : null}
                         {invoice.trackingUrl ? (
-                          <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
+                          <a href={invoice.trackingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>Track</a>
                         ) : null}
-
+                        <div
+                          style={{
+                            borderRadius: 6,
+                            padding: "3px 7px",
+                            fontWeight: 600,
+                            fontSize: 11,
+                            color: "#fff",
+                            background:
+                              invoice.deliveryStatus === "Fulfilled"
+                                ? "#1f7a1f"
+                                : invoice.deliveryStatus === "In progress"
+                                  ? "#b26b00"
+                                  : invoice.deliveryStatus === "Shipping not required"
+                                    ? "#5a6268"
+                                    : "#b00020",
+                            width: "fit-content",
+                          }}
+                        >
+                          {invoice.deliveryStatus || (invoice.shippingMethod === "Collection" ? "Shipping not required" : "Delivery required")}
+                        </div>
                       </BlockStack>
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <div
-                        style={{
-                          borderRadius: 8,
-                          padding: "6px 8px",
-                          textAlign: "center",
-                          fontWeight: 600,
-                          color: "#fff",
-                          background:
-                            invoice.deliveryStatus === "Fulfilled"
-                              ? "#1f7a1f"
-                              : invoice.deliveryStatus === "In progress"
-                                ? "#b26b00"
-                                : invoice.deliveryStatus === "Shipping not required"
-                                  ? "#5a6268"
-                                  : "#b00020",
-                          width: "fit-content",
-                          minWidth: 130,
-                        }}
-                      >
-                        {invoice.deliveryStatus || (invoice.shippingMethod === "Collection" ? "Shipping not required" : "Delivery required")}
-                      </div>
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
@@ -1939,21 +1930,16 @@ export default function InvoicesPage() {
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
-                      <BlockStack gap="100">
-                        <Button onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>
+                      <InlineStack gap="150" wrap={true}>
+                        <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>
                           View
                         </Button>
-
-                        <Button
-                          onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}
-                        >
+                        <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}>
                           Edit
                         </Button>
-
-                        <Button onClick={() => openShippingEditor(invoice)}>
-                          Edit shipping
+                        <Button size="slim" onClick={() => openShippingEditor(invoice)}>
+                          Shipping
                         </Button>
-
                         <Form
                           method="post"
                           onSubmit={(event) => {
@@ -1964,11 +1950,9 @@ export default function InvoicesPage() {
                         >
                           <input type="hidden" name="_intent" value="deleteInvoice" />
                           <input type="hidden" name="invoiceId" value={invoice.id} />
-                          <Button submit tone="critical">
-                            Delete
-                          </Button>
+                          <Button size="slim" submit tone="critical">Delete</Button>
                         </Form>
-                      </BlockStack>
+                      </InlineStack>
                     </IndexTable.Cell>
                   </IndexTable.Row>
                 ))}
