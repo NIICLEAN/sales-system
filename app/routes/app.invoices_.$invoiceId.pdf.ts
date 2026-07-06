@@ -1,15 +1,11 @@
-import { authenticate } from "../shopify.server";
 import { generateInvoicePdf } from "../utils/invoice-pdf.server";
 
 export async function loader({
-  request,
   params,
 }: {
   request: Request;
   params: { invoiceId: string };
 }) {
-  await authenticate.admin(request);
-
   const invoiceId = Number(params.invoiceId);
   const pdf = await generateInvoicePdf(invoiceId);
 

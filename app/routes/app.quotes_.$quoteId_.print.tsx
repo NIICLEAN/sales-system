@@ -74,25 +74,28 @@ function formatCurrency(value: any) {
   return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
-function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
+async function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
   event?.preventDefault();
   event?.stopPropagation();
 
-const pdfUrl =
-  window.location.pathname.replace(
-    /\/$/,
-    ""
-  ) + "/pdf";
+  const pdfUrl = window.location.pathname.replace(/\/$/, "") + "/pdf";
 
-  const link = document.createElement("a");
-  link.href = pdfUrl;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.download = `Quote-QUO-${loadedQuote.id}.pdf`;
-
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  try {
+    const response = await fetch(pdfUrl);
+    if (!response.ok) throw new Error(`Server returned ${response.status}`);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `Quote-QUO-${loadedQuote.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    console.error("PDF download failed:", err);
+    alert("Failed to download PDF — please try again.");
+  }
 }
   return (
     <div className="page">
