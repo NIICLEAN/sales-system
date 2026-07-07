@@ -551,7 +551,11 @@ export default function PrintInvoicePage() {
 
     try {
       const response = await fetch(pdfUrl);
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      if (!response.ok) {
+        let detail = "";
+        try { const j = await response.json(); detail = j.error || ""; } catch {}
+        throw new Error(`Server error ${response.status}${detail ? ": " + detail : ""}`);
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -561,9 +565,9 @@ export default function PrintInvoicePage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(objectUrl);
-    } catch (err) {
+    } catch (err: any) {
       console.error("PDF download failed:", err);
-      alert("Failed to download PDF — please try again.");
+      alert(`Failed to download PDF: ${err?.message || err}`);
     }
   }
 

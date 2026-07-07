@@ -7,13 +7,20 @@ export async function loader({
   params: { invoiceId: string };
 }) {
   const invoiceId = Number(params.invoiceId);
-  const pdf = await generateInvoicePdf(invoiceId);
-
-  return new Response(pdf, {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="Invoice-INV-${invoiceId}.pdf"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  try {
+    const pdf = await generateInvoicePdf(invoiceId);
+    return new Response(pdf, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Invoice-INV-${invoiceId}.pdf"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error: any) {
+    console.error("Invoice PDF generation failed:", error);
+    return new Response(
+      JSON.stringify({ error: String(error?.message || "PDF generation failed") }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
 }
