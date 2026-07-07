@@ -18,9 +18,34 @@ function safe(value: any) {
 export async function generateQuotePdf(quoteId: number) {
   const quote = await prisma.quote.findUnique({
     where: { id: quoteId },
-    include: {
-      staff: true,
-      lineItems: true,
+    select: {
+      id: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      address1: true,
+      address2: true,
+      city: true,
+      county: true,
+      postcode: true,
+      country: true,
+      reference: true,
+      subtotal: true,
+      discountTotal: true,
+      vatAmount: true,
+      total: true,
+      createdAt: true,
+      staff: { select: { name: true } },
+      lineItems: {
+        select: {
+          title: true,
+          sku: true,
+          quantity: true,
+          unitPrice: true,
+          discount: true,
+          lineTotal: true,
+        },
+      },
     },
   });
 

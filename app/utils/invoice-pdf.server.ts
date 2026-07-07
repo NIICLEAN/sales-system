@@ -18,9 +18,38 @@ function safe(value: any) {
 export async function generateInvoicePdf(invoiceId: number) {
   const invoice = await prisma.sale.findUnique({
     where: { id: invoiceId },
-    include: {
-      staff: true,
-      lineItems: true,
+    select: {
+      id: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      customerVatNumber: true,
+      address1: true,
+      address2: true,
+      city: true,
+      county: true,
+      postcode: true,
+      country: true,
+      paymentMethod: true,
+      paymentStatus: true,
+      amountPaid: true,
+      balanceDue: true,
+      vatAmount: true,
+      total: true,
+      subtotal: true,
+      discountTotal: true,
+      createdAt: true,
+      staff: { select: { name: true } },
+      lineItems: {
+        select: {
+          title: true,
+          sku: true,
+          quantity: true,
+          unitPrice: true,
+          discount: true,
+          lineTotal: true,
+        },
+      },
     },
   });
 
