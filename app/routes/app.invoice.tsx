@@ -475,7 +475,7 @@ if (params.invoiceId || editInvoiceId) {
 
     existingInvoice = {
       ...sale,
-      lineItems,
+      lineItems: lineItems.filter((item: any) => item.sku !== "SHIPPING"),
       staff: staffRecord,
       shippingMethod: shippingMeta.shippingMethod,
       deliveryMethod: shippingMeta.deliveryMethod || "",
@@ -761,7 +761,9 @@ const redirectWithEmbedded = (path: string) =>
         },
       });
 
-      lineItems = existingLineItems.map((item) => ({
+      lineItems = existingLineItems
+        .filter((item) => item.sku !== "SHIPPING")
+        .map((item) => ({
         id: item.shopifyVariantId || "",
         type: item.isCustom ? "custom" : "product",
         title: item.title,
