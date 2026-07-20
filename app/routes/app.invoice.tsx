@@ -2520,15 +2520,25 @@ const [showAddress, setShowAddress] = useState(
                         />
                       ) : null}
 
-                      <TextField
-                        label="Amount paid"
-                        name="amountPaid"
-                        value={amountPaid}
-                        onChange={setAmountPaid}
-                        autoComplete="off"
-                        type="number"
-                        prefix="£"
-                      />
+                      <InlineStack gap="200" blockAlign="end">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Amount paid"
+                            name="amountPaid"
+                            value={amountPaid}
+                            onChange={setAmountPaid}
+                            autoComplete="off"
+                            type="number"
+                            prefix="£"
+                          />
+                        </div>
+                        <Button
+                          onClick={() => setAmountPaid(String(totals.total))}
+                          disabled={totals.total <= 0}
+                        >
+                          Pay in full
+                        </Button>
+                      </InlineStack>
 
                       <Button onClick={() => setInvoiceDiscountEnabled((current) => !current)}>
                         {invoiceDiscountEnabled ? "Remove discount" : "Add discount"}
