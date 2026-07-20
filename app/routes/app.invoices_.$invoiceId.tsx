@@ -111,14 +111,17 @@ export async function action({ request, params }: { request: Request; params: { 
       });
 
       if (!sale) {
+        console.error(`generateNcpNumber: Invoice ${invoiceId} not found`);
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice not found")}`));
       }
 
       if (sale.shopifyOrderId) {
+        console.info(`generateNcpNumber: Invoice ${invoiceId} already has NCP ${sale.shopifyOrderId}`);
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("This invoice already has an NCP number")}`));
       }
 
       if (String(sale.paymentStatus || "").toLowerCase() !== "paid") {
+        console.info(`generateNcpNumber: Invoice ${invoiceId} payment status is "${sale.paymentStatus}", not "paid"`);
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("NCP numbers are only generated for paid invoices")}`));
       }
 
@@ -153,6 +156,8 @@ export async function action({ request, params }: { request: Request; params: { 
         }),
       };
 
+      console.log(`generateNcpNumber: Creating draft order for invoice ${invoiceId} with email "${sale.customerEmail}"`);
+
       const createDraftResponse = await admin.graphql(
         `
           mutation CreateDraftOrder($input: DraftOrderInput!) {
@@ -169,10 +174,12 @@ export async function action({ request, params }: { request: Request; params: { 
       const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
 
       if (createErrors.length > 0) {
+        console.error(`generateNcpNumber: Draft order creation failed: ${JSON.stringify(createErrors)}`);
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(createErrors.map((e: any) => e.message).join(", "))}`));
       }
 
       const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
+      console.log(`generateNcpNumber: Draft order created: ${draftOrderId}, completing...`);
 
       const completeDraftResponse = await admin.graphql(
         `
@@ -190,10 +197,12 @@ export async function action({ request, params }: { request: Request; params: { 
       const completeErrors = completeDraftJson.data?.draftOrderComplete?.userErrors || [];
 
       if (completeErrors.length > 0) {
+        console.error(`generateNcpNumber: Draft order completion failed: ${JSON.stringify(completeErrors)}`);
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(completeErrors.map((e: any) => e.message).join(", "))}`));
       }
 
       const shopifyOrder = completeDraftJson.data.draftOrderComplete.draftOrder.order;
+      console.log(`generateNcpNumber: NCP number generated: ${shopifyOrder?.name || ""}`);
 
       await prisma.sale.update({
         where: { id: invoiceId },
