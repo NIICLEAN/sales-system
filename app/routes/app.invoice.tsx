@@ -242,24 +242,21 @@ async function createShopifyOrderFromInvoice({
     lineItems: lineItems.map((item: any) => {
       const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
       const netDiscount = roundMoney(Number(item.discount || 0));
-      const grossUnitPrice = getGrossPrice(netUnitPrice, isVatExempt);
-      const grossDiscount = isVatExempt
-        ? netDiscount
-        : roundMoney(netDiscount * (1 + VAT_RATE));
 
       return {
         quantity: Number(item.quantity),
         title: item.title || "Custom item",
         sku: item.sku || undefined,
         originalUnitPriceWithCurrency: {
-          amount: Number(grossUnitPrice ?? 0).toFixed(2),
+          amount: Number(netUnitPrice ?? 0).toFixed(2),
           currencyCode: "GBP",
         },
-        // Prices sent to Shopify are VAT-inclusive from V2, so avoid extra tax layering.
-        taxable: false,
-        appliedDiscount: grossDiscount
+        // Send net (ex-VAT) prices with taxable: true so Shopify generates proper
+        // tax lines. VAT exemption is handled at order level via taxExempt.
+        taxable: true,
+        appliedDiscount: netDiscount
           ? {
-              value: grossDiscount,
+              value: netDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
