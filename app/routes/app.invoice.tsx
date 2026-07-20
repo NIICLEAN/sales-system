@@ -604,6 +604,8 @@ if (params.invoiceId || editInvoiceId) {
     embeddedParams,
   };
   } catch (error) {
+    // Re-throw Response objects (auth redirects, 404s, etc.) unchanged
+    if (error instanceof Response) throw error;
     console.error("Loader error:", error);
     throw new Response(
       `Failed to load invoice data: ${error instanceof Error ? error.message : String(error)}`,
