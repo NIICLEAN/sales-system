@@ -406,19 +406,20 @@ export async function loader({
   request: Request;
   params: { invoiceId?: string };
 }) {
-  const { admin } = await authenticate.admin(request);
+  try {
+    const { admin } = await authenticate.admin(request);
 
-  const url = new URL(request.url);
-  const productSearch = url.searchParams.get("productSearch") || "";
-  const customerSearch = url.searchParams.get("customerSearch") || "";
-  const embeddedParams = {
-    shop: url.searchParams.get("shop") || "",
-    host: url.searchParams.get("host") || "",
-    embedded: url.searchParams.get("embedded") || "",
-    id_token: url.searchParams.get("id_token") || "",
-  };
+    const url = new URL(request.url);
+    const productSearch = url.searchParams.get("productSearch") || "";
+    const customerSearch = url.searchParams.get("customerSearch") || "";
+    const embeddedParams = {
+      shop: url.searchParams.get("shop") || "",
+      host: url.searchParams.get("host") || "",
+      embedded: url.searchParams.get("embedded") || "",
+      id_token: url.searchParams.get("id_token") || "",
+    };
 
-  const editInvoiceId = url.searchParams.get("editInvoiceId");
+    const editInvoiceId = url.searchParams.get("editInvoiceId");
   
 
   const staff = await prisma.staff.findMany({
@@ -593,15 +594,22 @@ if (params.invoiceId || editInvoiceId) {
     }
   }
 
-return {
-  staff,
-  variants,
-  productSearch,
-  customers,
-  customerSearch,
-  existingInvoice,
-  embeddedParams,
-};
+  return {
+    staff,
+    variants,
+    productSearch,
+    customers,
+    customerSearch,
+    existingInvoice,
+    embeddedParams,
+  };
+  } catch (error) {
+    console.error("Loader error:", error);
+    throw new Response(
+      `Failed to load invoice data: ${error instanceof Error ? error.message : String(error)}`,
+      { status: 400 }
+    );
+  }
 }
 
 export async function action({
