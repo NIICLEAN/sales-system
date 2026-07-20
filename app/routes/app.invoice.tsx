@@ -47,6 +47,7 @@ const SHIPPING_SERVICE_OPTIONS = [
 const DELIVERY_STATUS_OPTIONS = [
   { label: "Delivery required", value: "Delivery required", tone: "critical" as const },
   { label: "In progress", value: "In progress", tone: "warning" as const },
+  { label: "Installation", value: "Installation", tone: "warning" as const },
   { label: "Fulfilled", value: "Fulfilled", tone: "success" as const },
 ];
 

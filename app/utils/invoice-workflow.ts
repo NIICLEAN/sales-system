@@ -1,6 +1,7 @@
 export const DELIVERY_WORKFLOW_VALUES = [
   "Delivery required",
   "In progress",
+  "Installation",
   "Fulfilled",
 ] as const;
 

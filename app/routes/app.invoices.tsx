@@ -71,7 +71,7 @@ function toSentenceCase(value: string) {
 
 function normalizeDeliveryStatus(shippingMethod: "Collection" | "Delivery", deliveryStatus: string) {
   if (shippingMethod === "Collection") return "Shipping not required";
-  const allowed = new Set(["Delivery required", "In progress", "Fulfilled"]);
+  const allowed = new Set(["Delivery required", "In progress", "Installation", "Fulfilled"]);
   const value = String(deliveryStatus || "").trim();
   return allowed.has(value) ? value : "Delivery required";
 }
