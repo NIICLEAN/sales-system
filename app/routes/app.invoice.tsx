@@ -242,21 +242,25 @@ async function createShopifyOrderFromInvoice({
     lineItems: lineItems.map((item: any) => {
       const netUnitPrice = roundMoney(Number(item.unitPrice || 0));
       const netDiscount = roundMoney(Number(item.discount || 0));
+      const grossUnitPrice = getGrossPrice(netUnitPrice, isVatExempt);
+      const grossDiscount = isVatExempt
+        ? netDiscount
+        : roundMoney(netDiscount * (1 + VAT_RATE));
 
       return {
         quantity: Number(item.quantity),
         title: item.title || "Custom item",
         sku: item.sku || undefined,
         originalUnitPriceWithCurrency: {
-          amount: Number(netUnitPrice ?? 0).toFixed(2),
+          amount: Number(grossUnitPrice ?? 0).toFixed(2),
           currencyCode: "GBP",
         },
-        // Send net (ex-VAT) prices with taxable: true so Shopify generates proper
-        // tax lines. VAT exemption is handled at order level via taxExempt.
-        taxable: true,
-        appliedDiscount: netDiscount
+        // Prices sent to Shopify are VAT-inclusive. Tax is disabled on line items
+        // to prevent Shopify double-taxing; VAT is tracked in our local records.
+        taxable: false,
+        appliedDiscount: grossDiscount
           ? {
-              value: netDiscount,
+              value: grossDiscount,
               valueType: "FIXED_AMOUNT",
               title: "Manual discount",
             }
@@ -1172,29 +1176,34 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
   let shopifyOrder = null;
 
   if (createShopifyOrder) {
-    shopifyOrder = await createShopifyOrderFromInvoice({
-      admin,
-      shopifyCustomerId,
-      customerEmail,
-      customerPhone,
-      isVatExempt,
-      reference,
-      tags,
-      customAttributes,
-      hasManualShippingAddress,
-      customerName,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      lineItems: invoiceLineItems,
-      paymentStatus,
-    });
+    try {
+      shopifyOrder = await createShopifyOrderFromInvoice({
+        admin,
+        shopifyCustomerId,
+        customerEmail,
+        customerPhone,
+        isVatExempt,
+        reference,
+        tags,
+        customAttributes,
+        hasManualShippingAddress,
+        customerName,
+        address1,
+        address2,
+        city,
+        county,
+        postcode,
+        country,
+        lineItems: invoiceLineItems,
+        paymentStatus,
+      });
 
-    if (autoFulfillOrder && shopifyOrder?.id) {
-      await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
+      if (autoFulfillOrder && shopifyOrder?.id) {
+        await autoFulfillCollectionOrder({ admin, orderId: shopifyOrder.id });
+      }
+    } catch (error) {
+      // Do not block local invoice creation if Shopify order creation fails.
+      console.error("Failed to create Shopify order during invoice creation:", error);
     }
   }
 

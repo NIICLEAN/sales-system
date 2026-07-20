@@ -139,16 +139,16 @@ export async function action({ request, params }: { request: Request; params: { 
         ],
         lineItems: (sale.lineItems || []).map((item: any) => {
           const netUnitPrice = Math.round(Number(item.unitPrice || 0) * 100) / 100;
+          const grossUnitPrice = getGrossPrice(netUnitPrice, isVatExempt);
           const netDiscount = Math.round(Number(item.discount || 0) * 100) / 100;
+          const grossDiscount = isVatExempt ? netDiscount : Math.round(netDiscount * (1 + VAT_RATE) * 100) / 100;
           return {
             quantity: Number(item.quantity || 1),
             title: item.title || "Custom item",
             sku: item.sku || undefined,
-            originalUnitPriceWithCurrency: { amount: netUnitPrice.toFixed(2), currencyCode: "GBP" },
-            // Send net (ex-VAT) prices with taxable: true so Shopify generates proper
-            // tax lines. VAT exemption is handled at order level via taxExempt.
-            taxable: true,
-            appliedDiscount: netDiscount ? { value: netDiscount, valueType: "FIXED_AMOUNT", title: "Manual discount" } : null,
+            originalUnitPriceWithCurrency: { amount: grossUnitPrice.toFixed(2), currencyCode: "GBP" },
+            taxable: false,
+            appliedDiscount: grossDiscount ? { value: grossDiscount, valueType: "FIXED_AMOUNT", title: "Manual discount" } : null,
           };
         }),
       };
