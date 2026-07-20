@@ -818,62 +818,117 @@ const redirectWithEmbedded = (path: string) =>
   let shopifyCustomerId = selectedCustomerId || null;
 
   if (!shopifyCustomerId && (customerEmail || customerPhone)) {
-    const [firstName, ...rest] = customerName.split(" ");
-    const lastName = rest.join(" ");
-
-    const createCustomerResponse = await admin.graphql(
-      `
-        mutation CustomerCreate($input: CustomerInput!) {
-          customerCreate(input: $input) {
-            customer {
-              id
+    // First check if a customer already exists with this email
+    if (customerEmail) {
+      try {
+        const lookupResponse = await admin.graphql(
+          `
+            query CustomerByEmail($query: String!) {
+              customers(first: 1, query: $query) {
+                edges {
+                  node { id }
+                }
+              }
             }
-            userErrors {
-              field
-              message
-            }
-          }
+          `,
+          { variables: { query: `email:${customerEmail}` } },
+        );
+        const lookupJson = (await lookupResponse.json()) as any;
+        const existing = lookupJson.data?.customers?.edges?.[0]?.node;
+        if (existing?.id) {
+          shopifyCustomerId = existing.id;
         }
-      `,
-      {
-        variables: {
-          input: {
-            firstName: firstName || customerName,
-            lastName: lastName || undefined,
-            email: customerEmail || undefined,
-            phone: customerPhone || undefined,
-            taxExempt: isVatExempt,
-            addresses:
-              address1 || city || postcode || country
-                ? [
-                    {
-                      address1,
-                      address2,
-                      city,
-                      province: county,
-                      zip: postcode,
-                      country,
-                      phone: customerPhone || undefined,
-                    },
-                  ]
-                : undefined,
-          },
-        },
-      },
-    );
-
-    const createCustomerJson = await createCustomerResponse.json();
-
-    const customerErrors =
-      createCustomerJson.data?.customerCreate?.userErrors || [];
-
-    if (customerErrors.length > 0) {
-      throw new Response(customerErrors.map((e: any) => e.message).join(", "), {
-        status: 400,
-      });
+      } catch (e) {
+        console.error("Customer email lookup failed:", e);
+      }
     }
 
-    shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
+    if (!shopifyCustomerId) {
+      const [firstName, ...rest] = customerName.split(" ");
+      const lastName = rest.join(" ");
+
+      const createCustomerResponse = await admin.graphql(
+        `
+          mutation CustomerCreate($input: CustomerInput!) {
+            customerCreate(input: $input) {
+              customer {
+                id
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            input: {
+              firstName: firstName || customerName,
+              lastName: lastName || undefined,
+              email: customerEmail || undefined,
+              phone: customerPhone || undefined,
+              taxExempt: isVatExempt,
+              addresses:
+                address1 || city || postcode || country
+                  ? [
+                      {
+                        address1,
+                        address2,
+                        city,
+                        province: county,
+                        zip: postcode,
+                        country,
+                        phone: customerPhone || undefined,
+                      },
+                    ]
+                  : undefined,
+            },
+          },
+        },
+      );
+
+      const createCustomerJson = await createCustomerResponse.json();
+      const customerErrors =
+        createCustomerJson.data?.customerCreate?.userErrors || [];
+
+      if (customerErrors.length > 0) {
+        // If email already taken, try looking up by email one more time
+        const emailTakenError = customerErrors.find((e: any) =>
+          String(e.message).toLowerCase().includes("email") &&
+          String(e.message).toLowerCase().includes("taken")
+        );
+        if (emailTakenError && customerEmail) {
+          try {
+            const retryLookup = await admin.graphql(
+              `
+                query CustomerByEmail($query: String!) {
+                  customers(first: 1, query: $query) {
+                    edges { node { id } }
+                  }
+                }
+              `,
+              { variables: { query: `email:${customerEmail}` } },
+            );
+            const retryJson = (await retryLookup.json()) as any;
+            const found = retryJson.data?.customers?.edges?.[0]?.node;
+            if (found?.id) {
+              shopifyCustomerId = found.id;
+            }
+          } catch (e) {
+            console.error("Customer retry lookup failed:", e);
+          }
+        }
+
+        if (!shopifyCustomerId) {
+          throw new Response(customerErrors.map((e: any) => e.message).join(", "), {
+            status: 400,
+          });
+        }
+      } else {
+        shopifyCustomerId = createCustomerJson.data.customerCreate.customer.id;
+      }
+    }
   }
 
   let subtotal = roundMoney(
