@@ -76,8 +76,8 @@ model WorkSchedule {
 
   scheduledDate DateTime
 
-  assignedStaffId Int
-  assignedStaff   Staff @relation("AssignedWorkStaff", fields: [assignedStaffId], references: [id])
+  assignedStaffId Int?
+  assignedStaff   Staff? @relation("AssignedWorkStaff", fields: [assignedStaffId], references: [id])
 
   note String?
 
@@ -162,6 +162,8 @@ enum PaymentMethod {
   Cash
   Card
   BankTransfer
+  MyPos
+  Worldpay
   Other
 }
 
