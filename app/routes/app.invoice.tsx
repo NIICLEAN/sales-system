@@ -42,6 +42,7 @@ const SHIPPING_SERVICE_OPTIONS = [
   { value: "long-heavy-parcel", label: "Long or Heavy Parcel (all countries)", price: 29.95 },
   { value: "pallet-delivery", label: "Pallet delivery", price: 100 },
   { value: "pallet-international", label: "Pallet international", price: 495 },
+  { value: "free-with-other-delivery", label: "Free with other delivery", price: 0 },
 ];
 
 const DELIVERY_STATUS_OPTIONS = [
