@@ -407,21 +407,19 @@ export async function loader({
   request: Request;
   params: { invoiceId?: string };
 }) {
-  try {
-    const { admin } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
-    const url = new URL(request.url);
-    const productSearch = url.searchParams.get("productSearch") || "";
-    const customerSearch = url.searchParams.get("customerSearch") || "";
-    const embeddedParams = {
-      shop: url.searchParams.get("shop") || "",
-      host: url.searchParams.get("host") || "",
-      embedded: url.searchParams.get("embedded") || "",
-      id_token: url.searchParams.get("id_token") || "",
-    };
+  const url = new URL(request.url);
+  const productSearch = url.searchParams.get("productSearch") || "";
+  const customerSearch = url.searchParams.get("customerSearch") || "";
+  const embeddedParams = {
+    shop: url.searchParams.get("shop") || "",
+    host: url.searchParams.get("host") || "",
+    embedded: url.searchParams.get("embedded") || "",
+    id_token: url.searchParams.get("id_token") || "",
+  };
 
-    const editInvoiceId = url.searchParams.get("editInvoiceId");
-  
+  const editInvoiceId = url.searchParams.get("editInvoiceId");
 
   const staff = await prisma.staff.findMany({
     orderBy: { name: "asc" },
@@ -429,68 +427,68 @@ export async function loader({
 
   let existingInvoice = null;
 
-if (params.invoiceId || editInvoiceId) {
-  const sale = await prisma.sale.findUnique({
-    where: {
-      id: Number(params.invoiceId || editInvoiceId),
-    },
-    select: {
-      id: true,
-      shopifyOrderId: true,
-      shopifyOrderName: true,
-      customerId: true,
-      customerName: true,
-      customerEmail: true,
-      customerVatNumber: true,
-      customerPhone: true,
-      address1: true,
-      address2: true,
-      city: true,
-      county: true,
-      postcode: true,
-      country: true,
-      reference: true,
-      paymentMethod: true,
-      subtotal: true,
-      discountTotal: true,
-      vatAmount: true,
-      total: true,
-      amountPaid: true,
-      balanceDue: true,
-      paymentStatus: true,
-      depositPaid: true,
-      staffId: true,
-      createdAt: true,
-    },
-  });
+  if (params.invoiceId || editInvoiceId) {
+    const sale = await prisma.sale.findUnique({
+      where: {
+        id: Number(params.invoiceId || editInvoiceId),
+      },
+      select: {
+        id: true,
+        shopifyOrderId: true,
+        shopifyOrderName: true,
+        customerId: true,
+        customerName: true,
+        customerEmail: true,
+        customerVatNumber: true,
+        customerPhone: true,
+        address1: true,
+        address2: true,
+        city: true,
+        county: true,
+        postcode: true,
+        country: true,
+        reference: true,
+        paymentMethod: true,
+        subtotal: true,
+        discountTotal: true,
+        vatAmount: true,
+        total: true,
+        amountPaid: true,
+        balanceDue: true,
+        paymentStatus: true,
+        depositPaid: true,
+        staffId: true,
+        createdAt: true,
+      },
+    });
 
-  if (sale) {
-    const [lineItems, staffRecord, shippingMeta] = await Promise.all([
-      prisma.saleLineItem.findMany({
-        where: { saleId: sale.id },
-        orderBy: { id: "asc" },
-      }),
-      prisma.staff.findUnique({
-        where: { id: sale.staffId },
-      }),
-      getSaleShippingMeta(sale.id),
-    ]);
+    if (sale) {
+      const [lineItems, staffRecord, shippingMeta] = await Promise.all([
+        prisma.saleLineItem.findMany({
+          where: { saleId: sale.id },
+          orderBy: { id: "asc" },
+        }),
+        prisma.staff.findUnique({
+          where: { id: sale.staffId },
+        }),
+        getSaleShippingMeta(sale.id),
+      ]);
       const discountMeta = await getInvoiceDiscountMeta(sale.id);
 
-    existingInvoice = {
-      ...sale,
-      lineItems: lineItems.filter((item: any) => item.sku !== "SHIPPING"),
-      staff: staffRecord,
-      shippingMethod: shippingMeta.shippingMethod,
-      deliveryMethod: shippingMeta.deliveryMethod || "",
-      trackingNumber: shippingMeta.trackingNumber || "",
+      existingInvoice = {
+        ...sale,
+        lineItems: lineItems.filter((item: any) => item.sku !== "SHIPPING"),
+        staff: staffRecord,
+        shippingMethod: shippingMeta.shippingMethod,
+        deliveryMethod: shippingMeta.deliveryMethod || "",
+        trackingNumber: shippingMeta.trackingNumber || "",
         invoiceDiscountType: discountMeta.discountType || "amount",
         invoiceDiscountValue: discountMeta.discountValue ?? 0,
         invoiceDiscountAmount: discountMeta.discountAmount ?? 0,
-      vatType: "Standard",
-    } as any;
+        vatType: "Standard",
+      } as any;
+    }
   }
-}
 
   let variants: any[] = [];
   let customers: any[] = [];
@@ -604,15 +602,6 @@ if (params.invoiceId || editInvoiceId) {
     existingInvoice,
     embeddedParams,
   };
-  } catch (error) {
-    // Re-throw Response objects (auth redirects, 404s, etc.) unchanged
-    if (error instanceof Response) throw error;
-    console.error("Loader error:", error);
-    throw new Response(
-      `Failed to load invoice data: ${error instanceof Error ? error.message : String(error)}`,
-      { status: 400 }
-    );
-  }
 }
 
 export async function action({
