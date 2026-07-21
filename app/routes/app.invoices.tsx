@@ -1,6 +1,6 @@
 import { Form, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   AppProvider,
   Page,
@@ -24,8 +24,6 @@ import { getConnectedXeroClient, getXeroConnection } from "../services/xero.serv
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
-import { generateInvoicePdf } from "../utils/invoice-pdf.server";
-import { sendInvoiceEmail } from "../utils/email.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -1156,6 +1154,8 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!sale?.customerEmail) {
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(`INV-${invoiceId}: no customer email on file`)}`));
       }
+      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+      const { sendInvoiceEmail } = await import("../utils/email.server");
       const pdfBuffer = await generateInvoicePdf(invoiceId);
       await sendInvoiceEmail({
         to: sale.customerEmail,
@@ -1583,6 +1583,23 @@ export default function InvoicesPage() {
   const [editingDeliveryStatus, setEditingDeliveryStatus] = useState("Delivery required");
   const [editingTrackingNumber, setEditingTrackingNumber] = useState("");
 
+  // Local search input state — updates instantly while typing, debounced server fetch
+  const [searchInputValue, setSearchInputValue] = useState(query);
+
+  useEffect(() => {
+    setSearchInputValue(query);
+  }, [query]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInputValue !== query) {
+        updateInvoicesQuery({ query: searchInputValue, page: 1 });
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInputValue]);
+
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
   const connectXero = searchParams.get("connectXero") === "1";
@@ -1725,8 +1742,8 @@ export default function InvoicesPage() {
                         <TextField
                           label="Search invoices"
                           name="query"
-                          value={query}
-                          onChange={(value: string) => updateInvoicesQuery({ query: value, page: 1 })}
+                          value={searchInputValue}
+                          onChange={(value: string) => setSearchInputValue(value)}
                           autoComplete="off"
                           placeholder="Search customer, invoice ref, payment method"
                         />
@@ -1778,7 +1795,7 @@ export default function InvoicesPage() {
                       </div>
 
                       <Button
-                        onClick={() => updateInvoicesQuery({ query: "", paymentStatus: "all", shippingMethod: "all", page: 1, perPage: 100 })}
+                        onClick={() => { setSearchInputValue(""); updateInvoicesQuery({ query: "", paymentStatus: "all", shippingMethod: "all", page: 1, perPage: 100 }); }}
                       >
                         Clear filters
                       </Button>
