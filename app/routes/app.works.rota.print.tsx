@@ -15,7 +15,7 @@ export async function loader({ request }: { request: Request }) {
   startDate.setHours(0, 0, 0, 0);
 
   const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 14);
+  endDate.setDate(endDate.getDate() + 28);
 
   const worksOrders = await prisma.worksOrder.findMany({
     where: {
@@ -76,7 +76,7 @@ export default function PrintRotaPage() {
 
   const start = new Date(startDate);
 
-  const days = Array.from({ length: 14 }).map((_, index) => {
+  const days = Array.from({ length: 28 }).map((_, index) => {
     const day = new Date(start);
     day.setDate(start.getDate() + index);
     return day;
@@ -286,7 +286,7 @@ export default function PrintRotaPage() {
         <div>
           <h1>Scheduled Works Rota</h1>
           <p>
-            {formatDate(days[0])} to {formatDate(days[13])}
+            {formatDate(days[0])} to {formatDate(days[27])}
           </p>
           <p>
             Staff:{" "}
@@ -296,7 +296,7 @@ export default function PrintRotaPage() {
 
         <div>
           <strong>NII Clean Products</strong>
-          <p>Works schedule / fortnight rota</p>
+          <p>Works schedule / 4 week rota</p>
         </div>
       </div>
 
@@ -305,6 +305,12 @@ export default function PrintRotaPage() {
 
       <h2>Week 2</h2>
       <CalendarWeek weekDays={days.slice(7, 14)} />
+
+      <h2>Week 3</h2>
+      <CalendarWeek weekDays={days.slice(14, 21)} />
+
+      <h2>Week 4</h2>
+      <CalendarWeek weekDays={days.slice(21, 28)} />
 
       <div className="footer">
         Rota generated from Scheduled Works.
