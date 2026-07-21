@@ -55,13 +55,17 @@ export async function adjustInventoryForLineItems(admin: any, lineItems: Array<{
         continue;
       }
 
-      const mutation = `mutation AdjustInventory($input: InventoryAdjustQuantityInput!) {\n        inventoryAdjustQuantity(input: $input) {\n          inventoryAdjustment { id }\n          userErrors { field message }\n        }\n      }`;
+      const mutation = `mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {\n        inventoryAdjustQuantities(input: $input) {\n          userErrors { field message }\n        }\n      }`;
 
       const variables = {
         input: {
-          inventoryItemId,
-          availableDelta: -Math.abs(Number(item.quantity) || 0),
-          locationId,
+          reason: "correction",
+          name: "available",
+          changes: [{
+            inventoryItemId,
+            locationId,
+            delta: -Math.abs(Number(item.quantity) || 0),
+          }],
         },
       };
 
@@ -69,7 +73,7 @@ export async function adjustInventoryForLineItems(admin: any, lineItems: Array<{
 
       const respJson = await resp.json();
 
-      const errors = respJson.data?.inventoryAdjustQuantity?.userErrors || [];
+      const errors = respJson.data?.inventoryAdjustQuantities?.userErrors || [];
 
       if (errors.length > 0) {
         console.error("Inventory adjust errors:", errors);

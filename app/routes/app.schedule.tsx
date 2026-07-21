@@ -79,7 +79,7 @@ export async function action({ request }: ActionFunctionArgs) {
         invoiceMode === "custom" ? customCustomerName : null,
       workType: String(formData.get("workType")) as any,
       scheduledDate: new Date(String(formData.get("scheduledDate"))),
-      assignedStaffId: Number(formData.get("assignedStaffId")),
+      assignedStaffId: Number(formData.get("assignedStaffId")) || null,
       note: String(formData.get("note") || ""),
     },
   });
