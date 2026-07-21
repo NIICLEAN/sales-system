@@ -64,6 +64,10 @@ model Sale {
   workSchedules WorkSchedule[]
 
   createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([paymentStatus])
+  @@index([staffId])
 }
 
 model WorkSchedule {

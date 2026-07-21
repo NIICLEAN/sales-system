@@ -1366,43 +1366,42 @@ export async function loader({ request }: { request: Request }) {
       }
     }
 
-    const localInvoiceCount = includeLocal
-      ? await prisma.sale.count({
-          where: localWhere,
-        })
-      : 0;
-
-    const localInvoices = includeLocal
-      ? await prisma.sale.findMany({
-          where: localWhere,
-          orderBy: { createdAt: "desc" },
-          skip: (page - 1) * perPage,
-          take: perPage,
-          select: {
-            id: true,
-            customerName: true,
-            customerEmail: true,
-            paymentMethod: true,
-            paymentStatus: true,
-            total: true,
-            createdAt: true,
-            shopifyOrderName: true,
-            reference: true,
-            staffId: true,
-          },
-        })
-      : [];
+    const [localInvoiceCount, localInvoices] = await Promise.all([
+      includeLocal ? prisma.sale.count({ where: localWhere }) : Promise.resolve(0),
+      includeLocal
+        ? prisma.sale.findMany({
+            where: localWhere,
+            orderBy: { createdAt: "desc" },
+            skip: (page - 1) * perPage,
+            take: perPage,
+            select: {
+              id: true,
+              customerName: true,
+              customerEmail: true,
+              paymentMethod: true,
+              paymentStatus: true,
+              total: true,
+              createdAt: true,
+              shopifyOrderName: true,
+              reference: true,
+              staffId: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
 
     const staffIds = Array.from(new Set(localInvoices.map((invoice) => invoice.staffId)));
-    const staffRecords = staffIds.length
-      ? await prisma.staff.findMany({
-          where: { id: { in: staffIds } },
-          select: { id: true, name: true },
-        })
-      : [];
+    const [staffRecords, shippingMetaBySaleId] = await Promise.all([
+      staffIds.length
+        ? prisma.staff.findMany({
+            where: { id: { in: staffIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      getSaleShippingMetaBySaleIds(localInvoices.map((invoice) => invoice.id)),
+    ]);
 
     const staffById = new Map(staffRecords.map((staff) => [staff.id, staff.name]));
-    const shippingMetaBySaleId = await getSaleShippingMetaBySaleIds(localInvoices.map((invoice) => invoice.id));
 
     const invoices = localInvoices.map((invoice) => ({
       ...invoice,
