@@ -9,8 +9,10 @@ export function shouldCreateShopifyOrder(invoiceTotal: number, lineItemsLength: 
   return Number(invoiceTotal || 0) > 0 && Number(lineItemsLength || 0) > 0 && paymentStatus === "Paid";
 }
 
-export function shouldAutoFulfillOrder(shippingMethod: string, fulfilmentMethod: string) {
-  return shippingMethod === "Collection" || fulfilmentMethod === "Phone";
+export function shouldAutoFulfillOrder(_shippingMethod: string, _fulfilmentMethod: string) {
+  // Always auto-fulfill in Shopify for all paid orders — delivery workflow is
+  // tracked in our app so Shopify just needs to show the order as fulfilled.
+  return true;
 }
 
 export function normalizeDeliveryWorkflowStatus(shippingMethod: string, inputStatus: string) {
