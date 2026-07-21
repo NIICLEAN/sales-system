@@ -17,6 +17,23 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
+function AmountPaidField({ total, amountPaid }: { total: number; amountPaid: number }) {
+  const [value, setValue] = useState(String(amountPaid > 0 ? amountPaid : ""));
+  return (
+    <TextField
+      label="Amount paid (£)"
+      name="amountPaid"
+      type="number"
+      value={value}
+      onChange={setValue}
+      autoComplete="off"
+      min={0}
+      max={total}
+      step={0.01}
+    />
+  );
+}
+
 export async function loader({
   request,
   params,
@@ -73,7 +90,44 @@ const { redirect } = await authenticate.admin(request);
 
   const id = Number(params.id);
   const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "schedule");
 
+  if (intent === "recordPayment") {
+    const amountPaidRaw = Number(formData.get("amountPaid") || 0);
+    const worksOrder = await prisma.worksOrder.findUnique({
+      where: { id },
+      select: { total: true },
+    });
+    if (!worksOrder) throw new Response("Works order not found", { status: 404 });
+
+    const total = Number(worksOrder.total);
+    const amountPaid = Math.min(amountPaidRaw, total);
+    const paymentStatus = amountPaid >= total ? "paid" : amountPaid > 0 ? "part_paid" : "unpaid";
+
+    await prisma.worksOrder.update({
+      where: { id },
+      data: { amountPaid, paymentStatus },
+    });
+
+    return redirect(`/app/works/${id}`);
+  }
+
+  if (intent === "markAsPaid") {
+    const worksOrder = await prisma.worksOrder.findUnique({
+      where: { id },
+      select: { total: true },
+    });
+    if (!worksOrder) throw new Response("Works order not found", { status: 404 });
+
+    await prisma.worksOrder.update({
+      where: { id },
+      data: { paymentStatus: "paid", amountPaid: worksOrder.total },
+    });
+
+    return redirect(`/app/works/${id}`);
+  }
+
+  // Default: schedule intent
   const assignedStaffId = Number(formData.get("assignedStaffId"));
   const scheduledDate = String(formData.get("scheduledDate") || "");
 
@@ -319,6 +373,8 @@ primaryAction={{
                   Schedule Works Order
                 </Text>
 
+                <input type="hidden" name="_intent" value="schedule" />
+
                 <Select
                   label="Assign to staff member"
                   name="assignedStaffId"
@@ -340,10 +396,47 @@ primaryAction={{
                   Save Schedule
                 </Button>
 
-         <Button onClick={() => openPrint(worksOrder.id)}>Print Works Order</Button>
+                <Button onClick={() => openPrint(worksOrder.id)}>Print Works Order</Button>
               </BlockStack>
             </Form>
           </Card>
+
+          <div style={{ marginTop: 16 }}>
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  Record Payment
+                </Text>
+
+                <Text as="p" tone="subdued">
+                  Total: {formatMoney(worksOrder.total)} &nbsp;|&nbsp; Paid: {formatMoney(worksOrder.amountPaid)}
+                </Text>
+
+                {worksOrder.paymentStatus !== "paid" ? (
+                  <>
+                    <Form method="post">
+                      <BlockStack gap="300">
+                        <input type="hidden" name="_intent" value="recordPayment" />
+                        <AmountPaidField total={worksOrder.total} amountPaid={worksOrder.amountPaid} />
+                        <Button submit variant="primary">
+                          Save Payment
+                        </Button>
+                      </BlockStack>
+                    </Form>
+
+                    <Form method="post" onSubmit={(e) => { if (!window.confirm("Mark this works order as fully paid?")) e.preventDefault(); }}>
+                      <input type="hidden" name="_intent" value="markAsPaid" />
+                      <Button submit tone="success" variant="primary">
+                        Mark as Fully Paid
+                      </Button>
+                    </Form>
+                  </>
+                ) : (
+                  <Badge tone="success">Paid in Full</Badge>
+                )}
+              </BlockStack>
+            </Card>
+          </div>
         </Layout.Section>
       </Layout>
     </Page>

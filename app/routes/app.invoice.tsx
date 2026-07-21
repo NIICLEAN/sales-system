@@ -40,6 +40,8 @@ const SHIPPING_SERVICE_OPTIONS = [
   { value: "ireland-delivery", label: "Ireland Delivery", price: 14.95 },
   { value: "ni-uk-delivery", label: "NI / UK Delivery", price: 12.95 },
   { value: "long-heavy-parcel", label: "Long or Heavy Parcel (all countries)", price: 29.95 },
+  { value: "international-parcel-large", label: "International Parcel Large", price: 175 },
+  { value: "international-parcel-small", label: "International Parcel Small", price: 95 },
   { value: "pallet-delivery", label: "Pallet delivery", price: 100 },
   { value: "pallet-international", label: "Pallet international", price: 495 },
   { value: "free-with-other-delivery", label: "Free with other delivery", price: 0 },
@@ -459,11 +461,20 @@ export async function loader({
         depositPaid: true,
         staffId: true,
         createdAt: true,
-        vatType: true,
       },
     });
 
     if (sale) {
+      // Load vatType via raw SQL to avoid crash on legacy DBs where column may not exist yet
+      let saleVatType = "Standard";
+      try {
+        const vtRows = await prisma.$queryRaw<Array<{ vatType: string | null }>>`
+          SELECT "vatType"::text FROM "Sale" WHERE id = ${sale.id} LIMIT 1
+        `;
+        if (vtRows.length > 0) saleVatType = vtRows[0].vatType ?? "Standard";
+      } catch {
+        // Column doesn't exist yet — use default
+      }
       const [lineItems, staffRecord, shippingMeta] = await Promise.all([
         prisma.saleLineItem.findMany({
           where: { saleId: sale.id },
@@ -478,6 +489,7 @@ export async function loader({
 
       existingInvoice = {
         ...sale,
+        vatType: saleVatType,
         lineItems: lineItems.filter((item: any) => item.sku !== "SHIPPING"),
         staff: staffRecord,
         shippingMethod: shippingMeta.shippingMethod,

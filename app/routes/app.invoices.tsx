@@ -24,6 +24,8 @@ import { getConnectedXeroClient, getXeroConnection } from "../services/xero.serv
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
+import { generateInvoicePdf } from "../utils/invoice-pdf.server";
+import { sendInvoiceEmail } from "../utils/email.server";
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -1143,6 +1145,32 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "emailInvoice") {
+    const invoiceId = Number(formData.get("invoiceId"));
+    if (!invoiceId) return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent("Invalid invoice ID")}`));
+    try {
+      const sale = await prisma.sale.findUnique({
+        where: { id: invoiceId },
+        select: { customerEmail: true, customerName: true, paymentStatus: true },
+      });
+      if (!sale?.customerEmail) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(`INV-${invoiceId}: no customer email on file`)}`));
+      }
+      const pdfBuffer = await generateInvoicePdf(invoiceId);
+      await sendInvoiceEmail({
+        to: sale.customerEmail,
+        customerName: sale.customerName || "",
+        invoiceId,
+        pdfBuffer,
+        paymentStatus: sale.paymentStatus || "Unpaid",
+      });
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Invoice INV-${invoiceId} emailed to ${sale.customerEmail}`)}`));
+    } catch (error: any) {
+      console.error("Email invoice failed:", error);
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(String(error?.message || "Failed to send email"))}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -1261,7 +1289,7 @@ export async function loader({ request }: { request: Request }) {
     const paymentFilter = String(url.searchParams.get("paymentStatus") || "all").trim();
     const shippingFilter = String(url.searchParams.get("shippingMethod") || "all").trim();
     const page = Math.max(1, Number(url.searchParams.get("page") || "1") || 1);
-    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("perPage") || "25") || 25));
+    const perPage = Math.min(500, Math.max(10, Number(url.searchParams.get("perPage") || "100") || 100));
     const shopDomain = String(
       url.searchParams.get("shop") || request.headers.get("x-shopify-shop-domain") || "",
     ).trim();
@@ -1353,6 +1381,7 @@ export async function loader({ request }: { request: Request }) {
           select: {
             id: true,
             customerName: true,
+            customerEmail: true,
             paymentMethod: true,
             paymentStatus: true,
             total: true,
@@ -1513,7 +1542,7 @@ export async function loader({ request }: { request: Request }) {
       invoices: [],
       localInvoiceCount: 0,
       page: 1,
-      perPage: 25,
+      perPage: 100,
       query: "",
       paymentFilter: "all",
       shippingFilter: "all",
@@ -1676,11 +1705,6 @@ export default function InvoicesPage() {
                     </Form>
 
                     <Form method="post">
-                      <input type="hidden" name="_intent" value="pullShippingFromShopify" />
-                      <Button submit>Pull Shipping</Button>
-                    </Form>
-
-                    <Form method="post">
                       <input type="hidden" name="_intent" value="deleteDuplicateInvoices" />
                       <Button submit tone="critical">Delete Duplicates</Button>
                     </Form>
@@ -1747,13 +1771,15 @@ export default function InvoicesPage() {
                             { label: "25", value: "25" },
                             { label: "50", value: "50" },
                             { label: "100", value: "100" },
+                            { label: "250", value: "250" },
+                            { label: "500", value: "500" },
                           ]}
                           onChange={(value) => updateInvoicesQuery({ perPage: value, page: 1 })}
                         />
                       </div>
 
                       <Button
-                        onClick={() => updateInvoicesQuery({ query: "", paymentStatus: "all", shippingMethod: "all", page: 1, perPage: 25 })}
+                        onClick={() => updateInvoicesQuery({ query: "", paymentStatus: "all", shippingMethod: "all", page: 1, perPage: 100 })}
                       >
                         Clear filters
                       </Button>
@@ -1940,6 +1966,18 @@ export default function InvoicesPage() {
                         <Button size="slim" onClick={() => openShippingEditor(invoice)}>
                           Shipping
                         </Button>
+                        <Form
+                          method="post"
+                          onSubmit={(event) => {
+                            if (!window.confirm(`Email invoice INV-${invoice.id} to ${invoice.customerEmail || "customer"}?`)) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="_intent" value="emailInvoice" />
+                          <input type="hidden" name="invoiceId" value={invoice.id} />
+                          <Button size="slim" submit>Email</Button>
+                        </Form>
                         <Form
                           method="post"
                           onSubmit={(event) => {

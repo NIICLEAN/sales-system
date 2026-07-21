@@ -238,8 +238,6 @@ export async function action({ request, params }: { request: Request; params: { 
         customerEmail: true,
         shopifyOrderName: true,
         reference: true,
-        vatType: true,
-        xeroInvoiceId: true,
         createdAt: true,
         lineItems: {
           orderBy: { id: "asc" as const },
@@ -257,12 +255,38 @@ export async function action({ request, params }: { request: Request; params: { 
       return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice not found")}`));
     }
 
-    if (sale.xeroInvoiceId) {
-      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice is already in Xero (" + sale.xeroInvoiceId + ")")}`));
+    // Load optional columns via raw SQL to avoid crashes on legacy DBs
+    let saleVatType = "Standard";
+    let existingXeroInvoiceId: string | null = null;
+    try {
+      const extraRows = await prisma.$queryRaw<Array<{ vatType: string | null; xeroInvoiceId: string | null }>>`
+        SELECT "vatType"::text, "xeroInvoiceId" FROM "Sale" WHERE id = ${invoiceId} LIMIT 1
+      `;
+      if (extraRows.length > 0) {
+        saleVatType = extraRows[0].vatType ?? "Standard";
+        existingXeroInvoiceId = extraRows[0].xeroInvoiceId ?? null;
+      }
+    } catch {
+      // Columns not yet available — use defaults
     }
 
-    const isVatExempt = sale.vatType === "Exempt" || sale.vatType === "CrossBorder";
-    const taxType = sale.vatType === "CrossBorder" ? "ZERORATEDOUTPUT"
+    // If already in Xero, VOID the old invoice so we can send an updated one
+    if (existingXeroInvoiceId) {
+      try {
+        await (xero.accountingApi as any).updateInvoice(tenantId, existingXeroInvoiceId, {
+          invoices: [{ invoiceID: existingXeroInvoiceId, status: Invoice.StatusEnum.VOIDED }],
+        });
+        // Clear the stored ID so the create step below proceeds
+        await prisma.$executeRaw`UPDATE "Sale" SET "xeroInvoiceId" = NULL WHERE id = ${invoiceId}`;
+        existingXeroInvoiceId = null;
+      } catch (voidErr: any) {
+        console.warn("Could not void existing Xero invoice — proceeding anyway:", voidErr?.message);
+        existingXeroInvoiceId = null;
+      }
+    }
+
+    const isVatExempt = saleVatType === "Exempt" || saleVatType === "CrossBorder";
+    const taxType = saleVatType === "CrossBorder" ? "ZERORATEDOUTPUT"
       : isVatExempt ? "EXEMPTOUTPUT"
       : "OUTPUT2";
 
@@ -299,10 +323,14 @@ export async function action({ request, params }: { request: Request; params: { 
         }],
       });
 
-      const xeroInvoiceId: string | undefined = response.body?.invoices?.[0]?.invoiceID;
+      const newXeroInvoiceId: string | undefined = response.body?.invoices?.[0]?.invoiceID;
 
-      if (xeroInvoiceId) {
-        await prisma.sale.update({ where: { id: invoiceId }, data: { xeroInvoiceId } });
+      if (newXeroInvoiceId) {
+        try {
+          await prisma.$executeRaw`UPDATE "Sale" SET "xeroInvoiceId" = ${newXeroInvoiceId} WHERE id = ${invoiceId}`;
+        } catch {
+          // xeroInvoiceId column not yet migrated — skip saving
+        }
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent("Sent to Xero: INV-" + invoiceId)}`));
       }
 
@@ -451,13 +479,29 @@ export async function loader({
         depositPaid: true,
         staffId: true,
         createdAt: true,
-        vatType: true,
-        xeroInvoiceId: true,
       },
     });
 
     if (!sale) {
       throw new Response("Invoice not found", { status: 404 });
+    }
+
+    // Load optional columns that may not exist in older DB migrations
+    let vatType: string | null = "Standard";
+    let xeroInvoiceId: string | null = null;
+    try {
+      const extraRows = await prisma.$queryRaw<Array<{ vatType: string | null; xeroInvoiceId: string | null }>>`
+        SELECT "vatType"::text, "xeroInvoiceId"
+        FROM "Sale"
+        WHERE id = ${invoiceId}
+        LIMIT 1
+      `;
+      if (extraRows.length > 0) {
+        vatType = extraRows[0].vatType ?? "Standard";
+        xeroInvoiceId = extraRows[0].xeroInvoiceId ?? null;
+      }
+    } catch {
+      // Columns don't exist yet — use safe defaults
     }
 
     const [staff, lineItems, shippingMeta] = await Promise.all([
@@ -510,6 +554,8 @@ export async function loader({
 
     const invoice = {
       ...sale,
+      vatType,
+      xeroInvoiceId,
       staff,
       shippingMethod: shippingMeta.shippingMethod,
       trackingNumber: shippingMeta.trackingNumber,

@@ -172,7 +172,7 @@ export default function SchedulePage() {
 
   const calendarDays = useMemo(() => {
     const start = new Date(calendarStartDate);
-    return Array.from({ length: 14 }, (_, index) => addDays(start, index));
+    return Array.from({ length: 28 }, (_, index) => addDays(start, index));
   }, [calendarStartDate]);
 
   const visibleSchedules = schedules.filter((item) => {
@@ -340,11 +340,11 @@ export default function SchedulePage() {
       <div className="print-only">
         <div className="print-header">
           <div>
-            <h1 className="print-title">NCP Sales — 2 Week Works Rota</h1>
+            <h1 className="print-title">NCP Sales — 4 Week Works Rota</h1>
             <div className="print-subtitle">Staff: {viewingStaffName}</div>
             <div className="print-subtitle">
               From {new Date(calendarStartDate).toLocaleDateString("en-GB")} to{" "}
-              {addDays(new Date(calendarStartDate), 13).toLocaleDateString(
+              {addDays(new Date(calendarStartDate), 27).toLocaleDateString(
                 "en-GB",
               )}
             </div>
