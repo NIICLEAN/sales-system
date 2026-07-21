@@ -19,6 +19,7 @@ import db from "../db.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const sales = await db.sale.findMany({
+      select: { id: true, shopifyOrderName: true, customerName: true },
       orderBy: { createdAt: "desc" },
       take: 100,
     });

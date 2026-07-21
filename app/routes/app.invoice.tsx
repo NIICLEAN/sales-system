@@ -604,6 +604,18 @@ export async function loader({
   };
 }
 
+type PaymentMethodEnum = "Cash" | "Card" | "BankTransfer" | "MyPos" | "Worldpay" | "Other";
+
+function normalizePaymentMethod(method: string): PaymentMethodEnum {
+  const m = String(method || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (m === "cash") return "Cash";
+  if (m === "card") return "Card";
+  if (m === "banktransfer") return "BankTransfer";
+  if (m === "mypos") return "MyPos";
+  if (m === "worldpay") return "Worldpay";
+  return "Other";
+}
+
 export async function action({
   request,
   params,
@@ -1202,7 +1214,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
         data: {
           saleId: invoiceId,
           amount: paymentDelta,
-          method: (paymentMethod as any) || "Other",
+          method: normalizePaymentMethod(paymentMethod),
           provider: paymentMethod,
           reference: reference || null,
         },
@@ -1358,7 +1370,7 @@ try {
       data: {
         saleId: sale.id,
         amount: amountPaid,
-        method: (paymentMethod as any) || "Other",
+        method: normalizePaymentMethod(paymentMethod),
         provider: paymentMethod,
         reference: reference || null,
       },
