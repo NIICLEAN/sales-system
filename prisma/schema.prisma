@@ -55,6 +55,9 @@ model Sale {
   // VAT treatment for this sale
   vatType VatType @default(Standard)
 
+  // Xero integration — stores the Xero invoice ID once pushed
+  xeroInvoiceId String?
+
   lineItems SaleLineItem[]
 
   payments Payment[] @relation("SalePayments")

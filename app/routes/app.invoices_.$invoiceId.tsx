@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
 import { Banner } from "@shopify/polaris";
+import { Invoice, LineAmountTypes } from "xero-node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getConnectedXeroClient } from "../services/xero.server";
 import { getInvoiceDiscountMeta } from "../services/invoiceDiscountMeta.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { generateShippingLabel } from "../services/shippingLabel.server";
@@ -219,6 +221,100 @@ export async function action({ request, params }: { request: Request; params: { 
     }
   }
 
+  if (intent === "sendToXero") {
+    let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
+    try {
+      xeroClient = await getConnectedXeroClient();
+    } catch {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Xero is not connected. Connect Xero first.")}`));
+    }
+    const { xero, tenantId } = xeroClient;
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        customerName: true,
+        customerEmail: true,
+        shopifyOrderName: true,
+        reference: true,
+        vatType: true,
+        xeroInvoiceId: true,
+        createdAt: true,
+        lineItems: {
+          orderBy: { id: "asc" as const },
+          select: {
+            title: true,
+            quantity: true,
+            unitPrice: true,
+            discount: true,
+          },
+        },
+      },
+    });
+
+    if (!sale) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice not found")}`));
+    }
+
+    if (sale.xeroInvoiceId) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Invoice is already in Xero (" + sale.xeroInvoiceId + ")")}`));
+    }
+
+    const isVatExempt = sale.vatType === "Exempt" || sale.vatType === "CrossBorder";
+    const taxType = sale.vatType === "CrossBorder" ? "ZERORATEDOUTPUT"
+      : isVatExempt ? "EXEMPTOUTPUT"
+      : "OUTPUT2";
+
+    const dateStr = new Date(sale.createdAt).toISOString().split("T")[0];
+
+    const xeroLineItems = sale.lineItems.map((item) => {
+      const effectiveUnit = item.quantity > 0
+        ? (Number(item.unitPrice) * item.quantity - Number(item.discount || 0)) / item.quantity
+        : Number(item.unitPrice);
+      return {
+        description: item.title,
+        quantity: item.quantity,
+        unitAmount: Math.round(effectiveUnit * 100) / 100,
+        taxType,
+        accountCode: process.env.XERO_SALES_ACCOUNT_CODE || "200",
+      };
+    });
+
+    try {
+      const response = await (xero.accountingApi as any).createInvoices(tenantId, {
+        invoices: [{
+          type: Invoice.TypeEnum.ACCREC,
+          contact: {
+            name: sale.customerName || "Customer",
+            ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
+          },
+          date: dateStr,
+          dueDate: dateStr,
+          lineAmountTypes: LineAmountTypes.Exclusive,
+          lineItems: xeroLineItems,
+          reference: sale.shopifyOrderName || sale.reference || `INV-${sale.id}`,
+          invoiceNumber: `INV-${sale.id}`,
+          status: Invoice.StatusEnum.AUTHORISED,
+        }],
+      });
+
+      const xeroInvoiceId: string | undefined = response.body?.invoices?.[0]?.invoiceID;
+
+      if (xeroInvoiceId) {
+        await prisma.sale.update({ where: { id: invoiceId }, data: { xeroInvoiceId } });
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent("Sent to Xero: INV-" + invoiceId)}`));
+      }
+
+      const xeroErrors = response.body?.invoices?.[0]?.validationErrors?.map((e: any) => e.message).join("; ") || "Unknown Xero error";
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("Xero rejected invoice: " + xeroErrors)}`));
+    } catch (error: any) {
+      console.error("Failed to send invoice to Xero:", error);
+      const msg = error?.response?.body?.Detail || error?.message || "Failed to send to Xero";
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(String(msg))}`));
+    }
+  }
+
   if (intent !== "generateShippingLabel") {
     return null;
   }
@@ -355,6 +451,8 @@ export async function loader({
         depositPaid: true,
         staffId: true,
         createdAt: true,
+        vatType: true,
+        xeroInvoiceId: true,
       },
     });
 
@@ -430,6 +528,7 @@ export async function loader({
     return {
       invoice,
       logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      xeroConfigured: Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET),
       error: null,
     };
   } catch (error) {
@@ -438,13 +537,14 @@ export async function loader({
     return {
       invoice: null,
       logoUrl: "",
+      xeroConfigured: false,
       error: "Invoice could not be loaded right now.",
     };
   }
 }
 
 export default function PrintInvoicePage() {
-  const { invoice, logoUrl, error } = useLoaderData<typeof loader>();
+  const { invoice, logoUrl, xeroConfigured, error } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   const labelStatus = searchParams.get("labelStatus");
   const labelMessage = searchParams.get("labelMessage");
@@ -1197,6 +1297,19 @@ export default function PrintInvoicePage() {
             <input type="hidden" name="_intent" value="generateNcpNumber" />
             <button type="submit" className="secondary">Generate NCP Number</button>
           </Form>
+        ) : null}
+
+        {xeroConfigured && !invoice.xeroInvoiceId ? (
+          <Form method="post">
+            <input type="hidden" name="_intent" value="sendToXero" />
+            <button type="submit" className="secondary">Send to Xero</button>
+          </Form>
+        ) : null}
+
+        {xeroConfigured && invoice.xeroInvoiceId ? (
+          <span className="secondary" style={{ padding: "6px 12px", border: "1px solid #ccc", borderRadius: 4, fontSize: 14, color: "#555" }}>
+            ✓ In Xero
+          </span>
         ) : null}
 
         <button type="button" onClick={downloadPdf}>
