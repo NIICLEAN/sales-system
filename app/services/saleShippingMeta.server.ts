@@ -110,7 +110,7 @@ export async function upsertSaleShippingMeta({
       "trackingNumber" = EXCLUDED."trackingNumber",
       "trackingUrl" = EXCLUDED."trackingUrl",
       "carrierName" = EXCLUDED."carrierName",
-      "fulfillmentStatus" = EXCLUDED."fulfillmentStatus",
+      "fulfillmentStatus" = COALESCE(EXCLUDED."fulfillmentStatus", "SaleShippingMeta"."fulfillmentStatus"),
       "deliveryStatus" = EXCLUDED."deliveryStatus",
       "deliveryMethod" = EXCLUDED."deliveryMethod",
       "updatedAt" = NOW()

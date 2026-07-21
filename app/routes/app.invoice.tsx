@@ -1231,7 +1231,9 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       trackingNumber,
       deliveryMethod: shippingServiceLabel,
       deliveryStatus: deliveryWorkflowStatus,
-      fulfillmentStatus: autoFulfillOrder ? "Fulfilled" : "Unfulfilled",
+      // Only set Fulfilled; if not auto-fulfilling, preserve whatever status was set previously
+      // (e.g. a delivery order manually marked Fulfilled shouldn't revert to Unfulfilled on edit).
+      fulfillmentStatus: autoFulfillOrder ? "Fulfilled" : null,
     });
   } catch (err) {
     console.error("Failed to save shipping meta:", err);
