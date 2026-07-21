@@ -459,6 +459,7 @@ export async function loader({
         depositPaid: true,
         staffId: true,
         createdAt: true,
+        vatType: true,
       },
     });
 
@@ -485,7 +486,6 @@ export async function loader({
         invoiceDiscountType: discountMeta.discountType || "amount",
         invoiceDiscountValue: discountMeta.discountValue ?? 0,
         invoiceDiscountAmount: discountMeta.discountAmount ?? 0,
-        vatType: "Standard",
       } as any;
     }
   }
@@ -1068,6 +1068,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       balanceDue: invoiceBalanceDue,
       paymentStatus: getPaymentStatus(invoiceTotal, amountPaid),
       depositPaid,
+      vatType,
       staffId: resolvedStaffId,
     },
     replaceLineItems: true,
@@ -1301,6 +1302,7 @@ const sale = await createSaleCompat({
       balanceDue: invoiceBalanceDue,
       paymentStatus: getPaymentStatus(invoiceTotal, amountPaid),
     depositPaid,
+    vatType,
     staffId,
     createdAt: new Date(),
   },
@@ -1472,7 +1474,7 @@ const [customerVatNumber, setCustomerVatNumber] = useState(
 );
 
 const [vatType, setVatType] = useState(
-  (existingInvoice?.vatType as any) || "Standard",
+  existingInvoice?.vatType || "Standard",
 );
 
 const [customerPhone, setCustomerPhone] = useState(

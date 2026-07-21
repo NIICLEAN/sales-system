@@ -239,7 +239,7 @@ export async function action({ request }: { request: Request }) {
         discountTotal,
         vatAmount,
         total,
-        vatType: vatType as any,
+        vatType: vatType as "Standard" | "Exempt" | "CrossBorder",
         staffId,
         lineItems: {
           create: lineItems.map((item: any) => ({

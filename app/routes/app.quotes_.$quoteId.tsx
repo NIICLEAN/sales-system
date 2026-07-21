@@ -91,7 +91,7 @@ export async function action({ request, params }: { request: Request; params: { 
     throw new Response("Quote not found", { status: 404 });
   }
 
-  const vatType = (quote as any).vatType || "Standard";
+  const vatType = quote.vatType || "Standard";
   const isVatExempt = vatType === "Exempt" || vatType === "CrossBorder";
 
   const draftOrderInput: any = {
@@ -175,7 +175,7 @@ export async function action({ request, params }: { request: Request; params: { 
       customerId: null,
       customerName: quote.customerName,
       customerEmail: quote.customerEmail,
-      customerVatNumber: (quote as any).customerVatNumber || null,
+      customerVatNumber: null,
       customerPhone: quote.customerPhone,
       address1: quote.address1,
       address2: quote.address2,

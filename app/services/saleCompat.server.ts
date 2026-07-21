@@ -38,6 +38,7 @@ type SaleInsertInput = {
   balanceDue?: number;
   paymentStatus?: string;
   depositPaid?: boolean;
+  vatType?: string;
   staffId: number;
   createdAt?: Date;
 };
