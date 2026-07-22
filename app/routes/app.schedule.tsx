@@ -232,7 +232,7 @@ export default function SchedulePage() {
                 <div className="calendar-heading">
                   <div>
                     <Text as="h2" variant="headingLg">
-                      2 Week Works Rota
+                      4 Week Works Rota
                     </Text>
                     <Text as="p" tone="subdued">
                       Viewing: {viewingStaffName}
@@ -240,97 +240,104 @@ export default function SchedulePage() {
                   </div>
                 </div>
 
-                <div className="calendar-grid">
-                  {calendarDays.map((day) => {
-                    const daySchedules = visibleSchedules.filter((item) =>
-                      sameDay(new Date(item.scheduledDate), day),
-                    );
+                {[0, 1, 2, 3].map((weekIndex) => (
+                  <div key={weekIndex}>
+                    <div style={{ marginBottom: 8, marginTop: weekIndex === 0 ? 0 : 16 }}>
+                      <Text as="h3" variant="headingMd">Week {weekIndex + 1}</Text>
+                    </div>
+                    <div className="calendar-grid">
+                      {calendarDays.slice(weekIndex * 7, (weekIndex + 1) * 7).map((day) => {
+                        const daySchedules = visibleSchedules.filter((item) =>
+                          sameDay(new Date(item.scheduledDate), day),
+                        );
 
-                    return (
-                      <div
-                        key={day.toISOString()}
-                        className={`calendar-day ${
-                          sameDay(day, today) ? "calendar-day-today" : ""
-                        }`}
-                      >
-                        <div className="calendar-date">
-                          <span>
-                            {day.toLocaleDateString("en-GB", {
-                              weekday: "short",
-                            })}
-                          </span>
-                          <strong>
-                            {day.toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "2-digit",
-                            })}
-                          </strong>
-                        </div>
-
-                        <div className="calendar-jobs">
-                          {daySchedules.map((item) => (
-                            <div
-                              key={item.id}
-                              className={`job-card ${workTypeClass(
-                                item.workType,
-                              )}`}
-                            >
-                              <div className="job-top">
-                                <span className="job-pill">
-                                  {workTypeLabel(item.workType)}
-                                </span>
-
-                                <Form method="post">
-                                  <input
-                                    type="hidden"
-                                    name="_intent"
-                                    value="delete"
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="scheduleId"
-                                    value={item.id}
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="delete-job"
-                                    onClick={(event) => {
-                                      if (
-                                        !confirm(
-                                          "Delete this scheduled work item?",
-                                        )
-                                      ) {
-                                        event.preventDefault();
-                                      }
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </Form>
-                              </div>
-
-                              <div className="job-invoice">
-                                {invoiceLabel(item)}
-                              </div>
-
-                              <div className="job-customer">
-                                {customerLabel(item)}
-                              </div>
-
-                              <div className="job-staff">
-                                {item.assignedStaff?.name || "Unassigned"}
-                              </div>
-
-                              {item.note ? (
-                                <div className="job-note">{item.note}</div>
-                              ) : null}
+                        return (
+                          <div
+                            key={day.toISOString()}
+                            className={`calendar-day ${
+                              sameDay(day, today) ? "calendar-day-today" : ""
+                            }`}
+                          >
+                            <div className="calendar-date">
+                              <span>
+                                {day.toLocaleDateString("en-GB", {
+                                  weekday: "short",
+                                })}
+                              </span>
+                              <strong>
+                                {day.toLocaleDateString("en-GB", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                })}
+                              </strong>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+
+                            <div className="calendar-jobs">
+                              {daySchedules.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className={`job-card ${workTypeClass(
+                                    item.workType,
+                                  )}`}
+                                >
+                                  <div className="job-top">
+                                    <span className="job-pill">
+                                      {workTypeLabel(item.workType)}
+                                    </span>
+
+                                    <Form method="post">
+                                      <input
+                                        type="hidden"
+                                        name="_intent"
+                                        value="delete"
+                                      />
+                                      <input
+                                        type="hidden"
+                                        name="scheduleId"
+                                        value={item.id}
+                                      />
+                                      <button
+                                        type="submit"
+                                        className="delete-job"
+                                        onClick={(event) => {
+                                          if (
+                                            !confirm(
+                                              "Delete this scheduled work item?",
+                                            )
+                                          ) {
+                                            event.preventDefault();
+                                          }
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    </Form>
+                                  </div>
+
+                                  <div className="job-invoice">
+                                    {invoiceLabel(item)}
+                                  </div>
+
+                                  <div className="job-customer">
+                                    {customerLabel(item)}
+                                  </div>
+
+                                  <div className="job-staff">
+                                    {item.assignedStaff?.name || "Unassigned"}
+                                  </div>
+
+                                  {item.note ? (
+                                    <div className="job-note">{item.note}</div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </BlockStack>
             </Card>
           </Layout.Section>
