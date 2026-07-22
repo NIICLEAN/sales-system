@@ -70,6 +70,14 @@ function toColumnSql(columnName: string) {
   return Prisma.raw(`"${columnName}"`);
 }
 
+// Some columns require an explicit cast when using raw parameterized SQL
+function toValueSql(columnName: string, value: unknown) {
+  if (columnName === "vatType") {
+    return Prisma.sql`CAST(${value} AS "VatType")`;
+  }
+  return Prisma.sql`${value}`;
+}
+
 export async function createSaleCompat({
   sale,
   lineItems = [],
@@ -85,7 +93,7 @@ export async function createSaleCompat({
 
   const insertedSaleRows = await prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
     INSERT INTO "Sale" (${Prisma.join(saleEntries.map(([columnName]) => toColumnSql(columnName)))})
-    VALUES (${Prisma.join(saleEntries.map(([, value]) => Prisma.sql`${value}`))})
+    VALUES (${Prisma.join(saleEntries.map(([columnName, value]) => toValueSql(columnName, value)))})
     RETURNING "id"
   `);
 
@@ -137,7 +145,7 @@ export async function updateSaleCompat({
       UPDATE "Sale"
       SET ${Prisma.join(
         saleEntries.map(
-          ([columnName, value]) => Prisma.sql`${toColumnSql(columnName)} = ${value}`,
+          ([columnName, value]) => Prisma.sql`${toColumnSql(columnName)} = ${toValueSql(columnName, value)}`,
         ),
         ", ",
       )}
