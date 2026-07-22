@@ -288,7 +288,7 @@ export async function action({ request, params }: { request: Request; params: { 
     const isVatExempt = saleVatType === "Exempt" || saleVatType === "CrossBorder";
     const taxType = saleVatType === "CrossBorder" ? "ZERORATEDOUTPUT"
       : isVatExempt ? "EXEMPTOUTPUT"
-      : "OUTPUT2";
+      : "OUTPUT";
 
     const dateStr = new Date(sale.createdAt).toISOString().split("T")[0];
 
