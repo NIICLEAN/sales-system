@@ -16,6 +16,7 @@ import {
   Checkbox,
   Box,
   Modal,
+  Banner,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
@@ -1768,6 +1769,23 @@ const [showAddress, setShowAddress] = useState(
 
   const deliveryRequiresService = shippingMethod === "Delivery" && !shippingService;
 
+  const validationWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (!customerName.trim()) {
+      warnings.push("No customer name — will be saved as 'Walk-in customer'");
+    }
+    if (items.length === 0 && !(isEditMode && Number(manualTotal) > 0)) {
+      warnings.push("No line items have been added to this invoice");
+    }
+    if (!staffId || staffId === "0") {
+      warnings.push("No staff member selected");
+    }
+    if (totals.total === 0) {
+      warnings.push("Invoice total is £0.00");
+    }
+    return warnings;
+  }, [customerName, items.length, staffId, totals.total, isEditMode, manualTotal]);
+
   return (
 <Page
   title={existingInvoice ? `Edit INV-${existingInvoice.id}` : "Create Invoice"}
@@ -2681,6 +2699,19 @@ const [showAddress, setShowAddress] = useState(
                         {money(totals.balanceDue)}
                       </Text>
                     </InlineStack>
+
+                    {validationWarnings.length > 0 && (
+                      <Banner tone="warning">
+                        <BlockStack gap="100">
+                          <Text as="p" variant="bodyMd" fontWeight="semibold">
+                            Issues to review — you can still save and fix later:
+                          </Text>
+                          {validationWarnings.map((w, i) => (
+                            <Text key={i} as="p" variant="bodySm">• {w}</Text>
+                          ))}
+                        </BlockStack>
+                      </Banner>
+                    )}
 
                     {isEditMode ? (
                       <Button submit variant="primary" fullWidth disabled={deliveryRequiresService || isSubmitting}>
