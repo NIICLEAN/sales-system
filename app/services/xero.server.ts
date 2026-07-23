@@ -112,8 +112,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
   const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
-  const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
-    .replace(/^#/, "");
+  const baseNumber = `INV-${sale.id}`;
 
   // Load Payment records — try with xeroInvoiceId column, fall back without
   type PaymentRow = { id: number; amount: number; method: string; createdAt: Date; reference: string | null; xeroInvoiceId: string | null };
