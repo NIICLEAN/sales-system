@@ -2,7 +2,7 @@
 
 client_id = "73dc4d0aacda6538b6ca2984537733e0"
 name = "NCP Sales"
-application_url = "https://sales-system-production-e547.up.railway.app"
+application_url = "https://www.niicleanproducts.co.uk"
 embedded = true
 
 [build]
@@ -26,7 +26,7 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://sales-system-production-e547.up.railway.app/auth/callback"
+  "https://www.niicleanproducts.co.uk/auth/callback"
 ]
 
 [product.metafields.app.demo_info]
