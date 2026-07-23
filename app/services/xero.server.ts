@@ -109,10 +109,10 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
 
   const taxType = saleVatType === "CrossBorder" ? "ZERORATEDOUTPUT"
     : (saleVatType === "Exempt" || saleVatType === "CrossBorder") ? "EXEMPTOUTPUT"
-    : "OUTPUT";
+    : "OUTPUT2";
   // Always use the configured sales account code.
   // Per Xero API docs, taxType on a line item explicitly overrides the account's default
-  // tax type — so sending accountCode=205 with taxType="OUTPUT" will use 20%, not OUTPUT2.
+  // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
   const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "200";
 
   const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
@@ -149,9 +149,9 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
     // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
     // This forces Xero to respect our taxType even if account 205 has a different default.
-    // For OUTPUT (20%): net = payment / 1.2  — Xero total = net × 1.2 = original amount ✓
+    // For OUTPUT2 (20%): net = payment / 1.2  — Xero total = net × 1.2 = original amount ✓
     // For zero-rated/exempt: net = full amount (no VAT to strip out)
-    const vatMultiplier = taxType === "OUTPUT" ? 1.2 : 1.0;
+    const vatMultiplier = taxType === "OUTPUT2" ? 1.2 : 1.0;
     const netAmount = Math.round((Number(payment.amount) / vatMultiplier) * 100) / 100;
 
     try {
