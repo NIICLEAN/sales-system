@@ -1,4 +1,4 @@
-import { XeroClient } from "xero-node";
+import { XeroClient, Invoice, LineAmountTypes } from "xero-node";
 import prisma from "../db.server";
 
 const scopes = [
@@ -74,4 +74,125 @@ export async function getConnectedXeroClient() {
     xero,
     tenantId: connection.tenantId,
   };
+}
+
+/**
+ * Creates a Xero invoice for each payment on the given sale that hasn't yet
+ * been sent to Xero (xeroInvoiceId IS NULL).  Safe to call multiple times —
+ * already-sent payments are skipped.  Errors are caught and logged; this
+ * function never throws so callers can fire-and-forget.
+ */
+export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
+  let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
+  try {
+    xeroClient = await getConnectedXeroClient();
+  } catch {
+    // Xero not connected — silently skip
+    return;
+  }
+  const { xero, tenantId } = xeroClient;
+
+  const sale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    select: { id: true, customerName: true, customerEmail: true, shopifyOrderName: true, reference: true },
+  });
+  if (!sale) return;
+
+  // Load vatType via raw SQL to avoid schema-version crashes
+  let saleVatType = "Standard";
+  try {
+    const rows = await prisma.$queryRaw<Array<{ vatType: string | null }>>`
+      SELECT "vatType"::text FROM "Sale" WHERE id = ${saleId} LIMIT 1
+    `;
+    if (rows.length > 0) saleVatType = rows[0].vatType ?? "Standard";
+  } catch {}
+
+  const taxType = saleVatType === "CrossBorder" ? "ZERORATEDOUTPUT"
+    : (saleVatType === "Exempt" || saleVatType === "CrossBorder") ? "EXEMPTOUTPUT"
+    : "OUTPUT";
+  const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "200";
+
+  const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
+    .replace(/^#/, "");
+
+  // Load Payment records — try with xeroInvoiceId column, fall back without
+  type PaymentRow = { id: number; amount: number; method: string; createdAt: Date; reference: string | null; xeroInvoiceId: string | null };
+  let allPayments: PaymentRow[] = [];
+  try {
+    allPayments = await prisma.$queryRaw<PaymentRow[]>`
+      SELECT id, amount, method::text as method, "createdAt", reference, "xeroInvoiceId"
+      FROM "Payment" WHERE "saleId" = ${saleId} ORDER BY "createdAt" ASC
+    `;
+  } catch {
+    try {
+      const rows = await prisma.$queryRaw<Omit<PaymentRow, "xeroInvoiceId">[]>`
+        SELECT id, amount, method::text as method, "createdAt", reference
+        FROM "Payment" WHERE "saleId" = ${saleId} ORDER BY "createdAt" ASC
+      `;
+      allPayments = rows.map((r) => ({ ...r, xeroInvoiceId: null }));
+    } catch {}
+  }
+
+  const alreadySentCount = allPayments.filter((p) => p.xeroInvoiceId).length;
+  const unsentPayments = allPayments.filter((p) => !p.xeroInvoiceId);
+  if (unsentPayments.length === 0) return;
+
+  let lastXeroInvoiceId: string | null = null;
+
+  for (let i = 0; i < unsentPayments.length; i++) {
+    const payment = unsentPayments[i];
+    const suffix = alreadySentCount + i + 1;
+    const xeroInvoiceNumber = `${baseNumber}.${suffix}`;
+    const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
+
+    try {
+      const response = await (xero.accountingApi as any).createInvoices(tenantId, {
+        invoices: [{
+          type: Invoice.TypeEnum.ACCREC,
+          contact: {
+            name: sale.customerName || "Customer",
+            ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
+          },
+          date: dateStr,
+          dueDate: dateStr,
+          lineAmountTypes: LineAmountTypes.Inclusive,
+          lineItems: [{
+            description: `Payment ${suffix} — ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ""}`,
+            quantity: 1,
+            unitAmount: Number(payment.amount),
+            taxType,
+            accountCode,
+          }],
+          reference: baseNumber,
+          invoiceNumber: xeroInvoiceNumber,
+          status: Invoice.StatusEnum.AUTHORISED,
+        }],
+      });
+
+      const newXeroInvoiceId: string | undefined = response.body?.invoices?.[0]?.invoiceID;
+      const validationErrors = response.body?.invoices?.[0]?.validationErrors || [];
+
+      if (validationErrors.length > 0) {
+        console.warn(`Xero validation errors for ${xeroInvoiceNumber}:`, validationErrors.map((e: any) => e.message).join("; "));
+        continue;
+      }
+
+      if (newXeroInvoiceId) {
+        try {
+          await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = ${newXeroInvoiceId} WHERE id = ${payment.id}`;
+        } catch {
+          console.warn(`Could not save xeroInvoiceId for payment ${payment.id}`);
+        }
+        lastXeroInvoiceId = newXeroInvoiceId;
+      }
+    } catch (err: any) {
+      console.error(`Auto Xero push failed for ${xeroInvoiceNumber}:`, err?.response?.body?.Detail || err?.message || err);
+    }
+  }
+
+  if (lastXeroInvoiceId) {
+    try {
+      await prisma.$executeRaw`UPDATE "Sale" SET "xeroInvoiceId" = ${lastXeroInvoiceId} WHERE id = ${saleId}`;
+    } catch {}
+  }
 }

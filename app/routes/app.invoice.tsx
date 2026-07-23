@@ -21,6 +21,7 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { pushNewPaymentsToXero } from "../services/xero.server";
 import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
@@ -1232,6 +1233,10 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           reference: reference || null,
         },
       });
+      // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
+      pushNewPaymentsToXero(invoiceId).catch((err) =>
+        console.error("Auto Xero push failed (edit):", err)
+      );
     }
   } catch (err) {
     console.error("Failed to record payment:", err);
@@ -1391,6 +1396,10 @@ try {
         reference: reference || null,
       },
     });
+    // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
+    pushNewPaymentsToXero(sale.id).catch((err) =>
+      console.error("Auto Xero push failed (create):", err)
+    );
   }
 } catch (err) {
   console.error("Failed to record payment:", err);
