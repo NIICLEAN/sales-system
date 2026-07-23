@@ -498,11 +498,20 @@ export async function action({ request }: ActionFunctionArgs) {
             ]);
 
             const keptTags = existingTags.filter((tag: string) => !tagsToRemove.has(tag.toLowerCase()));
-            const syncTags = [
+            const rawSyncTags = [
               ...keptTags,
               nextShippingMethod.toLowerCase(),
               nextDeliveryStatus.toLowerCase().replace(/\s+/g, "-"),
             ];
+            // Sanitize: Shopify rejects tags that are empty, contain commas,
+            // or exceed 40 characters — dedupe to avoid unnecessary rejects too.
+            const syncTags = Array.from(
+              new Set(
+                rawSyncTags
+                  .map((tag) => String(tag || "").replace(/,/g, "").trim().slice(0, 40))
+                  .filter(Boolean),
+              ),
+            );
 
             const updateOrderResponse = await admin.graphql(
               `
@@ -533,7 +542,7 @@ export async function action({ request }: ActionFunctionArgs) {
             const updateErrors = updateOrderJson?.data?.orderUpdate?.userErrors || [];
             if (updateErrors.length > 0) {
               shopifySyncFailed = true;
-              console.error("Failed syncing shipping to Shopify order:", updateErrors);
+              console.error("Failed syncing shipping to Shopify order:", updateErrors, "tags sent:", syncTags);
             }
           }
         } catch (shopifyError) {
