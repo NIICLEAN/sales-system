@@ -1,21 +1,14 @@
 import { useLoaderData } from "react-router";
 
-import { authenticate } from "../shopify.server";
 import { getXeroClient } from "../services/xero.server";
 
-export async function loader({ request }: { request: Request }) {
+export async function loader() {
   try {
-    await authenticate.admin(request);
-
     const xero = getXeroClient();
     const consentUrl = await xero.buildConsentUrl();
 
     return { consentUrl, error: null };
   } catch (error) {
-    if (error instanceof Response) {
-      throw error;
-    }
-
     console.error("Failed to build Xero consent URL:", error);
 
     const missing = [
