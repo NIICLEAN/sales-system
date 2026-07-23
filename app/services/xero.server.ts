@@ -110,7 +110,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   // Always use the configured sales account code.
   // Per Xero API docs, taxType on a line item explicitly overrides the account's default
   // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
-  const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "200";
+  const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
   const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
     .replace(/^#/, "");
