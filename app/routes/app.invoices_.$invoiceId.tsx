@@ -305,6 +305,12 @@ export async function action({ request, params }: { request: Request; params: { 
       const suffix = alreadySentCount + i + 1;
       const xeroInvoiceNumber = `${baseNumber}.${suffix}`;
       const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
+      // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
+      // This forces Xero to respect our taxType even if account 205 has a different default.
+      // For OUTPUT (20%): net = payment / 1.2  — Xero total = net × 1.2 = original amount ✓
+      // For zero-rated/exempt: net = full amount (no VAT to strip out)
+      const vatMultiplier = taxType === "OUTPUT" ? 1.2 : 1.0;
+      const netAmount = Math.round((Number(payment.amount) / vatMultiplier) * 100) / 100;
 
       try {
         const response = await (xero.accountingApi as any).createInvoices(tenantId, {
@@ -316,12 +322,11 @@ export async function action({ request, params }: { request: Request; params: { 
             },
             date: dateStr,
             dueDate: dateStr,
-            // INCLUSIVE so the amount we provide is the exact total collected (VAT included)
-            lineAmountTypes: LineAmountTypes.Inclusive,
+            lineAmountTypes: LineAmountTypes.Exclusive,
             lineItems: [{
               description: `Payment ${suffix} — ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ""}`,
               quantity: 1,
-              unitAmount: Number(payment.amount),
+              unitAmount: netAmount,
               taxType,
               accountCode,
             }],
