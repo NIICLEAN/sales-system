@@ -385,7 +385,7 @@ async function autoFulfillCollectionOrder({ admin, orderId }: { admin: any; orde
       {
         variables: {
           fulfillment: {
-            notifyCustomer: false,
+            notifyCustomer: true,
             lineItemsByFulfillmentOrder: fulfillmentOrders.map((node: any) => ({
               fulfillmentOrderId: node.id,
             })),
