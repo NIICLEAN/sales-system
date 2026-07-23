@@ -258,12 +258,10 @@ export async function action({ request, params }: { request: Request; params: { 
     const taxType = saleVatType === "CrossBorder" ? "ZERORATEDOUTPUT"
       : isVatExempt ? "EXEMPTOUTPUT"
       : "OUTPUT";
-    // Account 205 has "Zero Rated EC Goods Income" (OUTPUT2) locked at the account level.
-    // For standard-rated sales: omit accountCode → Xero uses default account 200 (OUTPUT 20%).
-    // For zero-rated/exempt: use the configured account code (205 is correct).
-    const lineAccountCode = taxType === "OUTPUT"
-      ? undefined
-      : (process.env.XERO_SALES_ACCOUNT_CODE || undefined);
+    // Always use the configured sales account code.
+    // Per Xero API docs, taxType on a line item explicitly overrides the account's default
+    // tax type — so sending accountCode=205 with taxType="OUTPUT" will use 20%, not OUTPUT2.
+    const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "200";
 
     // Base number for Xero invoice numbering: strip leading # from NCP/Shopify name
     const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
@@ -333,7 +331,7 @@ export async function action({ request, params }: { request: Request; params: { 
               quantity: 1,
               unitAmount: netAmount,
               taxType,
-              ...(lineAccountCode ? { accountCode: lineAccountCode } : {}),
+              accountCode,
             }],
             reference: baseNumber,
             invoiceNumber: xeroInvoiceNumber,
