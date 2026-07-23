@@ -138,6 +138,61 @@ export async function loader({ request }: { request: Request }) {
       paymentTotals[method].total += Number(sale.total ?? 0);
     }
 
+    // Load individual payment records for the accurate per-method EOD breakdown
+    type PaymentRecord = {
+      id: number;
+      amount: number;
+      method: string;
+      provider: string | null;
+      reference: string | null;
+      createdAt: Date;
+      saleId: number;
+      shopifyOrderName: string | null;
+      customerName: string | null;
+    };
+    let payments: PaymentRecord[] = [];
+    try {
+      const rawPayments = await prisma.payment.findMany({
+        where: {
+          ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          amount: true,
+          method: true,
+          provider: true,
+          reference: true,
+          createdAt: true,
+          sale: {
+            select: { id: true, shopifyOrderName: true, customerName: true },
+          },
+        },
+      });
+      payments = rawPayments.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        method: String(p.method),
+        provider: p.provider ?? null,
+        reference: p.reference ?? null,
+        createdAt: p.createdAt,
+        saleId: p.sale.id,
+        shopifyOrderName: p.sale.shopifyOrderName,
+        customerName: p.sale.customerName,
+      }));
+    } catch (err) {
+      console.error("Failed to load payment records for EOD:", err);
+    }
+
+    const eodTotals: Record<string, { count: number; total: number }> = {};
+    for (const p of payments) {
+      const label = p.provider || p.method;
+      if (!eodTotals[label]) eodTotals[label] = { count: 0, total: 0 };
+      eodTotals[label].count += 1;
+      eodTotals[label].total += p.amount;
+    }
+    const grandTotalTakings = payments.reduce((s, p) => s + p.amount, 0);
+
     return {
       staff,
       selectedStaffId: staffId,
@@ -145,6 +200,9 @@ export async function loader({ request }: { request: Request }) {
       selectedFromDate: fromDate,
       selectedToDate: toDate,
       sales,
+      payments,
+      eodTotals: Object.entries(eodTotals),
+      grandTotalTakings,
       summary: {
         count: sales.length,
         totalSales,
@@ -172,6 +230,9 @@ export async function loader({ request }: { request: Request }) {
         averageSale: 0,
       },
       paymentTotals: [],
+      payments: [],
+      eodTotals: [],
+      grandTotalTakings: 0,
       error: "Reports could not be loaded right now.",
     };
   }
@@ -185,6 +246,9 @@ export default function ReportsPage() {
     selectedFromDate,
     selectedToDate,
     sales,
+    payments,
+    eodTotals,
+    grandTotalTakings,
     summary,
     paymentTotals,
     error,
@@ -332,9 +396,73 @@ export default function ReportsPage() {
                   </Button>
 
                   <Button onClick={downloadCsv}>Download CSV</Button>
+
+                  <Button onClick={() => window.print()}>Print Daily Report</Button>
                 </InlineStack>
               </BlockStack>
             </Form>
+          </Card>
+        </Layout.Section>
+
+        {/* ── Daily Takings ──────────────────────────────────── */}
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h2" variant="headingLg">Daily Takings</Text>
+                <Text as="p" tone="subdued">
+                  {payments.length} payment{payments.length !== 1 ? "s" : ""} recorded
+                </Text>
+              </InlineStack>
+
+              {payments.length === 0 ? (
+                <Text as="p" tone="subdued">No payments recorded for this period.</Text>
+              ) : (
+                <>
+                  <div className="eod-totals-grid">
+                    {(eodTotals as any[]).map(([method, data]) => (
+                      <div key={method} className="eod-method-card">
+                        <div className="eod-method-label">{method}</div>
+                        <div className="eod-method-amount">{formatCurrency(data.total)}</div>
+                        <div className="eod-method-count">{data.count} payment{data.count !== 1 ? "s" : ""}</div>
+                      </div>
+                    ))}
+                    <div className="eod-method-card eod-total-card">
+                      <div className="eod-method-label">Grand Total</div>
+                      <div className="eod-method-amount">{formatCurrency(grandTotalTakings)}</div>
+                      <div className="eod-method-count">{payments.length} total</div>
+                    </div>
+                  </div>
+
+                  <IndexTable
+                    resourceName={{ singular: "payment", plural: "payments" }}
+                    itemCount={payments.length}
+                    headings={[
+                      { title: "Time" },
+                      { title: "Invoice / Order" },
+                      { title: "Customer" },
+                      { title: "Method" },
+                      { title: "Reference" },
+                      { title: "Amount" },
+                    ]}
+                    selectable={false}
+                  >
+                    {(payments as any[]).map((p, index) => (
+                      <IndexTable.Row id={String(p.id)} key={p.id} position={index}>
+                        <IndexTable.Cell>
+                          {new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>{p.shopifyOrderName || `INV-${p.saleId}`}</IndexTable.Cell>
+                        <IndexTable.Cell>{p.customerName || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell><span style={{ fontWeight: 600 }}>{p.provider || p.method}</span></IndexTable.Cell>
+                        <IndexTable.Cell>{p.reference || "-"}</IndexTable.Cell>
+                        <IndexTable.Cell><span style={{ fontWeight: 700 }}>{formatCurrency(p.amount)}</span></IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                </>
+              )}
+            </BlockStack>
           </Card>
         </Layout.Section>
 
@@ -525,6 +653,188 @@ export default function ReportsPage() {
           </Card>
         </Layout.Section>
       </Layout>
+
+      {/* ── Print: End of Day Report ───────────────────────── */}
+      <div className="eod-print-only">
+        <div className="eod-print-header">
+          <div>
+            <div className="eod-print-title">End of Day Report</div>
+            <div className="eod-print-sub">NII Clean Products</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className="eod-print-sub">
+              {selectedPeriod === "today"
+                ? new Date().toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })
+                : selectedPeriod === "custom"
+                ? `${selectedFromDate} to ${selectedToDate}`
+                : selectedPeriod}
+            </div>
+            <div className="eod-print-sub">Printed: {new Date().toLocaleString("en-GB")}</div>
+          </div>
+        </div>
+
+        <div className="eod-print-totals">
+          {(eodTotals as any[]).map(([method, data]) => (
+            <div key={method} className="eod-print-method">
+              <span className="eod-print-method-name">{method}</span>
+              <span className="eod-print-method-count">{data.count} payment{data.count !== 1 ? "s" : ""}</span>
+              <span className="eod-print-method-total">{formatCurrency(data.total)}</span>
+            </div>
+          ))}
+          <div className="eod-print-method eod-print-grand">
+            <span className="eod-print-method-name">GRAND TOTAL</span>
+            <span className="eod-print-method-count">{payments.length} payment{payments.length !== 1 ? "s" : ""}</span>
+            <span className="eod-print-method-total">{formatCurrency(grandTotalTakings)}</span>
+          </div>
+        </div>
+
+        <table className="eod-print-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Invoice</th>
+              <th>Customer</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th style={{ textAlign: "right" }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(payments as any[]).map((p) => (
+              <tr key={p.id}>
+                <td>{new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</td>
+                <td>{p.shopifyOrderName || `INV-${p.saleId}`}</td>
+                <td>{p.customerName || "-"}</td>
+                <td><strong>{p.provider || p.method}</strong></td>
+                <td>{p.reference || "-"}</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{formatCurrency(p.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="eod-print-table-total">
+              <td colSpan={5}>Total</td>
+              <td style={{ textAlign: "right" }}>{formatCurrency(grandTotalTakings)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div className="eod-print-sig">
+          <div className="eod-print-sig-line">Checked by: ________________________</div>
+          <div className="eod-print-sig-line">Date: ________________________</div>
+        </div>
+      </div>
+
+      <style>{`
+        .eod-totals-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          gap: 12px;
+        }
+        .eod-method-card {
+          background: #f6f6f7;
+          border-radius: 12px;
+          padding: 14px 18px;
+        }
+        .eod-total-card {
+          background: #202223;
+          color: #fff;
+        }
+        .eod-method-label { font-size: 13px; font-weight: 600; color: #6d7175; margin-bottom: 4px; }
+        .eod-total-card .eod-method-label { color: #aaa; }
+        .eod-method-amount { font-size: 22px; font-weight: 800; color: #202223; }
+        .eod-total-card .eod-method-amount { color: #fff; }
+        .eod-method-count { font-size: 12px; color: #6d7175; margin-top: 2px; }
+        .eod-total-card .eod-method-count { color: #aaa; }
+        .eod-print-only { display: none; }
+
+        @media print {
+          @page { size: A4 portrait; margin: 12mm; }
+          body * { visibility: hidden; }
+          .eod-print-only, .eod-print-only * { visibility: visible; }
+          .eod-print-only {
+            display: block !important;
+            position: absolute;
+            inset: 0;
+            background: white;
+            font-family: Arial, sans-serif;
+            color: #111;
+            padding: 0;
+          }
+          .eod-print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #111;
+            padding-bottom: 10px;
+            margin-bottom: 16px;
+          }
+          .eod-print-title { font-size: 26px; font-weight: 900; }
+          .eod-print-sub { font-size: 13px; margin-top: 4px; color: #444; }
+          .eod-print-totals {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 20px;
+            border: 2px solid #222;
+            border-radius: 8px;
+            overflow: hidden;
+          }
+          .eod-print-method {
+            display: flex;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid #ddd;
+            font-size: 14px;
+          }
+          .eod-print-method:last-child { border-bottom: none; }
+          .eod-print-grand {
+            background: #111;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+          }
+          .eod-print-method-name { flex: 1; font-weight: 700; }
+          .eod-print-method-count { width: 120px; color: #666; font-size: 12px; }
+          .eod-print-grand .eod-print-method-count { color: #bbb; }
+          .eod-print-method-total { width: 100px; text-align: right; font-weight: 800; font-size: 16px; }
+          .eod-print-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 24px;
+          }
+          .eod-print-table th {
+            background: #f0f0f0;
+            border-bottom: 2px solid #999;
+            padding: 7px 10px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+          }
+          .eod-print-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid #e0e0e0;
+          }
+          .eod-print-table-total td {
+            border-top: 2px solid #222;
+            border-bottom: none;
+            font-weight: 800;
+            font-size: 14px;
+            padding-top: 10px;
+          }
+          .eod-print-sig {
+            display: flex;
+            gap: 60px;
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid #bbb;
+          }
+          .eod-print-sig-line { font-size: 13px; color: #555; }
+        }
+      `}</style>
     </Page>
   );
 }
