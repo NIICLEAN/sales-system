@@ -239,6 +239,7 @@ export async function action({ request, params }: { request: Request; params: { 
         shopifyOrderName: true,
         reference: true,
         createdAt: true,
+        amountPaid: true,
         lineItems: {
           orderBy: { id: "asc" as const },
           select: {
@@ -270,8 +271,53 @@ export async function action({ request, params }: { request: Request; params: { 
       // Columns not yet available — use defaults
     }
 
-    // If already in Xero, VOID the old invoice so we can send an updated one
+    // Load individual payment records so we can apply them to the Xero invoice
+    let paymentsToApply: Array<{ amount: number; date: string; reference: string }> = [];
+    try {
+      const paymentRecords = await prisma.payment.findMany({
+        where: { saleId: invoiceId },
+        orderBy: { createdAt: "asc" },
+        select: { amount: true, method: true, createdAt: true, reference: true },
+      });
+      if (paymentRecords.length > 0) {
+        paymentsToApply = paymentRecords.map((p) => ({
+          amount: Number(p.amount),
+          date: new Date(p.createdAt).toISOString().split("T")[0],
+          reference: [String(p.method), p.reference].filter(Boolean).join(" — "),
+        }));
+      } else if (Number(sale.amountPaid) > 0) {
+        // Fall back to amountPaid total if no individual records exist
+        paymentsToApply = [{
+          amount: Number(sale.amountPaid),
+          date: new Date().toISOString().split("T")[0],
+          reference: "Payment",
+        }];
+      }
+    } catch {
+      if (Number(sale.amountPaid) > 0) {
+        paymentsToApply = [{
+          amount: Number(sale.amountPaid),
+          date: new Date().toISOString().split("T")[0],
+          reference: "Payment",
+        }];
+      }
+    }
+
+    // If already in Xero, clear its payments then VOID so we can resend
     if (existingXeroInvoiceId) {
+      // Paid/partial invoices can't be voided — delete their Xero payments first
+      try {
+        const existingResp = await (xero.accountingApi as any).getInvoice(tenantId, existingXeroInvoiceId);
+        const existingXeroPayments = existingResp.body?.invoices?.[0]?.payments || [];
+        for (const xp of existingXeroPayments) {
+          if (xp.paymentID) {
+            try {
+              await (xero.accountingApi as any).deletePayment(tenantId, xp.paymentID, { status: "DELETED" });
+            } catch { /* Skip reconciled payments */ }
+          }
+        }
+      } catch { /* Couldn't read existing invoice — proceed to void anyway */ }
+
       try {
         await (xero.accountingApi as any).updateInvoice(tenantId, existingXeroInvoiceId, {
           invoices: [{ invoiceID: existingXeroInvoiceId, status: Invoice.StatusEnum.VOIDED }],
@@ -331,7 +377,29 @@ export async function action({ request, params }: { request: Request; params: { 
         } catch {
           // xeroInvoiceId column not yet migrated — skip saving
         }
-        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent("Sent to Xero: INV-" + invoiceId)}`));
+
+        // Apply each recorded payment to the Xero invoice
+        const bankAccountCode = process.env.XERO_BANK_ACCOUNT_CODE;
+        let paymentsApplied = 0;
+        if (paymentsToApply.length > 0 && bankAccountCode) {
+          for (const payment of paymentsToApply) {
+            try {
+              await (xero.accountingApi as any).createPayment(tenantId, {
+                invoice: { invoiceID: newXeroInvoiceId },
+                account: { code: bankAccountCode },
+                date: payment.date,
+                amount: payment.amount,
+                ...(payment.reference ? { reference: payment.reference } : {}),
+              });
+              paymentsApplied++;
+            } catch (payErr: any) {
+              console.warn("Could not apply payment to Xero invoice:", payErr?.message);
+            }
+          }
+        }
+
+        const paymentNote = paymentsApplied > 0 ? ` + ${paymentsApplied} payment(s) applied` : "";
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent("Sent to Xero: INV-" + invoiceId + paymentNote)}`));
       }
 
       const xeroErrors = response.body?.invoices?.[0]?.validationErrors?.map((e: any) => e.message).join("; ") || "Unknown Xero error";
