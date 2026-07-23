@@ -1122,7 +1122,8 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           input: {
             id: existingSale.shopifyOrderId,
             email: customerEmail || undefined,
-            phone: customerPhone || undefined,
+            // Note: `phone` is not a valid top-level field on OrderInput —
+            // it only exists within shippingAddress/billingAddress below.
             note: reference || undefined,
             tags,
             customAttributes,
