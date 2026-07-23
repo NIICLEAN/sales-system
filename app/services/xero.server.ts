@@ -8,7 +8,6 @@ const scopes = [
   "offline_access",
   "accounting.contacts",
   "accounting.transactions",
-  "accounting.settings",
 ];
 
 export function getXeroClient() {
