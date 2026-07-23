@@ -369,8 +369,8 @@ async function autoFulfillCollectionOrder({ admin, orderId }: { admin: any; orde
 
     const fulfillmentResponse = await admin.graphql(
       `
-        mutation CreateCollectionFulfillment($fulfillment: FulfillmentV2Input!) {
-          fulfillmentCreateV2(fulfillment: $fulfillment) {
+        mutation CreateCollectionFulfillment($fulfillment: FulfillmentInput!) {
+          fulfillmentCreate(fulfillment: $fulfillment) {
             fulfillment {
               id
               status
@@ -395,7 +395,7 @@ async function autoFulfillCollectionOrder({ admin, orderId }: { admin: any; orde
     );
 
     const fulfillmentJson = (await fulfillmentResponse.json()) as any;
-    const userErrors = fulfillmentJson?.data?.fulfillmentCreateV2?.userErrors || [];
+    const userErrors = fulfillmentJson?.data?.fulfillmentCreate?.userErrors || [];
     if (userErrors.length) {
       console.error("Auto-fulfilment userErrors:", userErrors);
     }
