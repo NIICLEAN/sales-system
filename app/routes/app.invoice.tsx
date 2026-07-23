@@ -1,5 +1,6 @@
-import { Form, useLoaderData, redirect } from "react-router";
-import { useMemo, useRef, useState } from "react";
+import { Form, useLoaderData, useNavigation, redirect } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Page,
   Layout,
@@ -1455,10 +1456,30 @@ const [isSubmitting, setIsSubmitting] = useState(false);
 const [submissionKey] = useState(
   () => `inv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
 );
+const shopify = useAppBridge();
+const navigation = useNavigation();
 
-function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
+// Reset submitting state if navigation returns to idle without navigating away
+useEffect(() => {
+  if (navigation.state === "idle") {
+    setIsSubmitting(false);
+  }
+}, [navigation.state]);
+
+async function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
   if (isSubmitting) return;
+  setShowPrintOptions(false);
   setIsSubmitting(true);
+  // Refresh session token to avoid 202 "stale token" rejection on long-form fills
+  try {
+    const freshToken = await shopify.idToken();
+    const idTokenInput = formRef.current?.querySelector<HTMLInputElement>('input[name="id_token"]');
+    if (idTokenInput && freshToken) {
+      idTokenInput.value = freshToken;
+    }
+  } catch {
+    // Continue with existing token if refresh fails
+  }
   if (printModeRef.current) {
     printModeRef.current.value = mode;
   }
