@@ -12,7 +12,7 @@ export async function loader({ request }: { request: Request }) {
     const xero = getXeroClient();
     const tokenSet = await xero.apiCallback(request.url);
     xero.setTokenSet(tokenSet);
-    await xero.updateTenants();
+    await xero.updateTenants(false);
 
     const tenantId = xero.tenants?.[0]?.tenantId;
     if (!tenantId) {
