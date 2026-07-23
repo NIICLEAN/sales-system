@@ -157,7 +157,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
         invoices: [{
           type: Invoice.TypeEnum.ACCREC,
           contact: {
-            name: sale.customerName || "Customer",
+            name: `Shopify - ${sale.customerName || "Customer"}`,
             ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
           },
           date: dateStr,
