@@ -860,9 +860,8 @@ const redirectWithEmbedded = (path: string) =>
       }
     }
 
-    if (!shopifyCustomerId) {
-      const [firstName, ...rest] = customerName.split(" ");
-      const lastName = rest.join(" ");
+    if (!shopifyCustomerId && !isEditMode) {
+      const [firstName, ...rest] = customerName.split(" ");      const lastName = rest.join(" ");
 
       const createCustomerResponse = await admin.graphql(
         `
