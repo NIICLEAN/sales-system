@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 
 // Create the transport fresh each time so it always picks up the current
 // env vars (avoids stale module-level state if vars change between deploys).
@@ -15,13 +16,16 @@ function createTransport() {
       ].filter(Boolean).join(", ")}`
     );
   }
-  return nodemailer.createTransport({
+  const options: SMTPTransport.Options & { family?: number } = {
     host,
     port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
     secure: false,
     requireTLS: true, // force STARTTLS — required by Microsoft 365
+    family: 4, // force IPv4 — Railway containers often lack outbound IPv6 egress,
+               // which causes ENETUNREACH when DNS returns an IPv6 address for smtp.office365.com
     auth: { user, pass },
-  });
+  };
+  return nodemailer.createTransport(options);
 }
 
 export async function sendInvoiceEmail({

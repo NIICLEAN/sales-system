@@ -315,6 +315,8 @@ export async function action({ request, params }: { request: Request; params: { 
       const vatMultiplier = taxType === "OUTPUT2" ? 1.2 : 1.0;
       const netAmount = Math.round((Number(payment.amount) / vatMultiplier) * 100) / 100;
 
+      console.log(`[Xero sendToXero] invoice=${invoiceId} payment=${payment.id} saleVatType=${saleVatType} taxType=${taxType} accountCode=${accountCode} grossAmount=${payment.amount} netAmount=${netAmount} lineAmountTypes=Exclusive`);
+
       try {
         const response = await (xero.accountingApi as any).createInvoices(tenantId, {
           invoices: [{
@@ -341,6 +343,9 @@ export async function action({ request, params }: { request: Request; params: { 
 
         const validationErrors = response.body?.invoices?.[0]?.validationErrors || [];
         const newXeroInvoiceId: string | undefined = response.body?.invoices?.[0]?.invoiceID;
+        const returnedLineItem = response.body?.invoices?.[0]?.lineItems?.[0];
+
+        console.log(`[Xero sendToXero] response for ${xeroInvoiceNumber}: invoiceID=${newXeroInvoiceId} returnedTaxType=${returnedLineItem?.taxType} returnedTaxAmount=${returnedLineItem?.taxAmount} returnedAccountCode=${returnedLineItem?.accountCode} lineAmountTypes=${response.body?.invoices?.[0]?.lineAmountTypes}`);
 
         if (validationErrors.length > 0) {
           xeroErrors.push(`${xeroInvoiceNumber}: ${validationErrors.map((e: any) => e.message).join("; ")}`);
