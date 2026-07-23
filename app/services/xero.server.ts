@@ -3,8 +3,6 @@ import prisma from "../db.server";
 
 const scopes = [
   "openid",
-  "profile",
-  "email",
   "offline_access",
   "accounting.contacts",
   "accounting.invoices",
