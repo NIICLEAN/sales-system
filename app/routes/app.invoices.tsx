@@ -1719,7 +1719,7 @@ export default function InvoicesPage() {
                         </Form>
 
                         {!xeroConnected ? (
-                          <Button onClick={() => navigate(withEmbeddedParams("/app/xero/connect"))}>Connect Xero</Button>
+                          <Button onClick={() => window.open("/xero/connect", "_blank")}>Connect Xero</Button>
                         ) : null}
                       </>
                     ) : null}
@@ -1869,7 +1869,7 @@ export default function InvoicesPage() {
               <Banner tone="warning">
                 Xero is not connected yet. Connect Xero first, then run Sync Xero.
                 <div style={{ marginTop: 8 }}>
-                  <Button onClick={() => navigate(withEmbeddedParams("/app/xero/connect"))}>Open Xero connect</Button>
+                  <Button onClick={() => window.open("/xero/connect", "_blank")}>Open Xero connect</Button>
                 </div>
               </Banner>
             ) : null}
