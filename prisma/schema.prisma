@@ -156,6 +156,8 @@ model Payment {
   reference String?
   notes    String?
 
+  xeroInvoiceId String?   // Xero invoice ID for the per-payment invoice (e.g. NCP157.1)
+
   createdAt DateTime @default(now())
 }
 
