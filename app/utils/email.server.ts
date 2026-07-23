@@ -1,14 +1,28 @@
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.OUTLOOK_SMTP_HOST,
-  port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
-  secure: false,
-  auth: {
-    user: process.env.OUTLOOK_EMAIL,
-    pass: process.env.OUTLOOK_PASSWORD,
-  },
-});
+// Create the transport fresh each time so it always picks up the current
+// env vars (avoids stale module-level state if vars change between deploys).
+function createTransport() {
+  const host = process.env.OUTLOOK_SMTP_HOST;
+  const user = process.env.OUTLOOK_EMAIL;
+  const pass = process.env.OUTLOOK_PASSWORD;
+  if (!host || !user || !pass) {
+    throw new Error(
+      `SMTP not configured. Missing: ${[
+        !host && "OUTLOOK_SMTP_HOST",
+        !user && "OUTLOOK_EMAIL",
+        !pass && "OUTLOOK_PASSWORD",
+      ].filter(Boolean).join(", ")}`
+    );
+  }
+  return nodemailer.createTransport({
+    host,
+    port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
+    secure: false,
+    requireTLS: true, // force STARTTLS — required by Microsoft 365
+    auth: { user, pass },
+  });
+}
 
 export async function sendInvoiceEmail({
   to,
@@ -25,6 +39,7 @@ export async function sendInvoiceEmail({
 }) {
   if (!to) return;
 
+  const transporter = createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
@@ -174,6 +189,7 @@ export async function sendQuoteEmail({
 }) {
   if (!to) return;
 
+  const transporter = createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
