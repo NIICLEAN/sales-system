@@ -1466,23 +1466,39 @@ useEffect(() => {
   }
 }, [navigation.state]);
 
-async function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
-  if (isSubmitting) return;
-  setShowPrintOptions(false);
-  setIsSubmitting(true);
-  // Refresh session token to avoid 202 "stale token" rejection on long-form fills
+async function refreshTokenAndSubmit() {
   try {
     const freshToken = await shopify.idToken();
-    const idTokenInput = formRef.current?.querySelector<HTMLInputElement>('input[name="id_token"]');
-    if (idTokenInput && freshToken) {
-      idTokenInput.value = freshToken;
+    if (freshToken && formRef.current) {
+      // Shopify's middleware reads id_token from the URL, not the POST body.
+      // Update the form action URL so the fetch goes to ...&id_token=FRESH_TOKEN.
+      const actionUrl = new URL(formRef.current.action);
+      actionUrl.searchParams.set("id_token", freshToken);
+      formRef.current.setAttribute("action", actionUrl.toString());
+      // Also update the hidden body field used for building redirect URLs.
+      const idTokenInput = formRef.current.querySelector<HTMLInputElement>('input[name="id_token"]');
+      if (idTokenInput) idTokenInput.value = freshToken;
     }
   } catch {
     // Continue with existing token if refresh fails
   }
+}
+
+async function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
+  if (isSubmitting) return;
+  setShowPrintOptions(false);
+  setIsSubmitting(true);
+  await refreshTokenAndSubmit();
   if (printModeRef.current) {
     printModeRef.current.value = mode;
   }
+  formRef.current?.requestSubmit();
+}
+
+async function handleSaveChanges() {
+  if (isSubmitting) return;
+  setIsSubmitting(true);
+  await refreshTokenAndSubmit();
   formRef.current?.requestSubmit();
 }
 
@@ -2744,7 +2760,7 @@ const [showAddress, setShowAddress] = useState(
                     )}
 
                     {isEditMode ? (
-                      <Button submit variant="primary" fullWidth disabled={deliveryRequiresService || isSubmitting}>
+                      <Button variant="primary" fullWidth disabled={deliveryRequiresService || isSubmitting} onClick={handleSaveChanges}>
                         Save Changes
                       </Button>
                     ) : (

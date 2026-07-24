@@ -261,11 +261,10 @@ export async function action({ request, params }: { request: Request; params: { 
     // Always use the configured sales account code.
     // Per Xero API docs, taxType on a line item explicitly overrides the account's default
     // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
-    const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "200";
+    const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
-    // Base number for Xero invoice numbering: strip leading # from NCP/Shopify name
-    const baseNumber = (sale.shopifyOrderName || sale.reference || `INV-${sale.id}`)
-      .replace(/^#/, "");
+    // Base number for Xero invoice numbering
+    const baseNumber = `INV-${sale.id}`;
 
     // Load Payment records via raw SQL — try with xeroInvoiceId, fall back without
     type PaymentRow = { id: number; amount: number; method: string; createdAt: Date; reference: string | null; xeroInvoiceId: string | null };
@@ -322,7 +321,7 @@ export async function action({ request, params }: { request: Request; params: { 
           invoices: [{
             type: Invoice.TypeEnum.ACCREC,
             contact: {
-              name: sale.customerName || "Customer",
+              name: `Shopify - ${sale.customerName || "Customer"}`,
               ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
             },
             date: dateStr,
