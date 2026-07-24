@@ -508,7 +508,13 @@ export async function action({ request }: ActionFunctionArgs) {
             const syncTags = Array.from(
               new Set(
                 rawSyncTags
-                  .map((tag) => String(tag || "").replace(/,/g, "").trim().slice(0, 40))
+                  .map((tag) =>
+                    String(tag || "")
+                      .replace(/[(),\[\]{}!@#$%^&*+=<>?\\|"~`]/g, "") // strip chars Shopify rejects
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 40)
+                  )
                   .filter(Boolean),
               ),
             );

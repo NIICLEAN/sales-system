@@ -1,9 +1,12 @@
 import nodemailer from "nodemailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport";
+import dns from "dns";
 
 // Create the transport fresh each time so it always picks up the current
 // env vars (avoids stale module-level state if vars change between deploys).
-function createTransport() {
+// Pre-resolves the SMTP hostname to an IPv4 address so Railway containers
+// (which lack IPv6 egress) don't hit ENETUNREACH when dns returns AAAA records.
+async function createTransport() {
   const host = process.env.OUTLOOK_SMTP_HOST;
   const user = process.env.OUTLOOK_EMAIL;
   const pass = process.env.OUTLOOK_PASSWORD;
@@ -16,13 +19,26 @@ function createTransport() {
       ].filter(Boolean).join(", ")}`
     );
   }
-  const options: SMTPTransport.Options & { family?: number } = {
-    host,
+  // Force IPv4: pre-resolve hostname → IPv4 address, keep original hostname
+  // in tls.servername so the TLS certificate is still validated correctly.
+  let connectHost = host;
+  try {
+    const { address } = await new Promise<{ address: string; family: number }>(
+      (resolve, reject) =>
+        dns.lookup(host, { family: 4 }, (err, address, family) =>
+          err ? reject(err) : resolve({ address, family })
+        )
+    );
+    connectHost = address;
+  } catch {
+    // Fallback to hostname if IPv4 lookup fails
+  }
+  const options: SMTPTransport.Options = {
+    host: connectHost,
     port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
     secure: false,
-    requireTLS: true, // force STARTTLS — required by Microsoft 365
-    family: 4, // force IPv4 — Railway containers often lack outbound IPv6 egress,
-               // which causes ENETUNREACH when DNS returns an IPv6 address for smtp.office365.com
+    requireTLS: true,
+    tls: { servername: host }, // SNI: validate cert against original hostname
     auth: { user, pass },
   };
   return nodemailer.createTransport(options);
@@ -43,7 +59,7 @@ export async function sendInvoiceEmail({
 }) {
   if (!to) return;
 
-  const transporter = createTransport();
+  const transporter = await createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
@@ -193,7 +209,7 @@ export async function sendQuoteEmail({
 }) {
   if (!to) return;
 
-  const transporter = createTransport();
+  const transporter = await createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
