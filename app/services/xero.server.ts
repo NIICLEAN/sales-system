@@ -126,13 +126,14 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
   const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
-  // Use the Shopify order name (e.g. NCP#1637) as the base, falling back to our internal ID
-  const baseNumber = sale.shopifyOrderName || sale.reference || `INV-${sale.id}`;
+  // Use the Shopify order name (e.g. NCP#1638) in the reference; use INV-{id} as the Xero invoice number
+  const orderRef = sale.shopifyOrderName || sale.reference || `INV-${sale.id}`;
+  const internalBase = `INV-${sale.id}`;
 
   // Build a description from the actual sale line items
   const itemsDescription = sale.lineItems.length > 0
     ? sale.lineItems.map((li) => `${li.title} x${li.quantity}`).join('\n')
-    : `Invoice ${baseNumber}`;
+    : `Invoice ${orderRef}`;
 
   // Load Payment records — try with xeroInvoiceId column, fall back without
   type PaymentRow = { id: number; amount: number; method: string; createdAt: Date; reference: string | null; xeroInvoiceId: string | null };
@@ -161,8 +162,8 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
-    const xeroInvoiceNumber = `${baseNumber}.${suffix}`;
-    const xeroReference = `${baseNumber} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
+    const xeroInvoiceNumber = `${internalBase}-${suffix}`;
+    const xeroReference = `${orderRef} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
     // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
