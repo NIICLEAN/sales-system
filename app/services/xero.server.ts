@@ -180,8 +180,9 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
         invoices: [{
           type: Invoice.TypeEnum.ACCREC,
           contact: {
-            name: `Shopify - ${sale.customerName || "Customer"}`,
-            ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
+            // Use customer name directly — Xero partial-matches 'Shopify - Name'
+            // to the existing generic 'Shopify' contact, collapsing all entries.
+            name: sale.customerName || "Customer",
           },
           date: dateStr,
           dueDate: dateStr,
