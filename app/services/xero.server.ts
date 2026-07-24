@@ -5,7 +5,6 @@ const scopes = [
   "openid",
   "offline_access",
   "accounting.contacts",
-  "accounting.invoices",
   "accounting.transactions",
   "accounting.settings",
 ];
