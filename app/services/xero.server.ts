@@ -161,8 +161,10 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
-    const xeroInvoiceNumber = `${orderRef}.${suffix}`;
-    const xeroReference = `${orderRef} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
+    // NCP#xxxx.n goes in the Reference field — Xero auto-assigns the invoice number.
+    // Specifying our own number causes 'must be unique' errors if a voided invoice
+    // previously used the same number (Xero permanently reserves voided numbers).
+    const xeroReference = `${orderRef}.${suffix} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
     // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
@@ -194,7 +196,8 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
             accountCode,
           }],
           reference: xeroReference,
-          invoiceNumber: xeroInvoiceNumber,
+          // invoiceNumber intentionally omitted — Xero auto-assigns INV-xxxx.
+          // NCP#xxxx.n is already in the reference field above.
           status: Invoice.StatusEnum.AUTHORISED,
         }],
       });
@@ -219,7 +222,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
         lastXeroInvoiceId = newXeroInvoiceId;
       }
     } catch (err: any) {
-      console.error(`Auto Xero push failed for ${xeroInvoiceNumber}:`, err?.response?.body?.Detail || err?.message || err);
+      console.error(`Auto Xero push failed for sale=${saleId} payment=${payment.id}:`, err?.response?.body?.Detail || err?.message || err);
     }
   }
 
