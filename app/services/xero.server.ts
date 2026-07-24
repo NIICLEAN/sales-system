@@ -126,9 +126,8 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
   const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
-  // Use the Shopify order name (e.g. NCP#1638) in the reference; use INV-{id} as the Xero invoice number
+  // Use the Shopify order name (e.g. NCP#1638) as the base for the Xero invoice number
   const orderRef = sale.shopifyOrderName || sale.reference || `INV-${sale.id}`;
-  const internalBase = `INV-${sale.id}`;
 
   // Build a description from the actual sale line items
   const itemsDescription = sale.lineItems.length > 0
@@ -162,7 +161,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
-    const xeroInvoiceNumber = `${internalBase}-${suffix}`;
+    const xeroInvoiceNumber = `${orderRef}.${suffix}`;
     const xeroReference = `${orderRef} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
