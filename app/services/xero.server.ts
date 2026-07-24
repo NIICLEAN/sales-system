@@ -95,7 +95,17 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
 
   const sale = await prisma.sale.findUnique({
     where: { id: saleId },
-    select: { id: true, customerName: true, customerEmail: true, shopifyOrderName: true, reference: true },
+    select: {
+      id: true,
+      customerName: true,
+      customerEmail: true,
+      shopifyOrderName: true,
+      reference: true,
+      lineItems: {
+        select: { title: true, quantity: true, unitPrice: true },
+        orderBy: { id: 'asc' },
+      },
+    },
   });
   if (!sale) return;
 
@@ -116,7 +126,13 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   // tax type — so sending accountCode=205 with taxType="OUTPUT2" uses 20% VAT on Income.
   const accountCode = process.env.XERO_SALES_ACCOUNT_CODE || "205";
 
-  const baseNumber = `INV-${sale.id}`;
+  // Use the Shopify order name (e.g. NCP#1637) as the base, falling back to our internal ID
+  const baseNumber = sale.shopifyOrderName || sale.reference || `INV-${sale.id}`;
+
+  // Build a description from the actual sale line items
+  const itemsDescription = sale.lineItems.length > 0
+    ? sale.lineItems.map((li) => `${li.title} x${li.quantity}`).join('\n')
+    : `Invoice ${baseNumber}`;
 
   // Load Payment records — try with xeroInvoiceId column, fall back without
   type PaymentRow = { id: number; amount: number; method: string; createdAt: Date; reference: string | null; xeroInvoiceId: string | null };
@@ -146,6 +162,8 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
     const xeroInvoiceNumber = `${baseNumber}.${suffix}`;
+    const xeroReference = `${baseNumber} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
+    const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
     // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
     // This forces Xero to respect our taxType even if account 205 has a different default.
@@ -168,13 +186,13 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
           dueDate: dateStr,
           lineAmountTypes: LineAmountTypes.Exclusive,
           lineItems: [{
-            description: `Payment ${suffix} — ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ""}`,
+            description: lineItemDescription,
             quantity: 1,
             unitAmount: netAmount,
             taxType,
             accountCode,
           }],
-          reference: baseNumber,
+          reference: xeroReference,
           invoiceNumber: xeroInvoiceNumber,
           status: Invoice.StatusEnum.AUTHORISED,
         }],
