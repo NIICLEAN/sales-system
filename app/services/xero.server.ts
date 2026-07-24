@@ -182,8 +182,10 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
           type: Invoice.TypeEnum.ACCREC,
           contact: {
             // Use customer name directly — Xero partial-matches 'Shopify - Name'
-            // to the existing generic 'Shopify' contact, collapsing all entries.
-            name: sale.customerName || "Customer",
+            // Include email so Xero matches to the existing "Shopify" contact.
+            // The Shopify-Xero integration then reconciles the invoice as paid.
+            name: `Shopify - ${sale.customerName || "Customer"}`,
+            ...(sale.customerEmail ? { emailAddress: sale.customerEmail } : {}),
           },
           date: dateStr,
           dueDate: dateStr,
