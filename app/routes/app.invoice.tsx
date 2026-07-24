@@ -1471,10 +1471,13 @@ async function refreshTokenAndSubmit() {
     const freshToken = await shopify.idToken();
     if (freshToken && formRef.current) {
       // Shopify's middleware reads id_token from the URL, not the POST body.
-      // Update the form action URL so the fetch goes to ...&id_token=FRESH_TOKEN.
+      // formRef.current.action (DOM property) returns an absolute URL; parse it,
+      // update id_token, then set the attribute as a ROOT-RELATIVE path (pathname+search)
+      // so React Router resolves it correctly instead of concatenating it onto the
+      // current path and producing /app/invoice/https://...
       const actionUrl = new URL(formRef.current.action);
       actionUrl.searchParams.set("id_token", freshToken);
-      formRef.current.setAttribute("action", actionUrl.toString());
+      formRef.current.setAttribute("action", actionUrl.pathname + actionUrl.search);
       // Also update the hidden body field used for building redirect URLs.
       const idTokenInput = formRef.current.querySelector<HTMLInputElement>('input[name="id_token"]');
       if (idTokenInput) idTokenInput.value = freshToken;
