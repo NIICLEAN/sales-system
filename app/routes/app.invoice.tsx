@@ -1368,23 +1368,24 @@ const sale = await createSaleCompat({
   }
 
   if (customerEmail) {
-  try {
-    const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
-    const { sendInvoiceEmail } = await import("../utils/email.server");
-
-    const pdfBuffer = await generateInvoicePdf(sale.id);
-
-await sendInvoiceEmail({
-  to: customerEmail,
-  customerName,
-  invoiceId: sale.id,
-  pdfBuffer,
-  paymentStatus,
-});
-  } catch (error) {
-    console.error("Invoice email failed:", error);
+    // Fire-and-forget: don't block the response waiting for SMTP
+    (async () => {
+      try {
+        const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+        const { sendInvoiceEmail } = await import("../utils/email.server");
+        const pdfBuffer = await generateInvoicePdf(sale.id);
+        await sendInvoiceEmail({
+          to: customerEmail,
+          customerName,
+          invoiceId: sale.id,
+          pdfBuffer,
+          paymentStatus,
+        });
+      } catch (error) {
+        console.error("Invoice email failed:", error);
+      }
+    })();
   }
-}
 
 // record payment if any amount was paid
 try {
@@ -1870,6 +1871,9 @@ const [showAddress, setShowAddress] = useState(
                     {existingInvoice?.id ? (
                       <input type="hidden" name="editInvoiceId" value={String(existingInvoice.id)} />
                     ) : null}
+                    <input type="hidden" name="shop" value={embeddedParams.shop || ""} />
+                    <input type="hidden" name="host" value={embeddedParams.host || ""} />
+                    <input type="hidden" name="embedded" value={embeddedParams.embedded || ""} />
 
                     <Button submit>Search Customer</Button>
                   </InlineStack>
@@ -1947,6 +1951,9 @@ const [showAddress, setShowAddress] = useState(
                     {existingInvoice?.id ? (
                       <input type="hidden" name="editInvoiceId" value={String(existingInvoice.id)} />
                     ) : null}
+                    <input type="hidden" name="shop" value={embeddedParams.shop || ""} />
+                    <input type="hidden" name="host" value={embeddedParams.host || ""} />
+                    <input type="hidden" name="embedded" value={embeddedParams.embedded || ""} />
 
                     <Button submit>Search Product</Button>
                   </InlineStack>
