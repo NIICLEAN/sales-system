@@ -6,7 +6,27 @@ const scopes = [
   "offline_access",
   "accounting.contacts",
   "accounting.invoices",
+  "accounting.payments",
+  "accounting.settings",
 ];
+
+// Cache bank account code so we only query Xero once per process
+let cachedPaymentAccountCode: string | null | undefined = undefined;
+
+async function getPaymentAccountCode(xero: XeroClient, tenantId: string): Promise<string | null> {
+  if (process.env.XERO_PAYMENT_ACCOUNT_CODE) return process.env.XERO_PAYMENT_ACCOUNT_CODE;
+  if (cachedPaymentAccountCode !== undefined) return cachedPaymentAccountCode;
+  try {
+    const resp = await (xero.accountingApi as any).getAccounts(tenantId, null, 'Type=="BANK"');
+    const accounts: Array<{ code?: string; name?: string }> = resp?.body?.accounts || [];
+    cachedPaymentAccountCode = accounts[0]?.code || null;
+    console.log(`[Xero] found ${accounts.length} BANK accounts, using code=${cachedPaymentAccountCode} (${accounts[0]?.name})`);
+  } catch (err: any) {
+    console.warn('[Xero] could not fetch bank accounts:', err?.message);
+    cachedPaymentAccountCode = null;
+  }
+  return cachedPaymentAccountCode;
+}
 
 export function getXeroClient() {
   return new XeroClient({
@@ -210,6 +230,24 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       }
 
       if (newXeroInvoiceId) {
+        // Post a payment so the invoice shows as PAID in Xero
+        try {
+          const paymentAccountCode = await getPaymentAccountCode(xero, tenantId);
+          if (paymentAccountCode) {
+            await (xero.accountingApi as any).createPayment(tenantId, {
+              invoice: { invoiceID: newXeroInvoiceId },
+              account: { code: paymentAccountCode },
+              amount: Number(payment.amount),
+              date: dateStr,
+            });
+            console.log(`[Xero push] payment posted for invoice ${newXeroInvoiceId} via account ${paymentAccountCode}`);
+          } else {
+            console.warn(`[Xero push] no bank account found — invoice ${newXeroInvoiceId} left as Awaiting Payment. Set XERO_PAYMENT_ACCOUNT_CODE env var to fix.`);
+          }
+        } catch (payErr: any) {
+          console.warn(`[Xero push] payment failed for invoice ${newXeroInvoiceId}:`, payErr?.response?.body?.Message || payErr?.message);
+        }
+
         try {
           await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = ${newXeroInvoiceId} WHERE id = ${payment.id}`;
         } catch {
