@@ -10,22 +10,24 @@ const scopes = [
   "accounting.settings",
 ];
 
-// Cache bank account code so we only query Xero once per process
-let cachedPaymentAccountCode: string | null | undefined = undefined;
+// Cache bank account so we only query Xero once per process
+let cachedPaymentAccount: { code?: string; accountID?: string } | null | undefined = undefined;
 
-async function getPaymentAccountCode(xero: XeroClient, tenantId: string): Promise<string | null> {
-  if (process.env.XERO_PAYMENT_ACCOUNT_CODE) return process.env.XERO_PAYMENT_ACCOUNT_CODE;
-  if (cachedPaymentAccountCode !== undefined) return cachedPaymentAccountCode;
+async function getPaymentAccount(xero: XeroClient, tenantId: string): Promise<{ code?: string; accountID?: string } | null> {
+  if (process.env.XERO_PAYMENT_ACCOUNT_CODE) return { code: process.env.XERO_PAYMENT_ACCOUNT_CODE };
+  if (process.env.XERO_PAYMENT_ACCOUNT_ID) return { accountID: process.env.XERO_PAYMENT_ACCOUNT_ID };
+  if (cachedPaymentAccount !== undefined) return cachedPaymentAccount;
   try {
     const resp = await (xero.accountingApi as any).getAccounts(tenantId, null, 'Type=="BANK"');
-    const accounts: Array<{ code?: string; name?: string }> = resp?.body?.accounts || [];
-    cachedPaymentAccountCode = accounts[0]?.code || null;
-    console.log(`[Xero] found ${accounts.length} BANK accounts, using code=${cachedPaymentAccountCode} (${accounts[0]?.name})`);
+    const accounts: Array<{ code?: string; accountID?: string; name?: string }> = resp?.body?.accounts || [];
+    const acct = accounts[0];
+    cachedPaymentAccount = acct ? { code: acct.code, accountID: acct.accountID } : null;
+    console.log(`[Xero] found ${accounts.length} BANK accounts, using ${acct?.name} (code=${acct?.code}, accountID=${acct?.accountID})`);
   } catch (err: any) {
     console.warn('[Xero] could not fetch bank accounts:', err?.message);
-    cachedPaymentAccountCode = null;
+    cachedPaymentAccount = null;
   }
-  return cachedPaymentAccountCode;
+  return cachedPaymentAccount;
 }
 
 export function getXeroClient() {
@@ -232,17 +234,17 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       if (newXeroInvoiceId) {
         // Post a payment so the invoice shows as PAID in Xero
         try {
-          const paymentAccountCode = await getPaymentAccountCode(xero, tenantId);
-          if (paymentAccountCode) {
+          const paymentAccount = await getPaymentAccount(xero, tenantId);
+          if (paymentAccount) {
             await (xero.accountingApi as any).createPayment(tenantId, {
               invoice: { invoiceID: newXeroInvoiceId },
-              account: { code: paymentAccountCode },
+              account: paymentAccount.code ? { code: paymentAccount.code } : { accountID: paymentAccount.accountID },
               amount: Number(payment.amount),
               date: dateStr,
             });
-            console.log(`[Xero push] payment posted for invoice ${newXeroInvoiceId} via account ${paymentAccountCode}`);
+            console.log(`[Xero push] payment posted for invoice ${newXeroInvoiceId} via account ${paymentAccount.code || paymentAccount.accountID}`);
           } else {
-            console.warn(`[Xero push] no bank account found — invoice ${newXeroInvoiceId} left as Awaiting Payment. Set XERO_PAYMENT_ACCOUNT_CODE env var to fix.`);
+            console.warn(`[Xero push] no bank account found — invoice ${newXeroInvoiceId} left as Awaiting Payment. Set XERO_PAYMENT_ACCOUNT_CODE or XERO_PAYMENT_ACCOUNT_ID env var to fix.`);
           }
         } catch (payErr: any) {
           console.warn(`[Xero push] payment failed for invoice ${newXeroInvoiceId}:`, payErr?.response?.body?.Message || payErr?.message);
