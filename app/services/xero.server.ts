@@ -6,6 +6,8 @@ const scopes = [
   "offline_access",
   "accounting.contacts",
   "accounting.invoices",
+  "accounting.transactions",
+  "accounting.settings",
 ];
 
 export function getXeroClient() {
@@ -75,6 +77,34 @@ export async function getConnectedXeroClient() {
     xero,
     tenantId: connection.tenantId,
   };
+}
+
+// Cache payment account codes so we only fetch them once per process lifetime
+const paymentAccountCache: Record<string, string> = {};
+
+/**
+ * Returns the Xero account code to use when posting a payment.
+ * Priority: XERO_PAYMENT_ACCOUNT_CODE env var → method-specific env var → first BANK account from Xero.
+ */
+async function getPaymentAccountCode(xero: XeroClient, tenantId: string, method: string): Promise<string | null> {
+  // Env var override per method (e.g. XERO_ACCOUNT_CASH=090, XERO_ACCOUNT_WORLDPAY=200)
+  const methodKey = `XERO_ACCOUNT_${method.toUpperCase().replace(/\s+/g, '_')}`;
+  if (process.env[methodKey]) return process.env[methodKey]!;
+  // Global default
+  if (process.env.XERO_PAYMENT_ACCOUNT_CODE) return process.env.XERO_PAYMENT_ACCOUNT_CODE;
+
+  if (paymentAccountCache['default']) return paymentAccountCache['default'];
+  try {
+    const resp = await (xero.accountingApi as any).getAccounts(tenantId, null, 'Type=="BANK"');
+    const accounts: Array<{ code?: string; name?: string }> = resp?.body?.accounts || [];
+    const code = accounts[0]?.code || null;
+    if (code) paymentAccountCache['default'] = code;
+    console.log(`[Xero] found ${accounts.length} BANK accounts, using code=${code} (${accounts[0]?.name})`);
+    return code;
+  } catch (err: any) {
+    console.warn('[Xero] could not fetch bank accounts:', err?.message);
+    return null;
+  }
 }
 
 /**
@@ -208,7 +238,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       const validationErrors = response.body?.invoices?.[0]?.validationErrors || [];
       const returnedLineItem = response.body?.invoices?.[0]?.lineItems?.[0];
 
-      console.log(`[Xero push] response for ${xeroInvoiceNumber}: invoiceID=${newXeroInvoiceId} returnedTaxType=${returnedLineItem?.taxType} returnedTaxAmount=${returnedLineItem?.taxAmount} returnedAccountCode=${returnedLineItem?.accountCode} lineAmountTypes=${response.body?.invoices?.[0]?.lineAmountTypes}`);
+      console.log(`[Xero push] response for ref=${xeroReference}: invoiceID=${newXeroInvoiceId} returnedTaxType=${returnedLineItem?.taxType} returnedTaxAmount=${returnedLineItem?.taxAmount} returnedAccountCode=${returnedLineItem?.accountCode} lineAmountTypes=${response.body?.invoices?.[0]?.lineAmountTypes}`);
 
       if (validationErrors.length > 0) {
         console.warn(`Xero validation errors for ${xeroInvoiceNumber}:`, validationErrors.map((e: any) => e.message).join("; "));
@@ -216,6 +246,25 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       }
 
       if (newXeroInvoiceId) {
+        // Record the payment immediately so the invoice shows as Paid in Xero
+        try {
+          const paymentAccountCode = await getPaymentAccountCode(xero, tenantId, String(payment.method));
+          if (paymentAccountCode) {
+            await (xero.accountingApi as any).createPayment(tenantId, {
+              invoice: { invoiceID: newXeroInvoiceId },
+              account: { code: paymentAccountCode },
+              amount: Number(payment.amount),
+              date: dateStr,
+              reference: String(payment.method),
+            });
+            console.log(`[Xero push] payment recorded for invoice ${newXeroInvoiceId} via account ${paymentAccountCode}`);
+          } else {
+            console.warn(`[Xero push] no payment account found — invoice ${newXeroInvoiceId} left as Awaiting Payment`);
+          }
+        } catch (payErr: any) {
+          console.warn(`[Xero push] payment recording failed for ${newXeroInvoiceId}:`, payErr?.response?.body?.Message || payErr?.message);
+        }
+
         try {
           await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = ${newXeroInvoiceId} WHERE id = ${payment.id}`;
         } catch {
