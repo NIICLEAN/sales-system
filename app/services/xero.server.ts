@@ -57,6 +57,10 @@ export async function getConnectedXeroClient() {
 
   const xero = getXeroClient();
 
+  // initialize() loads the OpenID discovery document and sets up the HTTP client.
+  // Must be called before refreshToken() or any API calls.
+  await xero.initialize();
+
   xero.setTokenSet(connection.tokenSet as any);
 
   if (xero.readTokenSet().expired()) {
@@ -83,8 +87,8 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
   try {
     xeroClient = await getConnectedXeroClient();
-  } catch {
-    // Xero not connected — silently skip
+  } catch (err: any) {
+    console.error(`[Xero] skipping push for sale ${saleId}: ${err?.message || err}`);
     return;
   }
   const { xero, tenantId } = xeroClient;
