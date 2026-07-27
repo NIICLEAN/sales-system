@@ -306,6 +306,25 @@ export async function action({ request, params }: { request: Request; params: { 
       const payment = unsentPayments[i];
       const suffix = alreadySentCount + i + 1;
       const xeroInvoiceNumber = `${baseNumber}.${suffix}`;
+
+      // Atomically claim this payment before calling Xero — prevents the race between
+      // the auto-push (fire-and-forget) and this manual push both seeing
+      // xeroInvoiceId IS NULL and creating duplicate invoices.
+      let claimed = 0;
+      try {
+        claimed = Number(await prisma.$executeRaw`
+          UPDATE "Payment" SET "xeroInvoiceId" = 'PENDING'
+          WHERE id = ${payment.id} AND "xeroInvoiceId" IS NULL
+        `);
+      } catch {
+        console.warn(`[Xero sendToXero] could not claim payment ${payment.id} — skipping`);
+        continue;
+      }
+      if (claimed === 0) {
+        console.log(`[Xero sendToXero] payment ${payment.id} already claimed by another process — skipping`);
+        continue;
+      }
+
       const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
       // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
       // This forces Xero to respect our taxType even if account 205 has a different default.
@@ -362,6 +381,10 @@ export async function action({ request, params }: { request: Request; params: { 
           lastXeroInvoiceId = newXeroInvoiceId;
         }
       } catch (err: any) {
+        // Clear the PENDING claim so the payment can be retried
+        try {
+          await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = NULL WHERE id = ${payment.id} AND "xeroInvoiceId" = 'PENDING'`;
+        } catch {}
         console.error(`Failed to create Xero invoice ${xeroInvoiceNumber}:`, err);
         xeroErrors.push(`${xeroInvoiceNumber}: ${err?.response?.body?.Detail || err?.message || "Unknown error"}`);
       }

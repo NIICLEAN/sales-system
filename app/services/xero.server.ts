@@ -183,9 +183,25 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
-    // NCP#xxxx.n goes in the Reference field — Xero auto-assigns the invoice number.
-    // Specifying our own number causes 'must be unique' errors if a voided invoice
-    // previously used the same number (Xero permanently reserves voided numbers).
+
+    // Atomically claim this payment before calling Xero — prevents the race between
+    // the auto-push (fire-and-forget) and the manual "Send to Xero" button both
+    // seeing xeroInvoiceId IS NULL and creating duplicate invoices.
+    let claimed = 0;
+    try {
+      claimed = Number(await prisma.$executeRaw`
+        UPDATE "Payment" SET "xeroInvoiceId" = 'PENDING'
+        WHERE id = ${payment.id} AND "xeroInvoiceId" IS NULL
+      `);
+    } catch {
+      console.warn(`[Xero push] could not claim payment ${payment.id} — skipping`);
+      continue;
+    }
+    if (claimed === 0) {
+      console.log(`[Xero push] payment ${payment.id} already claimed by another process — skipping`);
+      continue;
+    }
+
     const xeroReference = `${orderRef}.${suffix} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
@@ -214,8 +230,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
             accountCode,
           }],
           reference: xeroReference,
-          // invoiceNumber intentionally omitted — Xero auto-assigns INV-xxxx.
-          // NCP#xxxx.n is already in the reference field above.
+          invoiceNumber: `INV-${saleId}.${suffix}`,
           status: Invoice.StatusEnum.AUTHORISED,
         }],
       });
@@ -258,6 +273,10 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
         lastXeroInvoiceId = newXeroInvoiceId;
       }
     } catch (err: any) {
+      // Clear the PENDING claim so the payment can be retried
+      try {
+        await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = NULL WHERE id = ${payment.id} AND "xeroInvoiceId" = 'PENDING'`;
+      } catch {}
       console.error(`Auto Xero push failed for sale=${saleId} payment=${payment.id}:`, err?.response?.body?.Detail || err?.message || err);
     }
   }
