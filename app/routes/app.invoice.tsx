@@ -1152,16 +1152,20 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
             tags,
             customAttributes,
             shippingAddress: hasManualShippingAddress
-              ? {
-                  firstName: customerName,
-                  address1,
-                  address2,
-                  city,
-                  province: county,
-                  zip: postcode,
-                  country,
-                  phone: customerPhone || undefined,
-                }
+              ? (() => {
+                  const [firstName, ...rest] = customerName.split(" ");
+                  return {
+                    firstName: firstName || customerName,
+                    lastName: rest.join(" ") || undefined,
+                    address1,
+                    address2,
+                    city,
+                    province: county,
+                    zip: postcode,
+                    country,
+                    phone: customerPhone || undefined,
+                  };
+                })()
               : undefined,
           },
         },
@@ -1174,9 +1178,11 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       updateOrderJson.data?.orderUpdate?.userErrors || [];
 
     if (updateErrors.length > 0) {
-      throw new Response(updateErrors.map((e: any) => e.message).join(", "), {
-        status: 400,
-      });
+      console.error(
+        `[invoice edit] Shopify orderUpdate userErrors for order ${existingSale.shopifyOrderId}:`,
+        updateErrors.map((e: any) => e.message).join(", "),
+      );
+      // Don't block the local save — fall through to redirect
     }
 
     if (autoFulfillOrder) {
