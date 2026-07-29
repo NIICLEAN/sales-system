@@ -1438,7 +1438,7 @@ export default function PrintInvoicePage() {
           </Form>
         ) : null}
 
-        {xeroConfigured && !invoice.xeroInvoiceId ? (
+        {xeroConfigured && !invoice.xeroInvoiceId && String(invoice.paymentStatus || "").toLowerCase() === "paid" ? (
           <Form method="post">
             <input type="hidden" name="_intent" value="sendToXero" />
             <button type="submit" className="secondary">Send to Xero</button>

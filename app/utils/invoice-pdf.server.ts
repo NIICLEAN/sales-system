@@ -421,7 +421,20 @@ export async function generateInvoicePdf(invoiceId: number) {
       </div>
     </div>
 
-    <div class="footer">Thank you for your business.</div>
+    <div class="footer">
+      ${balanceDue > 0 ? `
+      <p style="margin:0 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Payment Information</p>
+      <p style="margin:0 0 4px;">INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING 02870348834 TO PAY OVER THE PHONE.</p>
+      <p style="margin:0 0 4px;">First time orders will need paid via bank transfer.</p>
+      <p style="margin:0 0 4px;">Registered in Northern Ireland &nbsp;|&nbsp; VAT Registration Number XI369865135</p>
+      <p style="margin:0 0 4px;">Danske Bank</p>
+      <p style="margin:0 0 4px;">Name On Account : Nii Clean Ltd</p>
+      <p style="margin:0 0 4px;">Sort Code : 95 06 79</p>
+      <p style="margin:0 0 4px;">Account Number : 40254274</p>
+      <p style="margin:0 0 4px;">IBAN : GB83 DABA 9506 7940 2542 74</p>
+      <p style="margin:0;">BIC/SWIFT : DABAGB2B</p>
+      ` : `<p style="margin:0;">Thank you for your business. &nbsp;|&nbsp; Registered in Northern Ireland &nbsp;|&nbsp; VAT No: XI369865135</p>`}
+    </div>
   </div>
 </body>
 </html>`;
