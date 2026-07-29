@@ -243,6 +243,10 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
 
       if (validationErrors.length > 0) {
         console.warn(`Xero validation errors for ref=${xeroReference}:`, validationErrors.map((e: any) => e.message).join("; "));
+        // Clear the PENDING claim so the payment can be retried later
+        try {
+          await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = NULL WHERE id = ${payment.id} AND "xeroInvoiceId" = 'PENDING'`;
+        } catch {}
         continue;
       }
 

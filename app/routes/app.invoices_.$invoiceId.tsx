@@ -622,6 +622,7 @@ export async function loader({
 
     let recordedPaymentCount = 0;
     let recordedPaymentTotal = 0;
+    let hasUnpushedPayments = false;
 
     try {
       const paymentAggregate = await prisma.payment.aggregate({
@@ -635,6 +636,19 @@ export async function loader({
     } catch (error) {
       // Keep invoice detail working on legacy databases where Payment may be unavailable.
       console.error("Failed to load payment aggregate for invoice:", error);
+    }
+
+    // Check for payments that haven't been pushed to Xero yet (NULL or stuck PENDING > 10 min)
+    try {
+      const unpushedRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*) as count FROM "Payment"
+        WHERE "saleId" = ${invoiceId}
+          AND ("xeroInvoiceId" IS NULL
+            OR ("xeroInvoiceId" = 'PENDING' AND "createdAt" < NOW() - INTERVAL '10 minutes'))
+      `;
+      hasUnpushedPayments = Number(unpushedRows[0]?.count || 0) > 0;
+    } catch {
+      // Column may not exist yet — ignore
     }
 
     const fallbackAmountPaid = Number(sale.amountPaid || 0);
@@ -661,6 +675,7 @@ export async function loader({
       invoiceDiscountValue: discountMeta.discountValue ?? 0,
       invoiceDiscountAmount: discountMeta.discountAmount ?? 0,
       paymentSummary,
+      hasUnpushedPayments,
       lineItems,
     };
 
@@ -1438,14 +1453,14 @@ export default function PrintInvoicePage() {
           </Form>
         ) : null}
 
-        {xeroConfigured && !invoice.xeroInvoiceId && String(invoice.paymentStatus || "").toLowerCase() === "paid" ? (
+        {xeroConfigured && String(invoice.paymentStatus || "").toLowerCase() === "paid" && (invoice.hasUnpushedPayments || !invoice.xeroInvoiceId) ? (
           <Form method="post">
             <input type="hidden" name="_intent" value="sendToXero" />
             <button type="submit" className="secondary">Send to Xero</button>
           </Form>
         ) : null}
 
-        {xeroConfigured && invoice.xeroInvoiceId ? (
+        {xeroConfigured && invoice.xeroInvoiceId && !invoice.hasUnpushedPayments ? (
           <span className="secondary" style={{ padding: "6px 12px", border: "1px solid #ccc", borderRadius: 4, fontSize: 14, color: "#555" }}>
             ✓ In Xero
           </span>
