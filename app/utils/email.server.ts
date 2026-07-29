@@ -116,42 +116,19 @@ html: `
           Payment Information
         </h3>
 
-        <p style="margin:0 0 16px; color:#444; line-height:1.7;">
-          Invoices can be paid via bank transfer or by calling
-          <strong>02870348834</strong> to pay over the phone.
+        <p style="margin:0 0 8px; color:#444; line-height:1.7;">
+          To arrange payment please contact us:
         </p>
 
-        <table style="width:100%; font-size:14px; border-collapse:collapse;">
-          <tr>
-            <td style="padding:6px 0;"><strong>Bank</strong></td>
-            <td>Danske Bank</td>
-          </tr>
+        <p style="margin:0; color:#444; line-height:1.7;">
+          <strong>Phone:</strong> 02870348834<br />
+          <strong>Email:</strong> Reply to this email
+        </p>
 
-          <tr>
-            <td style="padding:6px 0;"><strong>Account Name</strong></td>
-            <td>NII Clean Ltd</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>Sort Code</strong></td>
-            <td>95-06-79</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>Account Number</strong></td>
-            <td>40254274</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>IBAN</strong></td>
-            <td>GB83 DABA 9506 7940 2542 74</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>BIC / SWIFT</strong></td>
-            <td>DABAGB2B</td>
-          </tr>
-        </table>
+        <p style="margin:12px 0 0; color:#444; line-height:1.7;">
+          We accept payment by bank transfer, card over the phone, or in person.
+          Bank details are available on request.
+        </p>
       </div>
       `
           : `
