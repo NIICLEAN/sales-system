@@ -1231,16 +1231,18 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
 
   try {
     if (paymentDelta > 0) {
-      await prisma.payment.create({
+      const editPayment = await prisma.payment.create({
         data: {
           saleId: invoiceId,
           amount: paymentDelta,
           method: normalizePaymentMethod(paymentMethod),
           provider: paymentMethod,
           reference: reference || null,
-          paidAt: paymentDateInput ? new Date(paymentDateInput) : undefined,
         },
       });
+      if (paymentDateInput) {
+        await prisma.$executeRaw`UPDATE "Payment" SET "paidAt" = ${new Date(paymentDateInput)}::timestamp WHERE id = ${editPayment.id}`.catch(() => {});
+      }
       // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
       pushNewPaymentsToXero(invoiceId).catch((err) =>
         console.error("Auto Xero push failed (edit):", err)
@@ -1396,16 +1398,18 @@ const sale = await createSaleCompat({
 // record payment if any amount was paid
 try {
   if (amountPaid > 0) {
-    await prisma.payment.create({
+    const createPayment = await prisma.payment.create({
       data: {
         saleId: sale.id,
         amount: amountPaid,
         method: normalizePaymentMethod(paymentMethod),
         provider: paymentMethod,
         reference: reference || null,
-        paidAt: paymentDateInput ? new Date(paymentDateInput) : undefined,
       },
     });
+    if (paymentDateInput) {
+      await prisma.$executeRaw`UPDATE "Payment" SET "paidAt" = ${new Date(paymentDateInput)}::timestamp WHERE id = ${createPayment.id}`.catch(() => {});
+    }
     // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
     pushNewPaymentsToXero(sale.id).catch((err) =>
       console.error("Auto Xero push failed (create):", err)
