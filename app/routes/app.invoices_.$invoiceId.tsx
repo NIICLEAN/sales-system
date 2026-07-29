@@ -1370,6 +1370,7 @@ export default function PrintInvoicePage() {
           }
 
           .single-sheet-print .footer {
+            display: block;
             margin-top: 14px;
             padding-top: 8px;
             font-size: 11px;
@@ -1688,7 +1689,21 @@ export default function PrintInvoicePage() {
         </div>
       </div>
 
-      <div className="footer">Thank you for your business.</div>
+      <div className="footer">
+        {balanceDue > 0 ? (
+          <>
+            <p style={{fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",margin:"0 0 4px"}}>Payment Information</p>
+            <p style={{margin:"0 0 3px"}}>INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING 02870348834 TO PAY OVER THE PHONE.</p>
+            <p style={{margin:"0 0 3px"}}>First time orders will need paid via bank transfer.</p>
+            <p style={{margin:"0 0 6px"}}>Registered in Northern Ireland | VAT Registration Number XI369865135</p>
+            <p style={{margin:"0 0 2px",fontWeight:600}}>Danske Bank</p>
+            <p style={{margin:"0 0 2px"}}>Name On Account: Nii Clean Ltd &nbsp;|&nbsp; Sort Code: 95 06 79 &nbsp;|&nbsp; Account Number: 40254274</p>
+            <p style={{margin:"0 0 2px"}}>IBAN: GB83 DABA 9506 7940 2542 74 &nbsp;|&nbsp; BIC/SWIFT: DABAGB2B</p>
+          </>
+        ) : (
+          <p style={{margin:0}}>Thank you for your business. | Registered in Northern Ireland | VAT No: XI369865135</p>
+        )}
+      </div>
       </div>
       ) : null}
 
