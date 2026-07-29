@@ -158,6 +158,7 @@ model Payment {
 
   xeroInvoiceId String?   // Xero invoice ID for the per-payment invoice (e.g. NCP157.1)
 
+  paidAt    DateTime?  // transaction date/time set by user at time of recording payment
   createdAt DateTime @default(now())
 }
 

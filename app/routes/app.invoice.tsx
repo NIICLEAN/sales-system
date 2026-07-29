@@ -652,6 +652,9 @@ const manualTotalInput = roundMoney(
 );
 const shippingMethod = String(formData.get("shippingMethod") || "Collection") === "Delivery" ? "Delivery" : "Collection";
 const shippingServiceValue = String(formData.get("shippingService") || "").trim();
+const customShippingLabelInput = String(formData.get("customShippingLabel") || "Custom Delivery").trim();
+const customShippingPriceInput = roundMoney(Math.max(0, Number(String(formData.get("customShippingPrice") || "0").replace(/,/g, ""))));
+const paymentDateInput = String(formData.get("paymentDate") || "").trim();
 const trackingNumber = String(formData.get("trackingNumber") || "").trim();
 const deliveryWorkflowStatusInput = String(formData.get("deliveryWorkflowStatus") || "Delivery required").trim();
 const invoiceDiscountType = String(formData.get("invoiceDiscountType") || "amount").trim() === "percent" ? "percent" : "amount";
@@ -725,13 +728,15 @@ const redirectWithEmbedded = (path: string) =>
   formData.get("fulfilmentMethod") || "Collected",
 );
     const selectedShippingService =
-      shippingMethod === "Delivery"
+      shippingMethod === "Delivery" && shippingServiceValue !== "custom"
         ? getShippingServiceByValue(shippingServiceValue) || SHIPPING_SERVICE_OPTIONS[0]
         : null;
-    const shippingCharge = roundMoney(Number(selectedShippingService?.price || 0));
+    const shippingCharge = shippingMethod === "Delivery"
+      ? (shippingServiceValue === "custom" ? customShippingPriceInput : roundMoney(Number(selectedShippingService?.price || 0)))
+      : 0;
     const shippingServiceLabel =
       shippingMethod === "Delivery"
-        ? selectedShippingService?.label || "Delivery"
+        ? (shippingServiceValue === "custom" ? customShippingLabelInput || "Custom Delivery" : selectedShippingService?.label || "Delivery")
         : "Shipping not required";
     const deliveryWorkflowStatus = normalizeDeliveryWorkflowStatus(
       shippingMethod,
@@ -1233,6 +1238,7 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
           method: normalizePaymentMethod(paymentMethod),
           provider: paymentMethod,
           reference: reference || null,
+          paidAt: paymentDateInput ? new Date(paymentDateInput) : undefined,
         },
       });
       // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
@@ -1397,6 +1403,7 @@ try {
         method: normalizePaymentMethod(paymentMethod),
         provider: paymentMethod,
         reference: reference || null,
+        paidAt: paymentDateInput ? new Date(paymentDateInput) : undefined,
       },
     });
     // Auto-push the new payment to Xero (fire-and-forget, errors logged not thrown)
@@ -1590,6 +1597,9 @@ const [shippingService, setShippingService] = useState(
     : "",
 );
 
+const [customShippingLabel, setCustomShippingLabel] = useState("");
+const [customShippingPrice, setCustomShippingPrice] = useState("0");
+
 const [trackingNumber, setTrackingNumber] = useState(
   existingInvoice?.trackingNumber || "",
 );
@@ -1627,6 +1637,10 @@ const [items, setItems] = useState<any[]>(
 
 const [amountPaid, setAmountPaid] = useState(
   String(existingInvoice?.amountPaid || 0),
+);
+
+const [paymentDate, setPaymentDate] = useState(
+  () => new Date().toISOString().slice(0, 16),
 );
 
 const [manualTotal, setManualTotal] = useState(
@@ -2510,11 +2524,38 @@ const [showAddress, setShowAddress] = useState(
                                 label: `${option.label} - ${money(option.price)}`,
                                 value: option.value,
                               })),
+                              { label: "Custom amount / description", value: "custom" },
                             ]}
                             value={shippingService}
                             onChange={setShippingService}
                           />
                         </div>
+                      ) : null}
+
+                      {shippingMethod === "Delivery" && shippingService === "custom" ? (
+                        <InlineStack gap="200" blockAlign="end">
+                          <div style={{ flex: 2 }}>
+                            <TextField
+                              label="Delivery description"
+                              name="customShippingLabel"
+                              value={customShippingLabel}
+                              onChange={setCustomShippingLabel}
+                              autoComplete="off"
+                              placeholder="e.g. Express courier"
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Amount"
+                              name="customShippingPrice"
+                              value={customShippingPrice}
+                              onChange={setCustomShippingPrice}
+                              autoComplete="off"
+                              type="number"
+                              prefix="£"
+                            />
+                          </div>
+                        </InlineStack>
                       ) : null}
 
                       {shippingMethod === "Delivery" ? (
@@ -2696,6 +2737,16 @@ const [showAddress, setShowAddress] = useState(
                           Pay in full
                         </Button>
                       </InlineStack>
+
+                      <TextField
+                        label="Payment date & time"
+                        name="paymentDate"
+                        value={paymentDate}
+                        onChange={setPaymentDate}
+                        autoComplete="off"
+                        type="datetime-local"
+                        helpText="Record the exact date and time of the transaction"
+                      />
 
                       <Button onClick={() => setInvoiceDiscountEnabled((current) => !current)}>
                         {invoiceDiscountEnabled ? "Remove discount" : "Add discount"}
