@@ -2,6 +2,7 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  DeliveryMethod,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
@@ -18,6 +19,12 @@ const shopify = shopifyApp({
   distribution: AppDistribution.SingleMerchant,
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  webhooks: {
+    ORDERS_PAID: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/orders/paid",
+    },
   },
 ...(process.env.SHOPIFY_SHOP_DOMAIN
   ? { customShopDomains: [process.env.SHOPIFY_SHOP_DOMAIN] }
