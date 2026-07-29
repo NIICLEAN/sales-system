@@ -561,6 +561,12 @@ export async function loader({
         county: true,
         postcode: true,
         country: true,
+        deliveryAddress1: true,
+        deliveryAddress2: true,
+        deliveryCity: true,
+        deliveryCounty: true,
+        deliveryPostcode: true,
+        deliveryCountry: true,
         reference: true,
         paymentMethod: true,
         subtotal: true,
@@ -1593,24 +1599,35 @@ export default function PrintInvoicePage() {
 
       <div className="address-grid">
         <div className="address-box">
-          <div className="address-title">Bill To</div>
+          <div className="address-title">Invoice Address</div>
           <p>
             <strong>{invoice.customerName}</strong>
           </p>
           <p>{invoice.customerEmail || ""}</p>
           <p>{invoice.customerPhone || ""}</p>
-          <p>VAT Number: {invoice.customerVatNumber || "-"}</p>
-        </div>
-
-        <div className="address-box">
-          <div className="address-title">Shipping Address</div>
+          {invoice.customerVatNumber ? <p>VAT Number: {invoice.customerVatNumber}</p> : null}
           <p>{invoice.address1 || ""}</p>
           <p>{invoice.address2 || ""}</p>
           <p>
-            {invoice.city || ""} {invoice.county || ""}
+            {[invoice.city, invoice.county].filter(Boolean).join(", ")}
           </p>
           <p>{invoice.postcode || ""}</p>
           <p>{invoice.country || ""}</p>
+        </div>
+
+        <div className="address-box">
+          <div className="address-title">Delivery Address</div>
+          {(invoice.deliveryAddress1 || invoice.deliveryCity || invoice.deliveryPostcode) ? (
+            <>
+              <p>{invoice.deliveryAddress1 || ""}</p>
+              <p>{invoice.deliveryAddress2 || ""}</p>
+              <p>{[invoice.deliveryCity, invoice.deliveryCounty].filter(Boolean).join(", ")}</p>
+              <p>{invoice.deliveryPostcode || ""}</p>
+              <p>{invoice.deliveryCountry || ""}</p>
+            </>
+          ) : (
+            <p style={{color:"#888",fontStyle:"italic"}}>Same as invoice address</p>
+          )}
         </div>
       </div>
 

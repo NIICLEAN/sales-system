@@ -28,6 +28,12 @@ type SaleInsertInput = {
   county?: string | null;
   postcode?: string | null;
   country?: string | null;
+  deliveryAddress1?: string | null;
+  deliveryAddress2?: string | null;
+  deliveryCity?: string | null;
+  deliveryCounty?: string | null;
+  deliveryPostcode?: string | null;
+  deliveryCountry?: string | null;
   reference?: string | null;
   paymentMethod: string;
   subtotal: number;

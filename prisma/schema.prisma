@@ -37,6 +37,13 @@ model Sale {
   postcode String?
   country  String?
 
+  deliveryAddress1 String?
+  deliveryAddress2 String?
+  deliveryCity     String?
+  deliveryCounty   String?
+  deliveryPostcode String?
+  deliveryCountry  String?
+
   reference     String?
   paymentMethod String
 

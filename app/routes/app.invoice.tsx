@@ -452,6 +452,12 @@ export async function loader({
         county: true,
         postcode: true,
         country: true,
+        deliveryAddress1: true,
+        deliveryAddress2: true,
+        deliveryCity: true,
+        deliveryCounty: true,
+        deliveryPostcode: true,
+        deliveryCountry: true,
         reference: true,
         paymentMethod: true,
         subtotal: true,
@@ -720,6 +726,12 @@ const redirectWithEmbedded = (path: string) =>
   const county = String(formData.get("county") || "").trim();
   const postcode = String(formData.get("postcode") || "").trim();
   const country = String(formData.get("country") || "").trim();
+  const deliveryAddress1 = String(formData.get("deliveryAddress1") || "").trim();
+  const deliveryAddress2 = String(formData.get("deliveryAddress2") || "").trim();
+  const deliveryCity = String(formData.get("deliveryCity") || "").trim();
+  const deliveryCounty = String(formData.get("deliveryCounty") || "").trim();
+  const deliveryPostcode = String(formData.get("deliveryPostcode") || "").trim();
+  const deliveryCountry = String(formData.get("deliveryCountry") || "").trim();
 
   const reference = String(formData.get("reference") || "").trim();
   const paymentMethod = String(formData.get("paymentMethod") || "");
@@ -1077,6 +1089,12 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       county,
       postcode,
       country,
+      deliveryAddress1: deliveryAddress1 || null,
+      deliveryAddress2: deliveryAddress2 || null,
+      deliveryCity: deliveryCity || null,
+      deliveryCounty: deliveryCounty || null,
+      deliveryPostcode: deliveryPostcode || null,
+      deliveryCountry: deliveryCountry || null,
       reference,
       paymentMethod,
       subtotal,
@@ -1319,6 +1337,12 @@ const sale = await createSaleCompat({
     county,
     postcode,
     country,
+    deliveryAddress1: deliveryAddress1 || null,
+    deliveryAddress2: deliveryAddress2 || null,
+    deliveryCity: deliveryCity || null,
+    deliveryCounty: deliveryCounty || null,
+    deliveryPostcode: deliveryPostcode || null,
+    deliveryCountry: deliveryCountry || null,
     reference,
     paymentMethod,
     subtotal,
@@ -1579,6 +1603,25 @@ const [postcode, setPostcode] = useState(
 
 const [country, setCountry] = useState(
   existingInvoice?.country || "",
+);
+
+const [deliveryAddress1, setDeliveryAddress1] = useState(
+  existingInvoice?.deliveryAddress1 || "",
+);
+const [deliveryAddress2, setDeliveryAddress2] = useState(
+  existingInvoice?.deliveryAddress2 || "",
+);
+const [deliveryCity, setDeliveryCity] = useState(
+  existingInvoice?.deliveryCity || "",
+);
+const [deliveryCounty, setDeliveryCounty] = useState(
+  existingInvoice?.deliveryCounty || "",
+);
+const [deliveryPostcode, setDeliveryPostcode] = useState(
+  existingInvoice?.deliveryPostcode || "",
+);
+const [deliveryCountry, setDeliveryCountry] = useState(
+  existingInvoice?.deliveryCountry || "",
 );
 
 const [reference, setReference] = useState(
@@ -2383,11 +2426,13 @@ const [showAddress, setShowAddress] = useState(
                       setShowAddress((open) => !open);
                     }}
                       > 
-                    {showAddress ? "Hide address" : "Edit shipping address"}
+                    {showAddress ? "Hide addresses" : "Edit invoice & delivery address"}
                   </Button>
 
                     {showAddress && (
-                      <BlockStack gap="300">
+                      <BlockStack gap="400">
+                        <Text as="h3" variant="headingSm">Invoice Address</Text>
+                        <BlockStack gap="300">
                         <InlineStack gap="300">
                           <div style={{ flex: 1 }}>
                             <TextField
@@ -2454,6 +2499,87 @@ const [showAddress, setShowAddress] = useState(
                             />
                           </div>
                         </InlineStack>
+                        </BlockStack>
+
+                        <InlineStack gap="200" blockAlign="center">
+                          <Text as="h3" variant="headingSm">Delivery Address</Text>
+                          <Button
+                            size="slim"
+                            onClick={() => {
+                              setDeliveryAddress1(address1);
+                              setDeliveryAddress2(address2);
+                              setDeliveryCity(city);
+                              setDeliveryCounty(county);
+                              setDeliveryPostcode(postcode);
+                              setDeliveryCountry(country);
+                            }}
+                          >
+                            Same as invoice address
+                          </Button>
+                        </InlineStack>
+                        <BlockStack gap="300">
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Address line 1"
+                              name="deliveryAddress1"
+                              value={deliveryAddress1}
+                              onChange={setDeliveryAddress1}
+                              autoComplete="off"
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Address line 2"
+                              name="deliveryAddress2"
+                              value={deliveryAddress2}
+                              onChange={setDeliveryAddress2}
+                              autoComplete="off"
+                            />
+                          </div>
+                        </InlineStack>
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Town / City"
+                              name="deliveryCity"
+                              value={deliveryCity}
+                              onChange={setDeliveryCity}
+                              autoComplete="off"
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="County"
+                              name="deliveryCounty"
+                              value={deliveryCounty}
+                              onChange={setDeliveryCounty}
+                              autoComplete="off"
+                            />
+                          </div>
+                        </InlineStack>
+                        <InlineStack gap="300">
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Postcode"
+                              name="deliveryPostcode"
+                              value={deliveryPostcode}
+                              onChange={setDeliveryPostcode}
+                              autoComplete="off"
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="Country"
+                              name="deliveryCountry"
+                              value={deliveryCountry}
+                              onChange={setDeliveryCountry}
+                              autoComplete="off"
+                              placeholder="United Kingdom"
+                            />
+                          </div>
+                        </InlineStack>
+                        </BlockStack>
                       </BlockStack>
                     )}
                   </BlockStack>

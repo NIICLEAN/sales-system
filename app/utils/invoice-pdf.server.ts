@@ -30,6 +30,12 @@ export async function generateInvoicePdf(invoiceId: number) {
       county: true,
       postcode: true,
       country: true,
+      deliveryAddress1: true,
+      deliveryAddress2: true,
+      deliveryCity: true,
+      deliveryCounty: true,
+      deliveryPostcode: true,
+      deliveryCountry: true,
       paymentMethod: true,
       paymentStatus: true,
       amountPaid: true,
@@ -353,20 +359,27 @@ export async function generateInvoicePdf(invoiceId: number) {
 
     <div class="address-grid">
       <div class="address-box">
-        <div class="address-title">Bill To</div>
+        <div class="address-title">Invoice Address</div>
         <p><strong>${safe(invoice.customerName)}</strong></p>
         <p>${safe(invoice.customerEmail || "")}</p>
         <p>${safe(invoice.customerPhone || "")}</p>
-        <p>VAT Number: ${safe(invoice.customerVatNumber || "-")}</p>
+        ${invoice.customerVatNumber ? `<p>VAT Number: ${safe(invoice.customerVatNumber)}</p>` : ""}
+        <p>${safe(invoice.address1 || "")}</p>
+        <p>${safe(invoice.address2 || "")}</p>
+        <p>${[invoice.city, invoice.county].filter(Boolean).map(safe).join(", ")}</p>
+        <p>${safe(invoice.postcode || "")}</p>
+        <p>${safe(invoice.country || "")}</p>
       </div>
 
       <div class="address-box">
-        <div class="address-title">Shipping Address</div>
-        <p>${safe(invoice.address1 || "")}</p>
-        <p>${safe(invoice.address2 || "")}</p>
-        <p>${safe(invoice.city || "")} ${safe(invoice.county || "")}</p>
-        <p>${safe(invoice.postcode || "")}</p>
-        <p>${safe(invoice.country || "")}</p>
+        <div class="address-title">Delivery Address</div>
+        ${(invoice.deliveryAddress1 || invoice.deliveryCity || invoice.deliveryPostcode)
+          ? `<p>${safe(invoice.deliveryAddress1 || "")}</p>
+             <p>${safe(invoice.deliveryAddress2 || "")}</p>
+             <p>${[invoice.deliveryCity, invoice.deliveryCounty].filter(Boolean).map(safe).join(", ")}</p>
+             <p>${safe(invoice.deliveryPostcode || "")}</p>
+             <p>${safe(invoice.deliveryCountry || "")}</p>`
+          : `<p style="color:#888;font-style:italic;">Same as invoice address</p>`}
       </div>
     </div>
 
