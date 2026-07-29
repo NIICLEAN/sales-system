@@ -112,26 +112,26 @@ export async function generateInvoicePdf(invoiceId: number) {
       font-family: Arial, sans-serif;
       color: #111;
       background: white;
-      font-size: 13px;
+      font-size: 11px;
     }
 
     .page {
-      padding: 34px 42px;
+      padding: 18px 28px;
       width: 100%;
     }
 
     .header {
       display: flex;
       justify-content: space-between;
-      gap: 30px;
+      gap: 20px;
       background: white;
       border-bottom: 3px solid #111827;
-      padding-bottom: 25px;
-      margin-bottom: 25px;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
     }
 
     .invoice-title {
-      font-size: 36px;
+      font-size: 28px;
       margin: 0;
       font-weight: 700;
       color: #111827;
@@ -146,40 +146,40 @@ export async function generateInvoicePdf(invoiceId: number) {
 
     .business {
       text-align: right;
-      font-size: 12px;
-      line-height: 1.45;
-      min-width: 260px;
+      font-size: 11px;
+      line-height: 1.35;
+      min-width: 220px;
     }
 
     .business h2 {
-      font-size: 14px;
-      margin: 8px 0 6px;
+      font-size: 12px;
+      margin: 4px 0 4px;
     }
 
     .business p {
-      margin: 4px 0;
+      margin: 2px 0;
     }
 
     .logo {
-      max-width: 180px;
-      max-height: 80px;
+      max-width: 150px;
+      max-height: 60px;
       object-fit: contain;
-      margin-bottom: 8px;
+      margin-bottom: 5px;
     }
 
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       border: 1px solid #dfe3e8;
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
-      margin-bottom: 25px;
+      margin-bottom: 12px;
     }
 
     .meta-cell {
-      padding: 15px;
+      padding: 10px 12px;
       border-right: 1px solid #dfe3e8;
-      min-height: 82px;
+      min-height: 56px;
     }
 
     .meta-cell:last-child {
@@ -187,16 +187,16 @@ export async function generateInvoicePdf(invoiceId: number) {
     }
 
     .label {
-      font-size: 12px;
+      font-size: 10px;
       color: #4b5870;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 9px;
+      letter-spacing: 0.8px;
+      margin-bottom: 5px;
     }
 
     .value {
       font-weight: 700;
-      line-height: 1.35;
+      line-height: 1.3;
     }
 
     .status-paid {
@@ -214,48 +214,48 @@ export async function generateInvoicePdf(invoiceId: number) {
     .address-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 25px;
+      gap: 12px;
+      margin-bottom: 12px;
     }
 
     .address-box {
       border: 1px solid #dfe3e8;
-      border-radius: 10px;
-      padding: 18px;
-      min-height: 105px;
+      border-radius: 8px;
+      padding: 10px 14px;
+      min-height: 80px;
     }
 
     .address-title {
-      font-size: 14px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 1.3px;
-      margin-bottom: 14px;
+      letter-spacing: 1.1px;
+      margin-bottom: 7px;
       color: #111827;
     }
 
     p {
-      margin: 5px 0;
+      margin: 3px 0;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 18px;
+      margin-top: 8px;
     }
 
     th {
       background: #111827;
       color: white;
       text-align: left;
-      padding: 11px;
-      font-size: 12px;
+      padding: 7px 9px;
+      font-size: 10px;
       font-weight: 700;
     }
 
     td {
-      padding: 12px 11px;
+      padding: 6px 9px;
       border-bottom: 1px solid #e5e7eb;
-      font-size: 12px;
+      font-size: 11px;
       vertical-align: top;
     }
 
@@ -264,20 +264,20 @@ export async function generateInvoicePdf(invoiceId: number) {
     }
 
     .totals {
-      width: 390px;
+      width: 340px;
       margin-left: auto;
-      margin-top: 28px;
+      margin-top: 14px;
       border: 1px solid #dfe3e8;
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
     }
 
     .totals-row {
       display: flex;
       justify-content: space-between;
-      padding: 13px 16px;
+      padding: 7px 13px;
       border-bottom: 1px solid #e5e7eb;
-      font-size: 13px;
+      font-size: 11px;
     }
 
     .totals-row:last-child {
@@ -288,7 +288,7 @@ export async function generateInvoicePdf(invoiceId: number) {
       background: #111827;
       color: white;
       font-weight: 700;
-      font-size: 18px;
+      font-size: 14px;
     }
 
     .balance-row {
@@ -298,11 +298,11 @@ export async function generateInvoicePdf(invoiceId: number) {
     }
 
     .footer {
-      margin-top: 40px;
-      font-size: 12px;
+      margin-top: 18px;
+      font-size: 10px;
       color: #555;
       border-top: 1px solid #ddd;
-      padding-top: 12px;
+      padding-top: 8px;
     }
   </style>
 </head>
@@ -472,11 +472,12 @@ export async function generateInvoicePdf(invoiceId: number) {
       format: "A4",
       printBackground: true,
       preferCSSPageSize: false,
+      scale: 0.88,
       margin: {
-        top: "10mm",
-        right: "10mm",
-        bottom: "10mm",
-        left: "10mm",
+        top: "8mm",
+        right: "8mm",
+        bottom: "8mm",
+        left: "8mm",
       },
     });
 
