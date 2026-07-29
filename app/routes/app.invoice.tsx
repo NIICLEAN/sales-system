@@ -1375,24 +1375,26 @@ const sale = await createSaleCompat({
     }
   }
 
-  let emailStatusParam = "";
+  // Fire-and-forget — PDF generation (Puppeteer) + SMTP can take 10-30s.
+  // Awaiting them blocks the redirect and makes the UI appear frozen.
   if (customerEmail) {
-    try {
-      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
-      const { sendInvoiceEmail } = await import("../utils/email.server");
-      const pdfBuffer = await generateInvoicePdf(sale.id);
-      await sendInvoiceEmail({
-        to: customerEmail,
-        customerName,
-        invoiceId: sale.id,
-        pdfBuffer,
-        paymentStatus,
-      });
-      emailStatusParam = `&labelStatus=success&labelMessage=${encodeURIComponent(`Invoice emailed to ${customerEmail}`)}`;
-    } catch (error: any) {
-      console.error("Invoice email failed:", error);
-      emailStatusParam = `&labelStatus=error&labelMessage=${encodeURIComponent(`Email failed: ${error?.message || "SMTP error"}`)}` ;
-    }
+    (async () => {
+      try {
+        const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+        const { sendInvoiceEmail } = await import("../utils/email.server");
+        const pdfBuffer = await generateInvoicePdf(sale.id);
+        await sendInvoiceEmail({
+          to: customerEmail,
+          customerName,
+          invoiceId: sale.id,
+          pdfBuffer,
+          paymentStatus,
+        });
+        console.log(`[email] Proforma emailed to ${customerEmail} for sale ${sale.id}`);
+      } catch (error: any) {
+        console.error("Invoice email failed:", error);
+      }
+    })();
   }
 
 // record payment if any amount was paid
@@ -1433,7 +1435,7 @@ try {
 }
 
   if (printMode === "none") {
-    return redirectWithEmbedded(`/app/invoices/${sale.id}?_=${Date.now()}${emailStatusParam}`);
+    return redirectWithEmbedded(`/app/invoices/${sale.id}?_=${Date.now()}`);
   }
 
   const printParams = new URLSearchParams({
@@ -1445,7 +1447,7 @@ try {
     printParams.set("printMode", printMode);
   }
 
-  return redirectWithEmbedded(`/app/invoices/${sale.id}?${printParams.toString()}${emailStatusParam}`);
+  return redirectWithEmbedded(`/app/invoices/${sale.id}?${printParams.toString()}`);
 }
 
 export default function InvoicePage() {
