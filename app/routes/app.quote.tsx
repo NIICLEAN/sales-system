@@ -262,6 +262,7 @@ export async function action({ request }: { request: Request }) {
     return redirect(withEmbeddedParamsFromRequest(request, `/app/quote?quoteError=${message}`));
   }
 
+  let quoteEmailStatus = "";
   if (customerEmail) {
     try {
       const { generateQuotePdf } = await import("../utils/quote-pdf.server");
@@ -275,12 +276,14 @@ export async function action({ request }: { request: Request }) {
         quoteId: quote.id,
         pdfBuffer,
       });
-    } catch (error) {
+      quoteEmailStatus = `&emailStatus=success&emailMessage=${encodeURIComponent(`Quote emailed to ${customerEmail}`)}`;
+    } catch (error: any) {
       console.error("Quote email failed:", error);
+      quoteEmailStatus = `&emailStatus=error&emailMessage=${encodeURIComponent(`Email failed: ${error?.message || "SMTP error"}`)}` ;
     }
   }
 
-  return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?autoprint=1`));
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?autoprint=1${quoteEmailStatus}`));
 }
 
 export default function QuotePage() {

@@ -282,6 +282,9 @@ export default function QuoteViewPage() {
     return () => window.clearTimeout(timer);
   }, [searchParams, navigate, loadedQuote.id, location.search]);
 
+  const emailStatus = searchParams.get("emailStatus");
+  const emailMessage = searchParams.get("emailMessage");
+
   return (
     <Page
       title={`Quote QUO-${loadedQuote.id}`}
@@ -292,6 +295,13 @@ export default function QuoteViewPage() {
       }}
     >
       <Layout>
+        {emailStatus && emailMessage ? (
+          <Layout.Section>
+            <Banner tone={emailStatus === "success" ? "success" : "critical"}>
+              {emailMessage}
+            </Banner>
+          </Layout.Section>
+        ) : null}
         <Layout.Section>
           <BlockStack gap="400">
             <Card>

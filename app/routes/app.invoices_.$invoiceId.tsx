@@ -410,6 +410,32 @@ export async function action({ request, params }: { request: Request; params: { 
     return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent(`Sent ${sentCount} invoice(s) to Xero: ${rangeLabel}${partialNote}`)}`));
   }
 
+  if (intent === "sendEmail") {
+    try {
+      const sale = await prisma.sale.findUnique({
+        where: { id: invoiceId },
+        select: { customerEmail: true, customerName: true, paymentStatus: true },
+      });
+      if (!sale?.customerEmail) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent("No customer email address on file for this invoice")}`));
+      }
+      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+      const { sendInvoiceEmail } = await import("../utils/email.server");
+      const pdfBuffer = await generateInvoicePdf(invoiceId);
+      await sendInvoiceEmail({
+        to: sale.customerEmail,
+        customerName: sale.customerName || "",
+        invoiceId,
+        pdfBuffer,
+        paymentStatus: sale.paymentStatus || "Unpaid",
+      });
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=success&labelMessage=${encodeURIComponent(`Invoice emailed to ${sale.customerEmail}`)}`));
+    } catch (error: any) {
+      console.error("Send email failed:", error);
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${invoiceId}?labelStatus=error&labelMessage=${encodeURIComponent(`Email failed: ${error?.message || "Unknown error"}`)}`));
+    }
+  }
+
   if (intent !== "generateShippingLabel") {
     return null;
   }
@@ -1428,6 +1454,13 @@ export default function PrintInvoicePage() {
         <button type="button" onClick={downloadPdf}>
           Download PDF
         </button>
+
+        {invoice.customerEmail ? (
+          <Form method="post">
+            <input type="hidden" name="_intent" value="sendEmail" />
+            <button type="submit" className="secondary">Send Email</button>
+          </Form>
+        ) : null}
 
         <Form method="post">
           <input type="hidden" name="_intent" value="deleteInvoice" />
