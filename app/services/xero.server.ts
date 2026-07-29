@@ -230,8 +230,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
             accountCode,
           }],
           reference: xeroReference,
-          invoiceNumber: `INV-${saleId}.${suffix}`,
-          status: Invoice.StatusEnum.AUTHORISED,
+          invoiceNumber: `INV-${saleId}.${suffix}`,            sentToContact: true,          status: Invoice.StatusEnum.AUTHORISED,
         }],
       });
 

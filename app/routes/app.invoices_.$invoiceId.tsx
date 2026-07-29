@@ -355,6 +355,7 @@ export async function action({ request, params }: { request: Request; params: { 
             }],
             reference: baseNumber,
             invoiceNumber: xeroInvoiceNumber,
+            sentToContact: true,
             status: Invoice.StatusEnum.AUTHORISED,
           }],
         });
