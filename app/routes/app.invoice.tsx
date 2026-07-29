@@ -1153,10 +1153,12 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
             customAttributes,
             shippingAddress: hasManualShippingAddress
               ? (() => {
-                  const [firstName, ...rest] = customerName.split(" ");
+                  const parts = customerName.trim().split(/\s+/);
+                  const firstName = parts.slice(0, -1).join(" ") || parts[0];
+                  const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
                   return {
-                    firstName: firstName || customerName,
-                    lastName: rest.join(" ") || undefined,
+                    firstName,
+                    lastName,
                     address1,
                     address2,
                     city,
