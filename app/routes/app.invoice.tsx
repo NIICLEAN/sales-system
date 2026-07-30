@@ -1725,9 +1725,11 @@ const [showAddress, setShowAddress] = useState(
     { label: "Not paid", value: "Not paid" },
     { label: "Deposit", value: "Deposit" },
     { label: "Cash", value: "Cash" },
+    { label: "Card", value: "Card" },
+    { label: "Bank Transfer", value: "Bank Transfer" },
     { label: "Worldpay", value: "Worldpay" },
     { label: "MyPos", value: "MyPos" },
-    { label: "Bank Transfer", value: "Bank Transfer" },
+    { label: "Other", value: "Other" },
   ];
 
   const fulfilmentOptions = [
