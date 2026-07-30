@@ -40,6 +40,9 @@ async function createTransport() {
     requireTLS: true,
     tls: { servername: host }, // SNI: validate cert against original hostname
     auth: { user, pass },
+    connectionTimeout: 10000,  // 10 s — fail fast if TCP connect hangs
+    greetingTimeout: 10000,    // 10 s — fail fast if SMTP greeting times out
+    socketTimeout: 15000,      // 15 s — fail fast if idle mid-transfer
   };
   return nodemailer.createTransport(options);
 }

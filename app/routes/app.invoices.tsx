@@ -1162,29 +1162,35 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "emailInvoice") {
     const invoiceId = Number(formData.get("invoiceId"));
     if (!invoiceId) return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent("Invalid invoice ID")}`));
-    try {
-      const sale = await prisma.sale.findUnique({
-        where: { id: invoiceId },
-        select: { customerEmail: true, customerName: true, paymentStatus: true },
-      });
-      if (!sale?.customerEmail) {
-        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(`INV-${invoiceId}: no customer email on file`)}`));
-      }
-      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
-      const { sendInvoiceEmail } = await import("../utils/email.server");
-      const pdfBuffer = await generateInvoicePdf(invoiceId);
-      await sendInvoiceEmail({
-        to: sale.customerEmail,
-        customerName: sale.customerName || "",
-        invoiceId,
-        pdfBuffer,
-        paymentStatus: sale.paymentStatus || "Unpaid",
-      });
-      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(`Invoice INV-${invoiceId} emailed to ${sale.customerEmail}`)}`));
-    } catch (error: any) {
-      console.error("Email invoice failed:", error);
-      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(String(error?.message || "Failed to send email"))}`));
+    const sale = await prisma.sale.findUnique({
+      where: { id: invoiceId },
+      select: { customerEmail: true, customerName: true, paymentStatus: true },
+    });
+    if (!sale?.customerEmail) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent(`INV-${invoiceId}: no customer email on file`)}`));
     }
+    const { email: recipientEmail, name: recipientName, status: paymentStatus } =
+      { email: sale.customerEmail, name: sale.customerName || "", status: sale.paymentStatus || "Unpaid" };
+    // Fire-and-forget — PDF generation (Puppeteer) + SMTP can take 10-30s.
+    // Awaiting them here blocks the redirect and causes Railway request timeouts.
+    (async () => {
+      try {
+        const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+        const { sendInvoiceEmail } = await import("../utils/email.server");
+        const pdfBuffer = await generateInvoicePdf(invoiceId);
+        await sendInvoiceEmail({
+          to: recipientEmail,
+          customerName: recipientName,
+          invoiceId,
+          pdfBuffer,
+          paymentStatus: paymentStatus,
+        });
+        console.log(`[email] Invoice INV-${invoiceId} emailed to ${recipientEmail}`);
+      } catch (err: any) {
+        console.error(`[email] Invoice INV-${invoiceId} failed:`, err);
+      }
+    })();
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=emailSent&syncMessage=${encodeURIComponent(`Invoice INV-${invoiceId} emailed to ${recipientEmail}`)}`));
   }
 
   if (intent !== "syncXero") {
@@ -1595,6 +1601,8 @@ export default function InvoicesPage() {
   const shippingFormRef = useRef<HTMLFormElement | null>(null);
   const [shippingEditorOpen, setShippingEditorOpen] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState(0);
+  const [emailSentModalOpen, setEmailSentModalOpen] = useState(false);
+  const [emailSentMessage, setEmailSentMessage] = useState("");
   const [editingShippingMethod, setEditingShippingMethod] = useState("Collection");
   const [editingDeliveryStatus, setEditingDeliveryStatus] = useState("Delivery required");
   const [editingTrackingNumber, setEditingTrackingNumber] = useState("");
@@ -1618,6 +1626,20 @@ export default function InvoicesPage() {
 
   const syncStatus = searchParams.get("syncStatus");
   const syncMessage = searchParams.get("syncMessage");
+
+  // Open the email-sent confirmation popup when the action redirects with emailSent status
+  useEffect(() => {
+    if (syncStatus === "emailSent" && syncMessage) {
+      setEmailSentMessage(syncMessage);
+      setEmailSentModalOpen(true);
+      // Clear the URL params so a refresh doesn't re-open the modal
+      const params = new URLSearchParams(location.search);
+      params.delete("syncStatus");
+      params.delete("syncMessage");
+      navigate(withEmbeddedParams(`/app/invoices?${params.toString()}`), { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStatus, syncMessage]);
   const connectXero = searchParams.get("connectXero") === "1";
   const totalPages = Math.max(1, Math.ceil((localInvoiceCount || 0) / perPage));
 
@@ -2251,6 +2273,17 @@ export default function InvoicesPage() {
                 No invoices were found in local Sales, legacy Works Orders, custom schedule invoices, or Shopify tagged orders.
               </Banner>
             ) : null}
+
+            <Modal
+              open={emailSentModalOpen}
+              onClose={() => setEmailSentModalOpen(false)}
+              title="Email sent"
+              primaryAction={{ content: "OK", onAction: () => setEmailSentModalOpen(false) }}
+            >
+              <Modal.Section>
+                <Text as="p">{emailSentMessage}</Text>
+              </Modal.Section>
+            </Modal>
 
             <Modal
               open={shippingEditorOpen}
