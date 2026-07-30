@@ -1737,8 +1737,18 @@ export default function InvoicesPage() {
     Yesterday: true,
   }));
 
+  const [expandedInvoices, setExpandedInvoices] = useState<Set<number>>(new Set());
+
   function toggleGroup(label: string) {
     setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  }
+
+  function toggleInvoice(id: number) {
+    setExpandedInvoices((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
   }
 
   return (
@@ -1944,151 +1954,109 @@ export default function InvoicesPage() {
                     <span style={{ fontSize: 12, color: "#6d7175" }}>{isOpen ? "▲ Collapse" : "▼ Expand"}</span>
                   </button>
                   <Collapsible open={isOpen} id={`group-${group.key}`}>
-                  <IndexTable
-                    resourceName={{ singular: "invoice", plural: "invoices" }}
-                    itemCount={group.invoices.length}
-                    headings={[
-                      { title: "Invoice" },
-                      { title: "Customer / Staff" },
-                      { title: "Shipping / Status" },
-                      { title: "Payment / Total" },
-                      { title: "Actions" },
-                    ]}
-                    selectable={false}
-                  >
-                {group.invoices.map((invoice: any, index: number) => (
-                  <IndexTable.Row
-                    id={String(invoice.id)}
-                    key={invoice.id}
-                    position={index}
-                  >
-                    <IndexTable.Cell>
-                      <BlockStack gap="100">
-                        <Text as="span" fontWeight="bold">
-                          INV-{invoice.id}
-                        </Text>
-
+                  <div style={{ borderTop: isOpen ? "none" : undefined }}>
+                {group.invoices.map((invoice: any) => {
+                  const isRowOpen = expandedInvoices.has(Number(invoice.id));
+                  return (
+                    <div key={invoice.id} style={{ borderBottom: "1px solid #e1e3e5" }}>
+                      {/* Compact header row — always visible */}
+                      <button
+                        type="button"
+                        onClick={() => toggleInvoice(Number(invoice.id))}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          width: "100%",
+                          padding: "10px 16px",
+                          background: "none",
+                          border: "none",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          gap: 12,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: "#6d7175", minWidth: 10 }}>{isRowOpen ? "▲" : "▼"}</span>
+                        <span style={{ fontWeight: 600, minWidth: 72, fontSize: 13 }}>INV-{invoice.id}</span>
                         {invoice.shopifyOrderName ? (
-                          <Text as="span" tone="subdued">
-                            {invoice.shopifyOrderName}
-                          </Text>
-                        ) : null}
-
-                        {invoice.reference?.startsWith("XERO:") ? (
-                          <Text as="span" tone="subdued">
-                            Synced from Xero
-                          </Text>
-                        ) : null}
-                      </BlockStack>
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <BlockStack gap="100">
-                        <Text as="span">{invoice.customerName || "-"}</Text>
-                        <Text as="span" tone="subdued">{invoice.staff?.name || "-"}</Text>
-                      </BlockStack>
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <BlockStack gap="100">
-                        <Text as="span" fontWeight="medium">{invoice.shippingMethod || "Collection"}</Text>
-                        {invoice.deliveryMethod ? <Text as="span" tone="subdued">{invoice.deliveryMethod}</Text> : null}
-                        {invoice.trackingNumber ? (
-                          <Text as="span" tone="subdued">#{invoice.trackingNumber}</Text>
-                        ) : null}
-                        {invoice.trackingUrl ? (
-                          <a href={invoice.trackingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>Track</a>
-                        ) : null}
-                        <div
-                          style={{
-                            borderRadius: 6,
-                            padding: "3px 7px",
-                            fontWeight: 600,
-                            fontSize: 11,
-                            color: "#fff",
-                            background:
-                              invoice.deliveryStatus === "Fulfilled"
-                                ? "#1f7a1f"
-                                : invoice.deliveryStatus === "In progress"
-                                  ? "#b26b00"
-                                  : invoice.deliveryStatus === "Shipping not required"
-                                    ? "#5a6268"
-                                    : "#b00020",
-                            width: "fit-content",
-                          }}
-                        >
-                          {invoice.deliveryStatus || (invoice.shippingMethod === "Collection" ? "Shipping not required" : "Delivery required")}
-                        </div>
-                      </BlockStack>
-                    </IndexTable.Cell>
-
-                    <IndexTable.Cell>
-                      <BlockStack gap="100">
-                        <Text as="span">{invoice.paymentMethod || "-"}</Text>
-                        <Text as="span" fontWeight="medium">£{Number(invoice.total ?? 0).toFixed(2)}</Text>
-                        <Text as="span" tone="subdued">{formatDateTime(invoice.createdAt)}</Text>
-                        <div
-                          style={{
-                            borderRadius: 8,
-                            padding: "6px 8px",
-                            textAlign: "center",
-                            fontWeight: 600,
-                            color: "#fff",
-                            background:
-                              invoice.paymentStatus === "Paid"
-                                ? "#1f7a1f"
-                                : invoice.paymentStatus === "Partially Paid"
-                                  ? "#b26b00"
-                                  : "#b00020",
-                            width: "fit-content",
-                            minWidth: 84,
-                          }}
-                        >
+                          <span style={{ fontSize: 12, color: "#6d7175", minWidth: 72 }}>{invoice.shopifyOrderName}</span>
+                        ) : <span style={{ minWidth: 72 }} />}
+                        <span style={{ flex: 1, fontSize: 13 }}>{invoice.customerName || "-"}</span>
+                        <span style={{ fontSize: 12, color: "#6d7175", minWidth: 80 }}>{invoice.staff?.name || "-"}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, minWidth: 72, textAlign: "right" }}>
+                          £{Number(invoice.total ?? 0).toFixed(2)}
+                        </span>
+                        <span style={{
+                          borderRadius: 10,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "#fff",
+                          background: invoice.paymentStatus === "Paid" ? "#1f7a1f" : invoice.paymentStatus === "Partially Paid" ? "#b26b00" : "#b00020",
+                          minWidth: 68,
+                          textAlign: "center",
+                        }}>
                           {invoice.paymentStatus || "Unpaid"}
-                        </div>
-                      </BlockStack>
-                    </IndexTable.Cell>
+                        </span>
+                        <span style={{ fontSize: 11, color: "#6d7175", minWidth: 100, textAlign: "right" }}>
+                          {formatDateTime(invoice.createdAt)}
+                        </span>
+                      </button>
 
-                    <IndexTable.Cell>
-                      <InlineStack gap="150" wrap={true}>
-                        <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>
-                          View
-                        </Button>
-                        <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}>
-                          Edit
-                        </Button>
-                        <Button size="slim" onClick={() => openShippingEditor(invoice)}>
-                          Shipping
-                        </Button>
-                        <Form
-                          method="post"
-                          onSubmit={(event) => {
-                            if (!window.confirm(`Email invoice INV-${invoice.id} to ${invoice.customerEmail || "customer"}?`)) {
-                              event.preventDefault();
-                            }
-                          }}
-                        >
-                          <input type="hidden" name="_intent" value="emailInvoice" />
-                          <input type="hidden" name="invoiceId" value={invoice.id} />
-                          <Button size="slim" submit>Email</Button>
-                        </Form>
-                        <Form
-                          method="post"
-                          onSubmit={(event) => {
-                            if (!window.confirm(`Delete invoice INV-${invoice.id}? This cannot be undone.`)) {
-                              event.preventDefault();
-                            }
-                          }}
-                        >
-                          <input type="hidden" name="_intent" value="deleteInvoice" />
-                          <input type="hidden" name="invoiceId" value={invoice.id} />
-                          <Button size="slim" submit tone="critical">Delete</Button>
-                        </Form>
-                      </InlineStack>
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
+                      {/* Expanded details */}
+                      {isRowOpen && (
+                        <div style={{ padding: "0 16px 12px 44px", background: "#f9fafb" }}>
+                          <div style={{ display: "flex", gap: 24, marginBottom: 10, flexWrap: "wrap", fontSize: 13 }}>
+                            <div>
+                              <span style={{ color: "#6d7175", marginRight: 4 }}>Payment:</span>
+                              {invoice.paymentMethod || "-"}
+                            </div>
+                            <div>
+                              <span style={{ color: "#6d7175", marginRight: 4 }}>Shipping:</span>
+                              {invoice.shippingMethod || "Collection"}
+                              {invoice.deliveryMethod ? ` — ${invoice.deliveryMethod}` : ""}
+                            </div>
+                            {invoice.trackingNumber ? (
+                              <div>
+                                <span style={{ color: "#6d7175", marginRight: 4 }}>Tracking:</span>
+                                {invoice.trackingUrl
+                                  ? <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">#{invoice.trackingNumber}</a>
+                                  : `#${invoice.trackingNumber}`}
+                              </div>
+                            ) : null}
+                            <div>
+                              <span style={{
+                                borderRadius: 6,
+                                padding: "2px 7px",
+                                fontWeight: 600,
+                                fontSize: 11,
+                                color: "#fff",
+                                background: invoice.deliveryStatus === "Fulfilled" ? "#1f7a1f" : invoice.deliveryStatus === "In progress" ? "#b26b00" : invoice.deliveryStatus === "Shipping not required" ? "#5a6268" : "#b00020",
+                              }}>
+                                {invoice.deliveryStatus || (invoice.shippingMethod === "Collection" ? "Shipping not required" : "Delivery required")}
+                              </span>
+                            </div>
+                          </div>
+                          <InlineStack gap="150" wrap={true}>
+                            <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoices/${invoice.id}`))}>View</Button>
+                            <Button size="slim" onClick={() => navigate(withEmbeddedParams(`/app/invoice?editInvoiceId=${invoice.id}`))}>Edit</Button>
+                            <Button size="slim" onClick={() => openShippingEditor(invoice)}>Shipping</Button>
+                            <Form method="post" onSubmit={(e) => { if (!window.confirm(`Email invoice INV-${invoice.id} to ${invoice.customerEmail || "customer"}?`)) e.preventDefault(); }}>
+                              <input type="hidden" name="_intent" value="emailInvoice" />
+                              <input type="hidden" name="invoiceId" value={invoice.id} />
+                              <Button size="slim" submit>Email</Button>
+                            </Form>
+                            <Form method="post" onSubmit={(e) => { if (!window.confirm(`Delete invoice INV-${invoice.id}? This cannot be undone.`)) e.preventDefault(); }}>
+                              <input type="hidden" name="_intent" value="deleteInvoice" />
+                              <input type="hidden" name="invoiceId" value={invoice.id} />
+                              <Button size="slim" submit tone="critical">Delete</Button>
+                            </Form>
+                          </InlineStack>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                  </div>
                   </Collapsible>
                 </Card>
               );
