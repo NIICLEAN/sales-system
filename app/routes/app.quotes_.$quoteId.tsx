@@ -16,7 +16,6 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat } from "../services/saleCompat.server";
 
 function withEmbeddedParamsFromRequest(request: Request, path: string) {
@@ -207,19 +206,6 @@ export async function action({ request, params }: { request: Request; params: { 
           isCustom: !item.shopifyVariantId,
         })),
   });
-
-  // Adjust inventory for non-custom items
-  try {
-    const variantAdjustments = quote.lineItems
-      .filter((li: any) => li.shopifyVariantId)
-      .map((li: any) => ({ id: li.shopifyVariantId, quantity: Number(li.quantity) }));
-
-    if (variantAdjustments.length > 0) {
-      await adjustInventoryForLineItems(admin, variantAdjustments);
-    }
-  } catch (err) {
-    console.error("Inventory adjustment failed on quote->invoice convert:", err);
-  }
 
   // send invoice email if customer has email
   if (quote.customerEmail) {

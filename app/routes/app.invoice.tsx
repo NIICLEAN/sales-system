@@ -23,7 +23,6 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { pushNewPaymentsToXero } from "../services/xero.server";
-import { adjustInventoryForLineItems } from "../services/shopifyInventory.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMeta, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { getInvoiceDiscountMeta, upsertInvoiceDiscountMeta } from "../services/invoiceDiscountMeta.server";
@@ -1238,18 +1237,6 @@ const invoiceId = Number(params.invoiceId || editInvoiceId);
       // Do not block local invoice edits if Shopify order creation fails.
       console.error("Failed to create Shopify order during invoice edit:", error);
     }
-
-    try {
-      const variantAdjustments = lineItems
-        .filter((i: any) => i.type !== "custom" && i.id)
-        .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
-
-      if (variantAdjustments.length > 0) {
-        await adjustInventoryForLineItems(admin, variantAdjustments);
-      }
-    } catch (err) {
-      console.error("Inventory adjustment failed:", err);
-    }
   }
 
   const previousAmountPaid = roundMoney(Number(existingSale?.amountPaid || 0));
@@ -1391,21 +1378,6 @@ const sale = await createSaleCompat({
     discountValue: invoiceDiscountValue,
     discountAmount: invoiceDiscountAmount,
   });
-
-  // Adjust Shopify inventory for any non-custom line items
-  if (createShopifyOrder) {
-    try {
-      const variantAdjustments = lineItems
-        .filter((i: any) => i.type !== "custom" && i.id)
-        .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }));
-
-      if (variantAdjustments.length > 0) {
-        await adjustInventoryForLineItems(admin, variantAdjustments);
-      }
-    } catch (err) {
-      console.error("Inventory adjustment failed:", err);
-    }
-  }
 
   // Fire-and-forget — PDF generation (Puppeteer) + SMTP can take 10-30s.
   // Awaiting them blocks the redirect and makes the UI appear frozen.
