@@ -1,6 +1,6 @@
 import { Form, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import {
   AppProvider,
   Page,
@@ -15,6 +15,7 @@ import {
   InlineStack,
   BlockStack,
   Modal,
+  Collapsible,
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
@@ -1704,6 +1705,42 @@ export default function InvoicesPage() {
     setShippingEditorOpen(false);
   }
 
+  // Group invoices by calendar date (London time)
+  const invoiceGroups = useMemo(() => {
+    const tz = "Europe/London";
+    const toDateKey = (d: string | Date) =>
+      new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeZone: tz }).format(new Date(d));
+    const todayKey = toDateKey(new Date());
+    const yesterdayKey = toDateKey(new Date(Date.now() - 86400000));
+
+    const groups: Record<string, { label: string; invoices: any[]; key: string }> = {};
+    for (const inv of (invoices as any[])) {
+      const key = toDateKey(inv.createdAt);
+      if (!groups[key]) {
+        let label = key;
+        if (key === todayKey) label = "Today";
+        else if (key === yesterdayKey) label = "Yesterday";
+        groups[key] = { label, invoices: [], key };
+      }
+      groups[key].invoices.push(inv);
+    }
+    // Sort newest date first
+    return Object.values(groups).sort((a, b) => {
+      const [da, ma, ya] = a.key.split("/").map(Number);
+      const [db, mb, yb] = b.key.split("/").map(Number);
+      return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
+    });
+  }, [invoices]);
+
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => ({
+    Today: true,
+    Yesterday: true,
+  }));
+
+  function toggleGroup(label: string) {
+    setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  }
+
   return (
     <AppProvider i18n={{}}>
       <Page title="Invoices">
@@ -1880,20 +1917,46 @@ export default function InvoicesPage() {
               </Banner>
             ) : null}
 
-            <Card>
-              <IndexTable
-                resourceName={{ singular: "invoice", plural: "invoices" }}
-                itemCount={invoices.length}
-                headings={[
-                  { title: "Invoice" },
-                  { title: "Customer / Staff" },
-                  { title: "Shipping / Status" },
-                  { title: "Payment / Total" },
-                  { title: "Actions" },
-                ]}
-                selectable={false}
-              >
-                {invoices.map((invoice: any, index: number) => (
+            {invoiceGroups.map((group) => {
+              const isOpen = expandedGroups[group.label] ?? false;
+              return (
+                <Card key={group.key} padding="0">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.label)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "12px 16px",
+                      cursor: "pointer",
+                      userSelect: "none",
+                      width: "100%",
+                      background: "none",
+                      border: "none",
+                      borderBottom: isOpen ? "1px solid #e1e3e5" : "none",
+                      textAlign: "left",
+                    }}
+                  >
+                    <Text as="span" fontWeight="semibold">
+                      {group.label} — {group.invoices.length} invoice{group.invoices.length !== 1 ? "s" : ""}
+                    </Text>
+                    <span style={{ fontSize: 12, color: "#6d7175" }}>{isOpen ? "▲ Collapse" : "▼ Expand"}</span>
+                  </button>
+                  <Collapsible open={isOpen} id={`group-${group.key}`}>
+                  <IndexTable
+                    resourceName={{ singular: "invoice", plural: "invoices" }}
+                    itemCount={group.invoices.length}
+                    headings={[
+                      { title: "Invoice" },
+                      { title: "Customer / Staff" },
+                      { title: "Shipping / Status" },
+                      { title: "Payment / Total" },
+                      { title: "Actions" },
+                    ]}
+                    selectable={false}
+                  >
+                {group.invoices.map((invoice: any, index: number) => (
                   <IndexTable.Row
                     id={String(invoice.id)}
                     key={invoice.id}
@@ -2026,7 +2089,10 @@ export default function InvoicesPage() {
                   </IndexTable.Row>
                 ))}
               </IndexTable>
-            </Card>
+                  </Collapsible>
+                </Card>
+              );
+            })}
 
             {customInvoices.length > 0 ? (
               <Card>
