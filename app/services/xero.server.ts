@@ -105,13 +105,13 @@ export async function getConnectedXeroClient() {
  * already-sent payments are skipped.  Errors are caught and logged; this
  * function never throws so callers can fire-and-forget.
  */
-export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
+export async function pushNewPaymentsToXero(saleId: number): Promise<{ pushed: number; lastError: string | null }> {
   let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
   try {
     xeroClient = await getConnectedXeroClient();
   } catch (err: any) {
     console.error(`[Xero] skipping push for sale ${saleId}: ${err?.message || err}`);
-    return;
+    return { pushed: 0, lastError: String(err?.message || "Xero not connected") };
   }
   const { xero, tenantId } = xeroClient;
 
@@ -129,7 +129,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       },
     },
   });
-  if (!sale) return;
+  if (!sale) return { pushed: 0, lastError: null };
 
   // Load vatType via raw SQL to avoid schema-version crashes
   let saleVatType = "Standard";
@@ -181,9 +181,11 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
   const unsentPayments = allPayments.filter(
     (p) => !p.xeroInvoiceId || (p.xeroInvoiceId === 'PENDING' && new Date(p.createdAt) < tenMinutesAgo)
   );
-  if (unsentPayments.length === 0) return;
+  if (unsentPayments.length === 0) return { pushed: 0, lastError: null };
 
   let lastXeroInvoiceId: string | null = null;
+  let pushCount = 0;
+  let lastError: string | null = null;
 
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
@@ -249,7 +251,9 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       console.log(`[Xero push] response for ref=${xeroReference}: invoiceID=${newXeroInvoiceId} returnedTaxType=${returnedLineItem?.taxType} returnedTaxAmount=${returnedLineItem?.taxAmount} returnedAccountCode=${returnedLineItem?.accountCode} lineAmountTypes=${response.body?.invoices?.[0]?.lineAmountTypes}`);
 
       if (validationErrors.length > 0) {
-        console.warn(`Xero validation errors for ref=${xeroReference}:`, validationErrors.map((e: any) => e.message).join("; "));
+        const valMsg = validationErrors.map((e: any) => e.message).join("; ");
+        console.warn(`Xero validation errors for ref=${xeroReference}:`, valMsg);
+        lastError = valMsg;
         // Clear the PENDING claim so the payment can be retried later
         try {
           await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = NULL WHERE id = ${payment.id} AND "xeroInvoiceId" = 'PENDING'`;
@@ -258,6 +262,7 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       }
 
       if (newXeroInvoiceId) {
+        pushCount++;
         // Post a payment so the invoice shows as PAID in Xero
         try {
           const paymentAccount = await getPaymentAccount(xero, tenantId);
@@ -288,7 +293,9 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       try {
         await prisma.$executeRaw`UPDATE "Payment" SET "xeroInvoiceId" = NULL WHERE id = ${payment.id} AND "xeroInvoiceId" = 'PENDING'`;
       } catch {}
-      console.error(`Auto Xero push failed for sale=${saleId} payment=${payment.id}:`, err?.response?.body?.Detail || err?.message || err);
+      const errMsg = err?.response?.body?.Detail || err?.response?.body?.Message || err?.message || String(err);
+      console.error(`Auto Xero push failed for sale=${saleId} payment=${payment.id}:`, errMsg);
+      lastError = errMsg;
     }
   }
 
@@ -297,4 +304,5 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
       await prisma.$executeRaw`UPDATE "Sale" SET "xeroInvoiceId" = ${lastXeroInvoiceId} WHERE id = ${saleId}`;
     } catch {}
   }
+  return { pushed: pushCount, lastError };
 }

@@ -1267,6 +1267,7 @@ export async function action({ request }: ActionFunctionArgs) {
       let pushed = 0;
       let linked = 0;  // already existed in Xero from old connector — linked, not duplicated
       let failed = 0;
+      let firstError: string | null = null;
 
       for (const { id } of unpushedSales) {
         // Load the sale's order name and total for matching
@@ -1309,10 +1310,16 @@ export async function action({ request }: ActionFunctionArgs) {
         } else {
           // Not in Xero yet — push it
           try {
-            await pushNewPaymentsToXero(id);
-            pushed++;
-          } catch {
+            const result = await pushNewPaymentsToXero(id);
+            if (result.pushed > 0) {
+              pushed++;
+            } else {
+              failed++;
+              if (result.lastError && !firstError) firstError = `Invoice ${id}: ${result.lastError}`;
+            }
+          } catch (err: any) {
             failed++;
+            if (!firstError) firstError = String(err?.message || err);
           }
         }
       }
@@ -1320,9 +1327,10 @@ export async function action({ request }: ActionFunctionArgs) {
       const parts: string[] = [];
       if (pushed > 0) parts.push(`Pushed ${pushed} new invoice(s) to Xero`);
       if (linked > 0) parts.push(`${linked} already existed in Xero from previous connector — linked (no duplicates created)`);
-      if (failed > 0) parts.push(`${failed} failed — check Railway logs`);
+      if (failed > 0) parts.push(`${failed} failed${firstError ? `: ${firstError}` : " — check Railway logs"}`);
       const message = parts.join(". ") || "Done";
-      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(message)}`));
+      const syncStatus = failed > 0 && pushed === 0 && linked === 0 ? "error" : "success";
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=${syncStatus}&syncMessage=${encodeURIComponent(message)}`));
     } catch (error: any) {
       const message = encodeURIComponent(String(error?.message || "Failed to push to Xero"));
       return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
