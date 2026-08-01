@@ -44,6 +44,21 @@ export async function loader({ request }: { request: Request }) {
 
     const productSearch = url.searchParams.get("productSearch") || "";
     const customerSearch = url.searchParams.get("customerSearch") || "";
+    const editQuoteId = Number(url.searchParams.get("editQuoteId") || "0");
+
+    // Load existing quote for editing if editQuoteId is present
+    let existingQuote = null;
+    if (editQuoteId > 0) {
+      existingQuote = await prisma.quote.findUnique({
+        where: { id: editQuoteId },
+        select: {
+          id: true, customerName: true, customerEmail: true, customerPhone: true,
+          address1: true, address2: true, city: true, county: true, postcode: true, country: true,
+          reference: true, vatType: true, staffId: true,
+          lineItems: { select: { shopifyVariantId: true, title: true, sku: true, quantity: true, unitPrice: true, discount: true } },
+        },
+      });
+    }
 
     const staff = await prisma.staff.findMany({
       orderBy: { name: "asc" },
@@ -161,6 +176,7 @@ export async function loader({ request }: { request: Request }) {
       customers,
       productSearch,
       customerSearch,
+      existingQuote,
     };
   } catch (error) {
     if (error instanceof Response) throw error;
@@ -171,6 +187,7 @@ export async function loader({ request }: { request: Request }) {
       customers: [],
       productSearch: "",
       customerSearch: "",
+      existingQuote: null,
     };
   }
 }
@@ -220,10 +237,36 @@ export async function action({ request }: { request: Request }) {
   const vatType = String(formData.get("vatType") || "Standard");
   const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
+  const editQuoteId = Number(formData.get("editQuoteId") || "0");
 
   let quote;
   try {
-    quote = await prisma.quote.create({
+    if (editQuoteId > 0) {
+      // Update existing quote — delete old line items and recreate
+      await prisma.quoteLineItem.deleteMany({ where: { quoteId: editQuoteId } });
+      quote = await prisma.quote.update({
+        where: { id: editQuoteId },
+        data: {
+          customerName, customerEmail, customerPhone,
+          address1, address2, city, county, postcode, country,
+          reference, subtotal, discountTotal, vatAmount, total,
+          vatType: vatType as "Standard" | "Exempt" | "CrossBorder",
+          staffId,
+          lineItems: {
+            create: lineItems.map((item: any) => ({
+              shopifyVariantId: item.id && !String(item.id).startsWith("custom-") ? item.id : null,
+              title: item.title,
+              sku: item.sku,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              discount: Number(item.discount || 0),
+              lineTotal: Number(item.unitPrice) * Number(item.quantity) - Number(item.discount || 0),
+            })),
+          },
+        },
+      });
+    } else {
+      quote = await prisma.quote.create({
       data: {
         customerName,
         customerEmail,
@@ -256,14 +299,17 @@ export async function action({ request }: { request: Request }) {
         },
       },
     });
+    } // end else (create)
   } catch (error: any) {
     console.error("Quote save failed:", error);
     const message = encodeURIComponent(String(error?.message || "Quote save failed"));
-    return redirect(withEmbeddedParamsFromRequest(request, `/app/quote?quoteError=${message}`));
+    const editParam = editQuoteId > 0 ? `&editQuoteId=${editQuoteId}` : "";
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quote?quoteError=${message}${editParam}`));
   }
 
   let quoteEmailStatus = "";
-  if (customerEmail) {
+  if (customerEmail && editQuoteId === 0) {
+    // Only auto-email on new quote creation; edits use the Email button on the detail page
     try {
       const { generateQuotePdf } = await import("../utils/quote-pdf.server");
       const { sendQuoteEmail } = await import("../utils/email.server");
@@ -283,11 +329,15 @@ export async function action({ request }: { request: Request }) {
     }
   }
 
+  if (editQuoteId > 0) {
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?emailStatus=success&emailMessage=${encodeURIComponent("Quote updated successfully")}`));
+  }
+
   return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?autoprint=1${quoteEmailStatus}`));
 }
 
 export default function QuotePage() {
-  const { staff, variants, customers, productSearch, customerSearch } =
+  const { staff, variants, customers, productSearch, customerSearch, existingQuote } =
     useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   const quoteError = searchParams.get("quoteError");
@@ -296,14 +346,14 @@ export default function QuotePage() {
   const [customerSearchTerm, setCustomerSearchTerm] = useState(customerSearch || "");
 
   const [staffId, setStaffId] = useState(
-    staff[0]?.id ? String(staff[0].id) : ""
+    existingQuote ? String(existingQuote.staffId) : (staff[0]?.id ? String(staff[0].id) : "")
   );
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState(existingQuote?.customerName || "");
+  const [customerEmail, setCustomerEmail] = useState(existingQuote?.customerEmail || "");
+  const [customerPhone, setCustomerPhone] = useState(existingQuote?.customerPhone || "");
   const [customerVatNumber, setCustomerVatNumber] = useState("");
-  const [vatType, setVatType] = useState("Standard");
+  const [vatType, setVatType] = useState<string>(existingQuote?.vatType || "Standard");
   const [selectedCustomer, setSelectedCustomer] = useState<{
     id: string;
     name: string;
@@ -311,16 +361,26 @@ export default function QuotePage() {
     phone: string;
   } | null>(null);
 
-  const [addressOpen, setAddressOpen] = useState(false);
-  const [address1, setAddress1] = useState("");
-  const [address2, setAddress2] = useState("");
-  const [city, setCity] = useState("");
-  const [county, setCounty] = useState("");
-  const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("United Kingdom");
+  const [addressOpen, setAddressOpen] = useState(Boolean(existingQuote?.address1 || existingQuote?.city));
+  const [address1, setAddress1] = useState(existingQuote?.address1 || "");
+  const [address2, setAddress2] = useState(existingQuote?.address2 || "");
+  const [city, setCity] = useState(existingQuote?.city || "");
+  const [county, setCounty] = useState(existingQuote?.county || "");
+  const [postcode, setPostcode] = useState(existingQuote?.postcode || "");
+  const [country, setCountry] = useState(existingQuote?.country || "United Kingdom");
 
-  const [reference, setReference] = useState("");
-  const [items, setItems] = useState<any[]>([]);
+  const [reference, setReference] = useState(existingQuote?.reference || "");
+  const [items, setItems] = useState<any[]>(
+    existingQuote?.lineItems.map((li) => ({
+      type: "custom",
+      id: li.shopifyVariantId || `custom-${Math.random()}`,
+      title: li.title,
+      sku: li.sku || "",
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      discount: li.discount,
+    })) || []
+  );
   const productSearchRef = useRef<HTMLDivElement | null>(null);
   const quoteLinesRef = useRef<HTMLDivElement | null>(null);
 
@@ -793,6 +853,9 @@ export default function QuotePage() {
                   name="lineItems"
                   value={JSON.stringify(items)}
                 />
+                {existingQuote && (
+                  <input type="hidden" name="editQuoteId" value={existingQuote.id} />
+                )}
 
                 <Layout>
                   <Layout.Section>
@@ -1043,7 +1106,7 @@ export default function QuotePage() {
                             fullWidth
                             disabled={items.length === 0}
                           >
-                            Save Quote
+                            {existingQuote ? "Update Quote" : "Save Quote"}
                           </Button>
                         </BlockStack>
                       </Card>

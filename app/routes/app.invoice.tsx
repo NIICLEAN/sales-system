@@ -2577,7 +2577,7 @@ const [showAddress, setShowAddress] = useState(
                   </BlockStack>
                 </Card>
 
-                <div id="invoice-details-anchor">
+                <div id="invoice-details-anchor" style={{ scrollMarginTop: 64 }} />
                 <Card>
                   <BlockStack gap="400">
                     <Text as="h2" variant="headingMd">
@@ -2857,7 +2857,6 @@ const [showAddress, setShowAddress] = useState(
                         </div>
                         <Button
                           onClick={() => setPaymentDate(new Date().toISOString().slice(0, 16))}
-                          title="Set to current date and time"
                         >
                           Now
                         </Button>

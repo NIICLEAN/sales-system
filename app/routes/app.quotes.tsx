@@ -1,4 +1,4 @@
-import { useLoaderData, useLocation, useNavigate } from "react-router";
+import { Form, useLoaderData, useLocation, useNavigate } from "react-router";
 import {
   AppProvider,
   Page,
@@ -130,6 +130,15 @@ export default function QuotesPage() {
                         <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}`))}>
                           View
                         </Button>
+
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quote?editQuoteId=${quote.id}`))}>
+                          Edit
+                        </Button>
+
+                        <form method="post" action={withEmbeddedParams(`/app/quotes/${quote.id}`)} onSubmit={(e) => { if (!window.confirm(`Email QUO-${quote.id} to customer?`)) e.preventDefault(); }}>
+                          <input type="hidden" name="_intent" value="emailQuote" />
+                          <Button submit>Email</Button>
+                        </form>
 
                         <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}>
                           Print

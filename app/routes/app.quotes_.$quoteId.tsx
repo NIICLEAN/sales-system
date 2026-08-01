@@ -80,6 +80,33 @@ export async function action({ request, params }: { request: Request; params: { 
   const { admin } = await authenticate.admin(request);
 
   const quoteId = Number(params.quoteId);
+  const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "convertToInvoice");
+
+  // Email the quote as a PDF
+  if (intent === "emailQuote") {
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: { customerEmail: true, customerName: true },
+    });
+    if (!quote?.customerEmail) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quoteId}?emailStatus=error&emailMessage=${encodeURIComponent("No customer email address on this quote")}`));
+    }
+    const to = quote.customerEmail;
+    const customerName = quote.customerName || "";
+    (async () => {
+      try {
+        const { generateQuotePdf } = await import("../utils/quote-pdf.server");
+        const { sendQuoteEmail } = await import("../utils/email.server");
+        const pdfBuffer = await generateQuotePdf(quoteId);
+        await sendQuoteEmail({ to, customerName, quoteId, pdfBuffer });
+        console.log(`[email] Quote QUO-${quoteId} emailed to ${to}`);
+      } catch (err: any) {
+        console.error(`[email] Quote QUO-${quoteId} failed:`, err);
+      }
+    })();
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quoteId}?emailStatus=success&emailMessage=${encodeURIComponent(`Quote QUO-${quoteId} emailed to ${to}`)}`));
+  }
 
   const quote = await prisma.quote.findUnique({
     where: { id: quoteId },
@@ -315,11 +342,38 @@ export default function QuoteViewPage() {
                     Print / Download Quote
                   </Button>
 
+                  <Button
+                    onClick={() => navigate(withEmbeddedParams(`/app/quote?editQuoteId=${quote.id}`))}
+                  >
+                    Edit Quote
+                  </Button>
+
                   <form method="post" style={{ display: "inline" }}>
+                    <input type="hidden" name="_intent" value="emailQuote" />
                     <button
                       type="submit"
                       style={{
                         background: "#006aff",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        marginRight: 8,
+                      }}
+                      onClick={(e) => {
+                        if (!window.confirm(`Email quote QUO-${quote.id} to ${loadedQuote.customerEmail || "customer"}?`)) e.preventDefault();
+                      }}
+                    >
+                      Email Quote
+                    </button>
+                  </form>
+
+                  <form method="post" style={{ display: "inline" }}>
+                    <button
+                      type="submit"
+                      style={{
+                        background: "#1f7a1f",
                         color: "white",
                         border: "none",
                         padding: "8px 12px",
