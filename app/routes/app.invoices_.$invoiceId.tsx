@@ -128,10 +128,11 @@ export async function action({ request, params }: { request: Request; params: { 
       }
 
       const isVatExempt = Boolean(sale.customerVatNumber);
+      const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
       const draftOrderInput: any = {
         customerId: sale.customerId || undefined,
-        email: sale.customerEmail || undefined,
+        email: sale.customerEmail && isValidEmail(sale.customerEmail) ? sale.customerEmail : undefined,
         phone: sale.customerPhone || undefined,
         taxExempt: isVatExempt,
         note: sale.reference || undefined,

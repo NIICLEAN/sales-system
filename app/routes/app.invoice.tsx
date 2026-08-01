@@ -224,9 +224,10 @@ async function createShopifyOrderFromInvoice({
   lineItems,
   paymentStatus,
 }: any) {
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   const draftOrderInput = {
     customerId: shopifyCustomerId || undefined,
-    email: customerEmail || undefined,
+    email: customerEmail && isValidEmail(customerEmail) ? customerEmail : undefined,
     phone: customerPhone || undefined,
     taxExempt: isVatExempt,
     note: reference || undefined,
