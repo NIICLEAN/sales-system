@@ -1195,7 +1195,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "pushUnsentToXero") {
     try {
-      // Find up to 50 paid Sales that haven't been pushed to Xero yet
+      // Step 1: Connect to Xero
+      let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
+      try {
+        xeroClient = await getConnectedXeroClient();
+      } catch {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${encodeURIComponent("Xero is not connected. Connect Xero first.")}`));
+      }
+      const { xero, tenantId } = xeroClient;
+
+      // Step 2: Find up to 50 sales with unpushed payments
       const unpushedSales = await prisma.$queryRaw<Array<{ id: number }>>`
         SELECT DISTINCT s.id FROM "Sale" s
         JOIN "Payment" p ON p."saleId" = s.id
@@ -1211,20 +1220,108 @@ export async function action({ request }: ActionFunctionArgs) {
         return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent("All invoices are already in Xero")}`));
       }
 
+      // Step 3: Pre-fetch existing Xero invoices to cross-reference against the old
+      // Shopify connector. The old connector didn't use the .1 suffix — it likely used
+      // the Shopify order name (e.g. NCP#1638) as the invoice reference or number.
+      // We build a lookup: normalised (reference | invoiceNumber) → { invoiceID, total }
+      // so we can link rather than duplicate any invoice the old connector already sent.
+      type XeroSummary = { invoiceID: string; total: number };
+      const xeroLookup = new Map<string, XeroSummary>();
+      try {
+        let page = 1;
+        while (page <= 10) { // max 1 000 invoices
+          const resp = await (xero.accountingApi as any).getInvoices(
+            tenantId,
+            undefined,                          // ifModifiedSince
+            'Type=="ACCREC" AND Status!="VOIDED"', // where
+            undefined,                          // order
+            undefined,                          // IDs
+            undefined,                          // invoiceNumbers
+            undefined,                          // contactIDs
+            undefined,                          // statuses
+            page,                               // page (100 per page)
+            false,                              // includeArchived
+            false,                              // createdByMyApp
+            undefined,                          // unitdp
+            true,                               // summaryOnly — faster, key fields only
+          );
+          const invoices: any[] = resp?.body?.invoices || [];
+          if (invoices.length === 0) break;
+          for (const inv of invoices) {
+            const entry: XeroSummary = { invoiceID: String(inv.invoiceID || ""), total: Number(inv.total || 0) };
+            // Index by reference (what the old Shopify connector typically sets to the order name)
+            if (inv.reference) xeroLookup.set(String(inv.reference).toLowerCase().trim(), entry);
+            // Index by invoiceNumber (some connectors use the order name here)
+            if (inv.invoiceNumber) xeroLookup.set(String(inv.invoiceNumber).toLowerCase().trim(), entry);
+          }
+          if (invoices.length < 100) break; // last page
+          page++;
+        }
+        console.log(`[pushUnsentToXero] Pre-fetched ${xeroLookup.size} Xero invoice keys for duplicate check`);
+      } catch (err: any) {
+        // If pre-fetch fails, log but continue — we'll push rather than silently skip
+        console.error("[pushUnsentToXero] Could not pre-fetch Xero invoices for duplicate check:", err?.message || err);
+      }
+
+      // Step 4: For each sale, check lookup then push or link
       let pushed = 0;
+      let linked = 0;  // already existed in Xero from old connector — linked, not duplicated
       let failed = 0;
+
       for (const { id } of unpushedSales) {
+        // Load the sale's order name and total for matching
+        let shopifyOrderName: string | null = null;
+        let saleTotal = 0;
         try {
-          await pushNewPaymentsToXero(id);
-          pushed++;
-        } catch {
-          failed++;
+          const row = await prisma.sale.findUnique({
+            where: { id },
+            select: { shopifyOrderName: true, reference: true, total: true },
+          });
+          shopifyOrderName = row?.shopifyOrderName || row?.reference || null;
+          saleTotal = Number(row?.total || 0);
+        } catch { /* keep defaults */ }
+
+        // Cross-reference: look for a Xero invoice where the reference or invoice
+        // number matches our Shopify order name AND the total is within £1.
+        let existingXeroId: string | null = null;
+        if (shopifyOrderName && xeroLookup.size > 0) {
+          const key = shopifyOrderName.toLowerCase().trim();
+          const match = xeroLookup.get(key);
+          if (match && match.invoiceID && Math.abs(match.total - saleTotal) <= 1.0) {
+            existingXeroId = match.invoiceID;
+          }
+        }
+
+        if (existingXeroId) {
+          // Already in Xero from old connector — link it without creating a duplicate
+          try {
+            await prisma.$executeRaw`
+              UPDATE "Payment" SET "xeroInvoiceId" = ${existingXeroId}
+              WHERE "saleId" = ${id}
+                AND ("xeroInvoiceId" IS NULL OR "xeroInvoiceId" = 'PENDING')
+            `;
+            await prisma.$executeRaw`UPDATE "Sale" SET "xeroInvoiceId" = ${existingXeroId} WHERE id = ${id}`;
+            linked++;
+            console.log(`[pushUnsentToXero] sale ${id} already in Xero as ${existingXeroId} — linked`);
+          } catch {
+            failed++;
+          }
+        } else {
+          // Not in Xero yet — push it
+          try {
+            await pushNewPaymentsToXero(id);
+            pushed++;
+          } catch {
+            failed++;
+          }
         }
       }
 
-      const message = failed > 0
-        ? `Pushed ${pushed} invoice(s) to Xero. ${failed} failed — check Railway logs.`
-        : `Pushed ${pushed} invoice(s) to Xero`;
+      const parts: string[] = [];
+      if (pushed > 0) parts.push(`Pushed ${pushed} new invoice(s) to Xero`);
+      if (linked > 0) parts.push(`${linked} already existed in Xero from previous connector — linked (no duplicates created)`);
+      if (failed > 0) parts.push(`${failed} failed — check Railway logs`);
+      const message = parts.join(". ") || "Done";
       return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(message)}`));
     } catch (error: any) {
       const message = encodeURIComponent(String(error?.message || "Failed to push to Xero"));
