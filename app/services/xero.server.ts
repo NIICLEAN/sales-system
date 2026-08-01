@@ -174,8 +174,13 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
     } catch {}
   }
 
-  const alreadySentCount = allPayments.filter((p) => p.xeroInvoiceId).length;
-  const unsentPayments = allPayments.filter((p) => !p.xeroInvoiceId);
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  // "already sent" = confirmed Xero invoice ID (not null, not PENDING)
+  const alreadySentCount = allPayments.filter((p) => p.xeroInvoiceId && p.xeroInvoiceId !== 'PENDING').length;
+  // "unsent" = null, OR stuck in PENDING for > 10 min (process was killed mid-push)
+  const unsentPayments = allPayments.filter(
+    (p) => !p.xeroInvoiceId || (p.xeroInvoiceId === 'PENDING' && new Date(p.createdAt) < tenMinutesAgo)
+  );
   if (unsentPayments.length === 0) return;
 
   let lastXeroInvoiceId: string | null = null;
@@ -187,11 +192,14 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<void> {
     // Atomically claim this payment before calling Xero — prevents the race between
     // the auto-push (fire-and-forget) and the manual "Send to Xero" button both
     // seeing xeroInvoiceId IS NULL and creating duplicate invoices.
+    // Also reclaims payments stuck in PENDING for > 10 minutes (process was killed mid-push).
     let claimed = 0;
     try {
       claimed = Number(await prisma.$executeRaw`
         UPDATE "Payment" SET "xeroInvoiceId" = 'PENDING'
-        WHERE id = ${payment.id} AND "xeroInvoiceId" IS NULL
+        WHERE id = ${payment.id}
+          AND ("xeroInvoiceId" IS NULL
+            OR ("xeroInvoiceId" = 'PENDING' AND "createdAt" < NOW() - INTERVAL '10 minutes'))
       `);
     } catch {
       console.warn(`[Xero push] could not claim payment ${payment.id} — skipping`);

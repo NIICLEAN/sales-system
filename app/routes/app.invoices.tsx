@@ -21,7 +21,7 @@ import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getConnectedXeroClient, getXeroConnection } from "../services/xero.server";
+import { getConnectedXeroClient, getXeroConnection, pushNewPaymentsToXero } from "../services/xero.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
@@ -1193,6 +1193,46 @@ export async function action({ request }: ActionFunctionArgs) {
     return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=emailSent&syncMessage=${encodeURIComponent(`Invoice INV-${invoiceId} emailed to ${recipientEmail}`)}`));
   }
 
+  if (intent === "pushUnsentToXero") {
+    try {
+      // Find up to 50 paid Sales that haven't been pushed to Xero yet
+      const unpushedSales = await prisma.$queryRaw<Array<{ id: number }>>`
+        SELECT DISTINCT s.id FROM "Sale" s
+        JOIN "Payment" p ON p."saleId" = s.id
+          AND (p."xeroInvoiceId" IS NULL
+            OR (p."xeroInvoiceId" = 'PENDING' AND p."createdAt" < NOW() - INTERVAL '10 minutes'))
+        WHERE s."paymentStatus" = 'Paid'
+          AND (s."xeroInvoiceId" IS NULL)
+          AND (s."shopifyOrderId" IS NULL OR s."shopifyOrderId" NOT LIKE 'xero:%')
+        ORDER BY s.id DESC
+        LIMIT 50
+      `;
+
+      if (unpushedSales.length === 0) {
+        return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent("All invoices are already in Xero")}`));
+      }
+
+      let pushed = 0;
+      let failed = 0;
+      for (const { id } of unpushedSales) {
+        try {
+          await pushNewPaymentsToXero(id);
+          pushed++;
+        } catch {
+          failed++;
+        }
+      }
+
+      const message = failed > 0
+        ? `Pushed ${pushed} invoice(s) to Xero. ${failed} failed — check Railway logs.`
+        : `Pushed ${pushed} invoice(s) to Xero`;
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(message)}`));
+    } catch (error: any) {
+      const message = encodeURIComponent(String(error?.message || "Failed to push to Xero"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -1377,6 +1417,7 @@ export async function loader({ request }: { request: Request }) {
     }
 
     let xeroConnected = false;
+    let unpushedToXeroCount = 0;
     if (xeroConfigured) {
       try {
         const xeroConnection = await getXeroConnection();
@@ -1385,6 +1426,25 @@ export async function loader({ request }: { request: Request }) {
         // Keep invoices working even if Xero storage/migrations are unavailable.
         console.error("Failed to load Xero connection status:", error);
         xeroConnected = false;
+      }
+      if (xeroConnected) {
+        try {
+          const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT COUNT(*) as count FROM "Sale" s
+            WHERE s."paymentStatus" = 'Paid'
+              AND (s."xeroInvoiceId" IS NULL)
+              AND (s."shopifyOrderId" IS NULL OR s."shopifyOrderId" NOT LIKE 'xero:%')
+              AND EXISTS (
+                SELECT 1 FROM "Payment" p
+                WHERE p."saleId" = s.id
+                  AND (p."xeroInvoiceId" IS NULL
+                    OR (p."xeroInvoiceId" = 'PENDING' AND p."createdAt" < NOW() - INTERVAL '10 minutes'))
+              )
+          `;
+          unpushedToXeroCount = Number(rows[0]?.count || 0);
+        } catch {
+          // Column may not exist yet — ignore
+        }
       }
     }
 
@@ -1551,6 +1611,7 @@ export async function loader({ request }: { request: Request }) {
       source,
       xeroConnected,
       xeroConfigured,
+      unpushedToXeroCount,
       error: null,
     };
   } catch (error) {
@@ -1573,6 +1634,7 @@ export async function loader({ request }: { request: Request }) {
       source: "local",
       xeroConnected: false,
       xeroConfigured: false,
+      unpushedToXeroCount: 0,
       error: "Invoices could not be loaded right now.",
     };
   }
@@ -1593,6 +1655,7 @@ export default function InvoicesPage() {
     source,
     xeroConnected,
     xeroConfigured,
+    unpushedToXeroCount,
     error,
   } = useLoaderData<typeof loader>();
   const location = useLocation();
@@ -1945,6 +2008,18 @@ export default function InvoicesPage() {
                 Xero is not connected yet. Connect Xero first, then run Sync Xero.
                 <div style={{ marginTop: 8 }}>
                   <Button onClick={() => window.open("/xero/connect", "_blank")}>Open Xero connect</Button>
+                </div>
+              </Banner>
+            ) : null}
+
+            {xeroConfigured && xeroConnected && unpushedToXeroCount > 0 ? (
+              <Banner tone="warning" title={`${String(unpushedToXeroCount)} paid invoice${unpushedToXeroCount === 1 ? "" : "s"} not yet sent to Xero`}>
+                <p>These were likely created from Shopify orders. Click below to push them now.</p>
+                <div style={{ marginTop: 8 }}>
+                  <Form method="post">
+                    <input type="hidden" name="_intent" value="pushUnsentToXero" />
+                    <Button submit>{`Push ${unpushedToXeroCount} to Xero`}</Button>
+                  </Form>
                 </div>
               </Banner>
             ) : null}
