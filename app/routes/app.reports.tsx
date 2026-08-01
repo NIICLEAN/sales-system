@@ -467,6 +467,58 @@ export default function ReportsPage() {
         </Layout.Section>
 
         <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">Staff Performance</Text>
+              <Text as="p" tone="subdued">
+                {selectedPeriod === "today" ? "Today" : selectedPeriod === "week" ? "This week" : selectedPeriod === "month" ? "This month" : selectedPeriod === "year" ? "This year" : "Selected period"}
+              </Text>
+              {sales.length === 0 ? (
+                <Text as="p" tone="subdued">No sales in this period.</Text>
+              ) : (
+                <div>
+                  {(() => {
+                    const byStaff: Record<string, { name: string; count: number; total: number; vat: number }> = {};
+                    for (const sale of sales as any[]) {
+                      const name = sale.staff?.name || "Unknown";
+                      if (!byStaff[name]) byStaff[name] = { name, count: 0, total: 0, vat: 0 };
+                      byStaff[name].count += 1;
+                      byStaff[name].total += Number(sale.total ?? 0);
+                      byStaff[name].vat += Number(sale.vatAmount ?? 0);
+                    }
+                    const rows = Object.values(byStaff).sort((a, b) => b.total - a.total);
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", gap: 12, padding: "6px 8px", fontWeight: 600, fontSize: 12, color: "#6d7175", textTransform: "uppercase", borderBottom: "1px solid #e1e3e5" }}>
+                          <span style={{ flex: 2 }}>Staff Member</span>
+                          <span style={{ minWidth: 70, textAlign: "center" }}>Invoices</span>
+                          <span style={{ minWidth: 90, textAlign: "right" }}>VAT</span>
+                          <span style={{ minWidth: 100, textAlign: "right" }}>Revenue</span>
+                        </div>
+                        {rows.map((row) => (
+                          <div key={row.name} style={{ display: "flex", gap: 12, padding: "8px 8px", alignItems: "center", borderBottom: "1px solid #f1f2f3" }}>
+                            <span style={{ flex: 2, fontWeight: 500 }}>{row.name}</span>
+                            <span style={{ minWidth: 70, textAlign: "center", color: "#6d7175" }}>{row.count}</span>
+                            <span style={{ minWidth: 90, textAlign: "right", color: "#6d7175" }}>{formatCurrency(row.vat)}</span>
+                            <span style={{ minWidth: 100, textAlign: "right", fontWeight: 700 }}>{formatCurrency(row.total)}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", gap: 12, padding: "8px 8px", alignItems: "center", fontWeight: 700, background: "#f6f6f7", borderRadius: 4, marginTop: 4 }}>
+                          <span style={{ flex: 2 }}>Total</span>
+                          <span style={{ minWidth: 70, textAlign: "center" }}>{(sales as any[]).length}</span>
+                          <span style={{ minWidth: 90, textAlign: "right" }}>{formatCurrency(summary.totalVat)}</span>
+                          <span style={{ minWidth: 100, textAlign: "right" }}>{formatCurrency(summary.totalSales)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
           <InlineStack gap="300">
             <div style={{ flex: 1 }}>
               <Card>
