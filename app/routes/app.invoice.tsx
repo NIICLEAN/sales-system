@@ -1887,6 +1887,15 @@ const [showAddress, setShowAddress] = useState(
   title={existingInvoice ? `Edit INV-${existingInvoice.id}` : "Create Invoice"}
       subtitle="Search products, add invoice lines, then complete the customer and payment details."
     >
+      <div style={{ padding: "8px 0 4px" }}>
+        <Button
+          onClick={() => document.getElementById("invoice-details-anchor")?.scrollIntoView({ behavior: "smooth" })}
+          variant="plain"
+          icon={<span>↓</span>}
+        >
+          Jump to Invoice Details
+        </Button>
+      </div>
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
@@ -2568,43 +2577,24 @@ const [showAddress, setShowAddress] = useState(
                   </BlockStack>
                 </Card>
 
+                <div id="invoice-details-anchor">
                 <Card>
                   <BlockStack gap="400">
                     <Text as="h2" variant="headingMd">
                       Invoice details
                     </Text>
+                    {/* fulfilmentMethod preserved as hidden so Shopify tags/attributes still work */}
+                    <input type="hidden" name="fulfilmentMethod" value={fulfilmentMethod} />
 
-                    <InlineStack gap="300">
-                      <div style={{ flex: 1 }}>
-                        <Select
-                          label="Account / Salesperson"
-                          name="staffId"
-                          options={staffOptions}
-                          value={staffId}
-                          onChange={setStaffId}
-                        />
-                      </div>
-
-                      <div style={{ flex: 1 }}>
-                        <Select
-                          label="Payment method"
-                          name="paymentMethod"
-                          options={paymentOptions}
-                          value={paymentMethod}
-                          onChange={setPaymentMethod}
-                        />
-                      </div>
-
-                      <div style={{ flex: 1 }}>
-                        <Select
-                          label="Order type"
-                          name="fulfilmentMethod"
-                          options={fulfilmentOptions}
-                          value={fulfilmentMethod}
-                          onChange={setFulfilmentMethod}
-                        />
-                      </div>
-                    </InlineStack>
+                    <div style={{ maxWidth: 280 }}>
+                      <Select
+                        label="Account / Salesperson"
+                        name="staffId"
+                        options={staffOptions}
+                        value={staffId}
+                        onChange={setStaffId}
+                      />
+                    </div>
 
                     <InlineStack gap="300">
                       <div style={{ flex: 1 }}>
@@ -2853,15 +2843,34 @@ const [showAddress, setShowAddress] = useState(
                         </Button>
                       </InlineStack>
 
-                      <TextField
-                        label="Payment date & time"
-                        name="paymentDate"
-                        value={paymentDate}
-                        onChange={setPaymentDate}
-                        autoComplete="off"
-                        type="datetime-local"
-                        helpText="Record the exact date and time of the transaction"
-                      />
+                      <InlineStack gap="300" blockAlign="end">
+                        <div style={{ flex: 2 }}>
+                          <TextField
+                            label="Payment date & time"
+                            name="paymentDate"
+                            value={paymentDate}
+                            onChange={setPaymentDate}
+                            autoComplete="off"
+                            type="datetime-local"
+                            helpText="Record the exact date and time of the transaction"
+                          />
+                        </div>
+                        <Button
+                          onClick={() => setPaymentDate(new Date().toISOString().slice(0, 16))}
+                          title="Set to current date and time"
+                        >
+                          Now
+                        </Button>
+                        <div style={{ flex: 1 }}>
+                          <Select
+                            label="Payment method"
+                            name="paymentMethod"
+                            options={paymentOptions}
+                            value={paymentMethod}
+                            onChange={setPaymentMethod}
+                          />
+                        </div>
+                      </InlineStack>
 
                       <Button onClick={() => setInvoiceDiscountEnabled((current) => !current)}>
                         {invoiceDiscountEnabled ? "Remove discount" : "Add discount"}

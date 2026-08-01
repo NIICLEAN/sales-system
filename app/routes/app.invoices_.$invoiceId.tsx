@@ -1513,145 +1513,74 @@ export default function PrintInvoicePage() {
 
       {showInvoiceSheet ? (
       <div className="invoice-print-sheet">
+
+        {/* ── Logo banner ── */}
+        {logoUrl ? (
+          <div style={{ textAlign: "center", marginBottom: 18 }}>
+            <img src={logoUrl} alt="NII Clean Products" className="logo" style={{ maxWidth: 280, maxHeight: 100 }} />
+          </div>
+        ) : null}
+
       <div className="header">
+        {/* LEFT: TAX INVOICE + customer */}
         <div>
-          <h1 className="invoice-title">Invoice</h1>
-          <div className="invoice-number">INV-{invoice.id}</div>
+          <h1 className="invoice-title">TAX INVOICE</h1>
+          <div style={{ marginTop: 8, fontSize: 16, fontWeight: 600 }}>{invoice.customerName}</div>
+          {invoice.customerEmail ? <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>{invoice.customerEmail}</div> : null}
+          {invoice.customerPhone ? <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>{invoice.customerPhone}</div> : null}
+          {invoice.customerVatNumber ? <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>VAT: {invoice.customerVatNumber}</div> : null}
         </div>
 
+        {/* RIGHT: business info + invoice date/number */}
         <div className="business">
-          {logoUrl && <img src={logoUrl} alt="Logo" className="logo" />}
-
           <h2>NII Clean Products</h2>
           <p>96 Bushmills Road</p>
-          <p>Coleraine / BT52 2BT</p>
-          <p>sales@niicleanproducts.com</p>
-          <p>VAT No: 369865135</p>
-        </div>
-      </div>
-
-      <div className="meta-grid">
-        <div className="meta-cell">
-          <div className="label">Invoice Date</div>
-          <div className="value">
-            {formatDateTime(invoice.createdAt)}
-          </div>
-        </div>
-
-        <div className="meta-cell">
-          <div className="label">Salesperson</div>
-          <div className="value">{invoice.staff?.name || "-"}</div>
-        </div>
-
-        <div className="meta-cell">
-          <div className="label">Payment Method</div>
-          <div className="value">{invoice.paymentMethod}</div>
-        </div>
-
-        <div className="meta-cell">
-          <div className="label">Payment Status</div>
-          <div
-            className={`value ${
-              paymentStatus === "Paid"
-                ? "status-paid"
-                : paymentStatus === "Partially Paid"
-                  ? "status-partial"
-                  : "status-unpaid"
-            }`}
-          >
-            {paymentStatus}
-          </div>
-        </div>
-
-        <div className="meta-cell">
-          <div className="label">Invoice Discount</div>
-          <div className="value">
-            {invoice.invoiceDiscountType === "percent"
-              ? `${invoice.invoiceDiscountValue || 0}%`
-              : money(invoice.invoiceDiscountAmount || 0)}
-          </div>
-        </div>
-
-        <div className="meta-cell">
-          <div className="label">Shipping</div>
-          <div className="value">{invoice.shippingMethod || "Collection"}</div>
-          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
-            Fulfillment: {invoice.fulfillmentStatus || "-"}
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
-            Delivery: {invoice.deliveryStatus || "-"}
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
-            Type: {invoice.deliveryMethod || "-"}
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
-            Carrier: {invoice.carrierName || "-"}
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, color: "#4b5870" }}>
-            Tracking: {invoice.trackingNumber || "-"}
-          </div>
-          {invoice.trackingUrl ? (
-            <div style={{ marginTop: 4, fontSize: 12 }}>
-              <a href={invoice.trackingUrl} target="_blank" rel="noreferrer">Track shipment</a>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="address-grid">
-        <div className="address-box">
-          <div className="address-title">Invoice Address</div>
-          <p>
-            <strong>{invoice.customerName}</strong>
+          <p>Coleraine BT52 2BT</p>
+          <p>United Kingdom</p>
+          <p>+447711781911</p>
+          <p style={{ marginTop: 10, borderTop: "1px solid #ddd", paddingTop: 8 }}>
+            <span style={{ textTransform: "uppercase", fontSize: 10, color: "#888", letterSpacing: 1 }}>Invoice Date</span><br />
+            <strong>{formatDate(invoice.createdAt)}</strong>
           </p>
-          <p>{invoice.customerEmail || ""}</p>
-          <p>{invoice.customerPhone || ""}</p>
-          {invoice.customerVatNumber ? <p>VAT Number: {invoice.customerVatNumber}</p> : null}
-          <p>{invoice.address1 || ""}</p>
-          <p>{invoice.address2 || ""}</p>
-          <p>
-            {[invoice.city, invoice.county].filter(Boolean).join(", ")}
+          <p style={{ marginTop: 6 }}>
+            <span style={{ textTransform: "uppercase", fontSize: 10, color: "#888", letterSpacing: 1 }}>Invoice Number</span><br />
+            <strong>{invoice.shopifyOrderName || `INV-${invoice.id}`}</strong>
           </p>
-          <p>{invoice.postcode || ""}</p>
-          <p>{invoice.country || ""}</p>
-        </div>
-
-        <div className="address-box">
-          <div className="address-title">Delivery Address</div>
-          {(invoice.deliveryAddress1 || invoice.deliveryCity || invoice.deliveryPostcode) ? (
-            <>
-              <p>{invoice.deliveryAddress1 || ""}</p>
-              <p>{invoice.deliveryAddress2 || ""}</p>
-              <p>{[invoice.deliveryCity, invoice.deliveryCounty].filter(Boolean).join(", ")}</p>
-              <p>{invoice.deliveryPostcode || ""}</p>
-              <p>{invoice.deliveryCountry || ""}</p>
-            </>
-          ) : (
-            <p style={{color:"#888",fontStyle:"italic"}}>Same as invoice address</p>
-          )}
         </div>
       </div>
+
+      {/* ── Customer address (only if set) ── */}
+      {(invoice.address1 || invoice.city || invoice.postcode) ? (
+        <div style={{ marginBottom: 18, fontSize: 13, color: "#333" }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "#888", marginBottom: 4 }}>Bill To</div>
+          {invoice.address1 ? <div>{invoice.address1}</div> : null}
+          {invoice.address2 ? <div>{invoice.address2}</div> : null}
+          {[invoice.city, invoice.county].filter(Boolean).join(", ") ? <div>{[invoice.city, invoice.county].filter(Boolean).join(", ")}</div> : null}
+          {invoice.postcode ? <div>{invoice.postcode}</div> : null}
+          {invoice.country ? <div>{invoice.country}</div> : null}
+        </div>
+      ) : null}
 
       <table>
         <thead>
           <tr>
-            <th>Item Description</th>
-            <th>SKU</th>
-            <th className="right">Qty</th>
+            <th>Item</th>
+            <th>Description / SKU</th>
+            <th className="right">Quantity</th>
             <th className="right">Unit Price</th>
-            <th className="right">Discount</th>
-            <th className="right">Line Total</th>
+            <th className="right">VAT</th>
+            <th className="right">Amount GBP</th>
           </tr>
         </thead>
 
         <tbody>
           {invoice.lineItems.map((item: any) => (
             <tr key={item.id}>
-              <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
+              <td>{item.title}</td>
               <td className="right">{item.quantity}</td>
               <td className="right">{money(item.unitPrice)}</td>
-              <td className="right">{money(item.discount)}</td>
+              <td className="right">{invoice.vatType === "Exempt" || invoice.vatType === "CrossBorder" ? "0%" : "20%"}</td>
               <td className="right">{money(item.lineTotal)}</td>
             </tr>
           ))}
@@ -1665,44 +1594,29 @@ export default function PrintInvoicePage() {
         </div>
 
         <div className="totals-row">
-          <span>Discount</span>
-          <span>{money(invoice.discountTotal)}</span>
-        </div>
-
-        <div className="totals-row">
-          <span>Invoice Discount</span>
-          <span>-{money(invoice.invoiceDiscountAmount || 0)}</span>
-        </div>
-
-        <div className="totals-row">
-          <span>VAT</span>
+          <span>TOTAL VAT {invoice.vatType === "Exempt" || invoice.vatType === "CrossBorder" ? "0%" : "20%"}</span>
           <span>{money(invoice.vatAmount)}</span>
         </div>
 
+        {(Number(invoice.discountTotal) > 0 || Number(invoice.invoiceDiscountAmount) > 0) ? (
+          <div className="totals-row">
+            <span>Discount</span>
+            <span>-{money(Number(invoice.discountTotal || 0) + Number(invoice.invoiceDiscountAmount || 0))}</span>
+          </div>
+        ) : null}
+
         <div className="totals-row total-row">
-          <span>Total</span>
+          <span>TOTAL GBP</span>
           <span>{money(invoice.total)}</span>
         </div>
 
         <div className="totals-row paid-row">
-          <span>Amount Paid</span>
+          <span>Less Amount Paid</span>
           <span>{money(amountPaid)}</span>
         </div>
 
-        <div className="totals-row payments-row">
-          <span>
-            Partial Payments Made ({partialPaymentCount})
-            {partialPaymentEstimated ? (
-              <span className="payments-note">Based on recorded amount paid</span>
-            ) : null}
-          </span>
-          <span>
-            {money(partialPaymentTotal)} / {money(invoice.total)}
-          </span>
-        </div>
-
-        <div className="totals-row balance-row">
-          <span>Balance Remaining</span>
+        <div className={`totals-row ${balanceDue > 0 ? "balance-row" : ""}`}>
+          <span>AMOUNT DUE GBP</span>
           <span>{money(balanceDue)}</span>
         </div>
       </div>
@@ -1710,17 +1624,21 @@ export default function PrintInvoicePage() {
       <div className="footer">
         {balanceDue > 0 ? (
           <>
-            <p style={{fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",margin:"0 0 4px"}}>Payment Information</p>
-            <p style={{margin:"0 0 3px"}}>INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING 02870348834 TO PAY OVER THE PHONE.</p>
-            <p style={{margin:"0 0 3px"}}>First time orders will need paid via bank transfer.</p>
-            <p style={{margin:"0 0 6px"}}>Registered in Northern Ireland | VAT Registration Number XI369865135</p>
-            <p style={{margin:"0 0 2px",fontWeight:600}}>Danske Bank</p>
-            <p style={{margin:"0 0 2px"}}>Name On Account: Nii Clean Ltd &nbsp;|&nbsp; Sort Code: 95 06 79 &nbsp;|&nbsp; Account Number: 40254274</p>
-            <p style={{margin:"0 0 2px"}}>IBAN: GB83 DABA 9506 7940 2542 74 &nbsp;|&nbsp; BIC/SWIFT: DABAGB2B</p>
+            <p style={{ margin: "0 0 4px" }}><strong>Due Date:</strong> {formatDate(invoice.createdAt)}</p>
+            <p style={{ margin: "0 0 3px" }}>INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING +447711781911 TO PAY OVER THE PHONE.</p>
+            <p style={{ margin: "0 0 6px" }}>Registered in Northern Ireland &nbsp;|&nbsp; VAT Registration Number XI369865135</p>
+            <p style={{ margin: "0 0 2px" }}><strong>Danske Bank</strong></p>
+            <p style={{ margin: "0 0 2px" }}>Name On Account : NII Clean Ltd</p>
+            <p style={{ margin: "0 0 2px" }}>Sort Code : 95 06 79 &nbsp;&nbsp; Account Number : 40254274</p>
+            <p style={{ margin: "0 0 2px" }}>IBAN : GB83 DABA 9506 7940 2542 74 &nbsp;&nbsp; BIC/SWIFT : DABAGB2B</p>
           </>
         ) : (
-          <p style={{margin:0}}>Thank you for your business. | Registered in Northern Ireland | VAT No: XI369865135</p>
+          <p style={{ margin: 0 }}>Registered in Northern Ireland &nbsp;|&nbsp; VAT Registration Number XI369865135</p>
         )}
+        <div style={{ marginTop: 20, padding: "14px 18px", background: "#eff6ff", borderRadius: 8, textAlign: "center", borderLeft: "4px solid #2563eb" }}>
+          <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#1d4ed8" }}>Thank you for shopping with NII Clean Products!</p>
+          <p style={{ margin: "4px 0 0", color: "#3b82f6", fontSize: 12 }}>We appreciate your business so much. We look forward to seeing you again.</p>
+        </div>
       </div>
       </div>
       ) : null}

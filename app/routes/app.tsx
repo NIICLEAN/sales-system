@@ -69,8 +69,6 @@ export default function App() {
     { to: "/app/invoices", label: "Invoices" },
     { to: "/app/quote", label: "Create Quote" },
     { to: "/app/quotes", label: "Quotes" },
-    { to: "/app/works/awaiting-scheduled", label: "Awaiting Works" },
-    { to: "/app/works/scheduled", label: "Scheduled Works" },
     { to: "/app/schedule", label: "Schedule" },
     { to: "/app/reports", label: "Reports" },
     { to: "/app/staff", label: "Staff" },

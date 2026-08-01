@@ -1889,6 +1889,14 @@ export default function InvoicesPage() {
     setShippingEditorOpen(true);
   }
 
+  function getFulfilmentBadge(invoice: any): { label: string; color: string } {
+    if (invoice.shippingMethod !== "Delivery") return { label: "Collected", color: "#1f7a1f" };
+    const s = String(invoice.deliveryStatus || invoice.fulfillmentStatus || "").toLowerCase();
+    if (s === "fulfilled") return { label: "Fulfilled", color: "#1f7a1f" };
+    if (s.includes("progress") || s.includes("installation")) return { label: "In Progress", color: "#b26b00" };
+    return { label: "Unfulfilled", color: "#b00020" };
+  }
+
   function closeShippingEditor() {
     setShippingEditorOpen(false);
   }
@@ -2155,8 +2163,19 @@ export default function InvoicesPage() {
                   </button>
                   <Collapsible open={isOpen} id={`group-${group.key}`}>
                   <div style={{ borderTop: isOpen ? "none" : undefined }}>
+                {/* Column headers */}
+                <div style={{ display: "flex", alignItems: "center", padding: "6px 16px 6px 44px", background: "#f4f6f8", borderBottom: "1px solid #e1e3e5", fontSize: 11, fontWeight: 600, color: "#6d7175", textTransform: "uppercase", letterSpacing: "0.5px", gap: 12 }}>
+                  <span style={{ minWidth: 110 }}>Order</span>
+                  <span style={{ minWidth: 90 }}>Date</span>
+                  <span style={{ flex: 1 }}>Customer</span>
+                  <span style={{ minWidth: 90 }}>Fulfilment</span>
+                  <span style={{ minWidth: 72, textAlign: "right" }}>Total</span>
+                  <span style={{ minWidth: 72, textAlign: "center" }}>Payment</span>
+                  <span style={{ minWidth: 90, textAlign: "center" }}>Status</span>
+                </div>
                 {group.invoices.map((invoice: any) => {
                   const isRowOpen = expandedInvoices.has(Number(invoice.id));
+                  const fulfilBadge = getFulfilmentBadge(invoice);
                   return (
                     <div key={invoice.id} style={{ borderBottom: "1px solid #e1e3e5" }}>
                       {/* Compact header row — always visible */}
@@ -2176,15 +2195,30 @@ export default function InvoicesPage() {
                         }}
                       >
                         <span style={{ fontSize: 12, color: "#6d7175", minWidth: 10 }}>{isRowOpen ? "▲" : "▼"}</span>
-                        <span style={{ fontWeight: 600, minWidth: 72, fontSize: 13 }}>INV-{invoice.id}</span>
-                        {invoice.shopifyOrderName ? (
-                          <span style={{ fontSize: 12, color: "#6d7175", minWidth: 72 }}>{invoice.shopifyOrderName}</span>
-                        ) : <span style={{ minWidth: 72 }} />}
+                        {/* Order number */}
+                        <span style={{ minWidth: 110 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13, display: "block" }}>
+                            {invoice.shopifyOrderName || `INV-${invoice.id}`}
+                          </span>
+                          {invoice.shopifyOrderName ? (
+                            <span style={{ fontSize: 11, color: "#6d7175" }}>INV-{invoice.id}</span>
+                          ) : null}
+                        </span>
+                        {/* Date */}
+                        <span style={{ fontSize: 12, color: "#6d7175", minWidth: 90 }}>
+                          {new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeZone: "Europe/London" }).format(new Date(invoice.createdAt))}
+                        </span>
+                        {/* Customer */}
                         <span style={{ flex: 1, fontSize: 13 }}>{invoice.customerName || "-"}</span>
-                        <span style={{ fontSize: 12, color: "#6d7175", minWidth: 80 }}>{invoice.staff?.name || "-"}</span>
+                        {/* Fulfilment type */}
+                        <span style={{ fontSize: 12, minWidth: 90, color: "#4b5563" }}>
+                          {invoice.shippingMethod === "Delivery" ? "Delivery" : "Collection"}
+                        </span>
+                        {/* Total */}
                         <span style={{ fontSize: 13, fontWeight: 600, minWidth: 72, textAlign: "right" }}>
                           £{Number(invoice.total ?? 0).toFixed(2)}
                         </span>
+                        {/* Payment status */}
                         <span style={{
                           borderRadius: 10,
                           padding: "2px 8px",
@@ -2192,13 +2226,23 @@ export default function InvoicesPage() {
                           fontWeight: 600,
                           color: "#fff",
                           background: invoice.paymentStatus === "Paid" ? "#1f7a1f" : invoice.paymentStatus === "Partially Paid" ? "#b26b00" : "#b00020",
-                          minWidth: 68,
+                          minWidth: 72,
                           textAlign: "center",
                         }}>
                           {invoice.paymentStatus || "Unpaid"}
                         </span>
-                        <span style={{ fontSize: 11, color: "#6d7175", minWidth: 100, textAlign: "right" }}>
-                          {formatDateTime(invoice.createdAt)}
+                        {/* Fulfilment status */}
+                        <span style={{
+                          borderRadius: 10,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "#fff",
+                          background: fulfilBadge.color,
+                          minWidth: 90,
+                          textAlign: "center",
+                        }}>
+                          {fulfilBadge.label}
                         </span>
                       </button>
 
