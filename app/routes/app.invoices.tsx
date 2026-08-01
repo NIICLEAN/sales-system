@@ -1201,8 +1201,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JOIN "Payment" p ON p."saleId" = s.id
           AND (p."xeroInvoiceId" IS NULL
             OR (p."xeroInvoiceId" = 'PENDING' AND p."createdAt" < NOW() - INTERVAL '10 minutes'))
-        WHERE s."paymentStatus" = 'Paid'
-          AND (s."xeroInvoiceId" IS NULL)
+        WHERE (s."xeroInvoiceId" IS NULL)
           AND (s."shopifyOrderId" IS NULL OR s."shopifyOrderId" NOT LIKE 'xero:%')
         ORDER BY s.id DESC
         LIMIT 50
@@ -1431,8 +1430,7 @@ export async function loader({ request }: { request: Request }) {
         try {
           const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
             SELECT COUNT(*) as count FROM "Sale" s
-            WHERE s."paymentStatus" = 'Paid'
-              AND (s."xeroInvoiceId" IS NULL)
+            WHERE (s."xeroInvoiceId" IS NULL)
               AND (s."shopifyOrderId" IS NULL OR s."shopifyOrderId" NOT LIKE 'xero:%')
               AND EXISTS (
                 SELECT 1 FROM "Payment" p
