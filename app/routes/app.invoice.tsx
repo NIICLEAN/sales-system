@@ -614,6 +614,20 @@ export async function loader({
     }
   }
 
+  // Load recent unique customers from past invoices for the "Past customers" quick-fill
+  const recentSales = await prisma.sale.findMany({
+    select: { customerId: true, customerName: true, customerEmail: true, customerPhone: true, address1: true, address2: true, city: true, county: true, postcode: true, country: true },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+  const pastSeen = new Set<string>();
+  const pastCustomers = recentSales.filter((r) => {
+    const key = r.customerEmail?.toLowerCase().trim() || r.customerName?.toLowerCase().trim() || '';
+    if (!key || pastSeen.has(key)) return false;
+    pastSeen.add(key);
+    return true;
+  }).slice(0, 80);
+
   return {
     staff,
     variants,
@@ -622,6 +636,7 @@ export async function loader({
     customerSearch,
     existingInvoice,
     embeddedParams,
+    pastCustomers,
   };
 }
 
@@ -952,6 +967,30 @@ const redirectWithEmbedded = (path: string) =>
             }
           } catch (e) {
             console.error("Customer retry lookup failed:", e);
+          }
+        }
+
+        // Also handle phone-already-taken error
+        if (!shopifyCustomerId && customerPhone) {
+          const phoneTakenError = customerErrors.find((e: any) =>
+            String(e.message).toLowerCase().includes("phone") &&
+            (String(e.message).toLowerCase().includes("taken") ||
+              String(e.message).toLowerCase().includes("already"))
+          );
+          if (phoneTakenError) {
+            try {
+              const phoneLookup = await admin.graphql(
+                `query CustomerByPhone($q: String!) {
+                  customers(first: 1, query: $q) { edges { node { id } } }
+                }`,
+                { variables: { q: `phone:${customerPhone}` } },
+              );
+              const phoneJson = (await phoneLookup.json()) as any;
+              const found = phoneJson.data?.customers?.edges?.[0]?.node;
+              if (found?.id) shopifyCustomerId = found.id;
+            } catch (e) {
+              console.error("Customer phone lookup failed:", e);
+            }
           }
         }
 
@@ -1464,6 +1503,7 @@ const {
   customerSearch,
   existingInvoice,
   embeddedParams,
+  pastCustomers,
 } = useLoaderData<typeof loader>();
 
 const isEditMode = Boolean(existingInvoice);
@@ -1510,6 +1550,7 @@ async function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
   if (isSubmitting) return;
   setShowPrintOptions(false);
   setIsSubmitting(true);
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
   await refreshTokenAndSubmit();
   if (printModeRef.current) {
     printModeRef.current.value = mode;
@@ -1520,6 +1561,7 @@ async function submitProformaWithPrintMode(mode: "invoice" | "both" | "none") {
 async function handleSaveChanges() {
   if (isSubmitting) return;
   setIsSubmitting(true);
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
   await refreshTokenAndSubmit();
   formRef.current?.requestSubmit();
 }
@@ -1712,6 +1754,94 @@ const [showAddress, setShowAddress] = useState(
   { label: "Phone", value: "Phone" },
 ];
 
+  // ── Past customer search (client-side filter) ─────────────────────────
+  const [pastCustomerSearch, setPastCustomerSearch] = useState("");
+  const filteredPastCustomers = pastCustomers.filter((c: any) => {
+    if (!pastCustomerSearch.trim()) return false;
+    const q = pastCustomerSearch.toLowerCase();
+    return (
+      c.customerName?.toLowerCase().includes(q) ||
+      c.customerEmail?.toLowerCase().includes(q) ||
+      c.customerPhone?.includes(q)
+    );
+  }).slice(0, 8);
+
+  function selectPastCustomer(c: any) {
+    setCustomerId(c.customerId || "");
+    setCustomerName(c.customerName || "");
+    setCustomerEmail(c.customerEmail || "");
+    setCustomerPhone(c.customerPhone || "");
+    setAddress1(c.address1 || "");
+    setAddress2(c.address2 || "");
+    setCity(c.city || "");
+    setCounty(c.county || "");
+    setPostcode(c.postcode || "");
+    setCountry(c.country || "");
+    setPastCustomerSearch("");
+    window.requestAnimationFrame(() => {
+      customerDetailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  // ── Draft auto-save ───────────────────────────────────────────────────
+  const DRAFT_KEY = "invoice-draft-v1";
+  const [pendingDraft, setPendingDraft] = useState<any>(null);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+
+  // On mount: check for saved draft (only on new invoice)
+  useEffect(() => {
+    if (isEditMode) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (draft && (draft.items?.length > 0 || draft.customerName || draft.customerEmail)) {
+        setPendingDraft(draft);
+        setShowDraftBanner(true);
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function restoreDraft() {
+    if (!pendingDraft) return;
+    setCustomerName(pendingDraft.customerName || "");
+    setCustomerEmail(pendingDraft.customerEmail || "");
+    setCustomerPhone(pendingDraft.customerPhone || "");
+    setStaffId(pendingDraft.staffId || staffId);
+    setPaymentMethod(pendingDraft.paymentMethod || "Cash");
+    setVatType(pendingDraft.vatType || "Standard");
+    setReference(pendingDraft.reference || "");
+    if (pendingDraft.items?.length > 0) setItems(pendingDraft.items);
+    setShowDraftBanner(false);
+    setPendingDraft(null);
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setShowDraftBanner(false);
+    setPendingDraft(null);
+  }
+
+  // Auto-save draft (debounced 3s) whenever important state changes
+  useEffect(() => {
+    if (isEditMode) return;
+    const timer = setTimeout(() => {
+      try {
+        if (items.length > 0 || customerName || customerEmail) {
+          localStorage.setItem(DRAFT_KEY, JSON.stringify({
+            customerName, customerEmail, customerPhone,
+            staffId, paymentMethod, vatType, reference,
+            items,
+            savedAt: Date.now(),
+          }));
+        }
+      } catch {}
+    }, 3000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, customerName, customerEmail, customerPhone, staffId, paymentMethod, vatType, reference]);
+
   function selectCustomer(customer: any) {
     const address = customer.defaultAddress || {};
 
@@ -1899,6 +2029,25 @@ const [showAddress, setShowAddress] = useState(
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+
+            {/* ── Draft restore banner ──────────────────────── */}
+            {showDraftBanner && pendingDraft && !isEditMode ? (
+              <Banner
+                tone="info"
+                title="Unsaved draft found"
+                action={{ content: "Restore draft", onAction: restoreDraft }}
+                secondaryAction={{ content: "Discard", onAction: discardDraft }}
+                onDismiss={discardDraft}
+              >
+                <Text as="p" variant="bodyMd">
+                  You have an unfinished invoice
+                  {pendingDraft.customerName ? ` for ${pendingDraft.customerName}` : ""}
+                  {pendingDraft.items?.length ? ` with ${pendingDraft.items.length} item${pendingDraft.items.length !== 1 ? "s" : ""}` : ""}.
+                  Would you like to restore it?
+                </Text>
+              </Banner>
+            ) : null}
+
             <Card>
               <Form method="get">
                 <BlockStack gap="300">
@@ -1909,20 +2058,16 @@ const [showAddress, setShowAddress] = useState(
                   <InlineStack gap="300" blockAlign="end">
                     <div style={{ flex: 1 }}>
                       <TextField
-                        label="Search customers"
+                        label="Search Shopify customers"
                         name="customerSearch"
                         value={customerSearchTerm}
                         onChange={setCustomerSearchTerm}
                         autoComplete="off"
-                        placeholder="Search by customer name, email, or phone"
+                        placeholder="Name, email, or phone"
                       />
                     </div>
 
-                    <input
-                      type="hidden"
-                      name="productSearch"
-                      value={searchTerm}
-                    />
+                    <input type="hidden" name="productSearch" value={searchTerm} />
                     {existingInvoice?.id ? (
                       <input type="hidden" name="editInvoiceId" value={String(existingInvoice.id)} />
                     ) : null}
@@ -1930,7 +2075,7 @@ const [showAddress, setShowAddress] = useState(
                     <input type="hidden" name="host" value={embeddedParams.host || ""} />
                     <input type="hidden" name="embedded" value={embeddedParams.embedded || ""} />
 
-                    <Button submit>Search Customer</Button>
+                    <Button submit>Search</Button>
                   </InlineStack>
                 </BlockStack>
               </Form>
@@ -1938,30 +2083,17 @@ const [showAddress, setShowAddress] = useState(
               {customerSearch && (
                 <div style={{ marginTop: 16 }}>
                   <IndexTable
-                    resourceName={{
-                      singular: "customer",
-                      plural: "customers",
-                    }}
+                    resourceName={{ singular: "customer", plural: "customers" }}
                     itemCount={customers.length}
-                    headings={[
-                      { title: "Customer" },
-                      { title: "Email" },
-                      { title: "Action" },
-                    ]}
+                    headings={[{ title: "Customer" }, { title: "Email" }, { title: "Action" }]}
                     selectable={false}
                   >
                     {customers.map((customer: any, index: number) => (
-                      <IndexTable.Row
-                        id={customer.id}
-                        key={customer.id}
-                        position={index}
-                      >
+                      <IndexTable.Row id={customer.id} key={customer.id} position={index}>
                         <IndexTable.Cell>{customer.displayName}</IndexTable.Cell>
                         <IndexTable.Cell>{customer.email || "-"}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Button onClick={() => selectCustomer(customer)}>
-                            Use customer
-                          </Button>
+                          <Button onClick={() => selectCustomer(customer)}>Use customer</Button>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -1970,13 +2102,56 @@ const [showAddress, setShowAddress] = useState(
                   {customers.length === 0 && (
                     <div style={{ marginTop: 12 }}>
                       <Text as="p" tone="subdued">
-                        No customers found. Enter customer details below to
-                        create a new customer.
+                        No Shopify customers found. Try searching past invoices below.
                       </Text>
                     </div>
                   )}
                 </div>
               )}
+
+              {/* ── Past invoice customer search ─────────────── */}
+              <div style={{ marginTop: 16 }}>
+                <BlockStack gap="300">
+                  <TextField
+                    label="Search past invoice customers"
+                    value={pastCustomerSearch}
+                    onChange={setPastCustomerSearch}
+                    autoComplete="off"
+                    placeholder="Start typing a name, email, or phone number..."
+                    helpText="Searches customers from previous invoices saved in this system"
+                  />
+
+                  {pastCustomerSearch.trim().length > 0 && filteredPastCustomers.length === 0 && (
+                    <Text as="p" tone="subdued">No past customers found matching "{pastCustomerSearch}".</Text>
+                  )}
+
+                  {filteredPastCustomers.length > 0 && (
+                    <div style={{ border: "1px solid #e1e3e5", borderRadius: 8, overflow: "hidden" }}>
+                      {filteredPastCustomers.map((c: any, i: number) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: "10px 12px",
+                            borderBottom: i < filteredPastCustomers.length - 1 ? "1px solid #f1f2f3" : "none",
+                            background: "white",
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <Text as="p" fontWeight="semibold">{c.customerName || "—"}</Text>
+                            <Text as="p" tone="subdued" variant="bodySm">
+                              {[c.customerEmail, c.customerPhone].filter(Boolean).join(" · ")}
+                            </Text>
+                          </div>
+                          <Button size="slim" onClick={() => selectPastCustomer(c)}>Use</Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </BlockStack>
+              </div>
             </Card>
 
             <Card>
