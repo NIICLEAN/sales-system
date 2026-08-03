@@ -187,6 +187,11 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<{ pushed: n
   let pushCount = 0;
   let lastError: string | null = null;
 
+  // Only use per-payment suffixes when there are multiple payments on this sale.
+  // A single fully-paid invoice should use the plain invoice number (e.g. INV-5140),
+  // not INV-5140.1 — suffixes are reserved for partial/split payments.
+  const isMultiPayment = allPayments.length > 1;
+
   for (let i = 0; i < unsentPayments.length; i++) {
     const payment = unsentPayments[i];
     const suffix = alreadySentCount + i + 1;
@@ -212,8 +217,13 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<{ pushed: n
       continue;
     }
 
-    const xeroReference = `${orderRef}.${suffix} - ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
-    const lineItemDescription = `${itemsDescription}\n\nPayment ${suffix}: ${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
+    const paymentLabel = `${String(payment.method)}${payment.reference ? ` (${payment.reference})` : ''}`;
+    const xeroReference = isMultiPayment
+      ? `${orderRef}.${suffix} - ${paymentLabel}`
+      : `${orderRef} - ${paymentLabel}`;
+    const lineItemDescription = isMultiPayment
+      ? `${itemsDescription}\n\nPayment ${suffix}: ${paymentLabel}`
+      : `${itemsDescription}\n\n${paymentLabel}`;
     const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
     // EXCLUSIVE line amounts: supply net price; Xero adds VAT based on taxType.
     // This forces Xero to respect our taxType even if account 205 has a different default.
@@ -240,7 +250,9 @@ export async function pushNewPaymentsToXero(saleId: number): Promise<{ pushed: n
             accountCode,
           }],
           reference: xeroReference,
-          invoiceNumber: `INV-${saleId}.${suffix}`,            sentToContact: true,          status: Invoice.StatusEnum.AUTHORISED,
+          invoiceNumber: isMultiPayment ? `INV-${saleId}.${suffix}` : `INV-${saleId}`,
+          sentToContact: true,
+          status: Invoice.StatusEnum.AUTHORISED,
         }],
       });
 
