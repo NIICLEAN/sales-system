@@ -1625,7 +1625,7 @@ export default function PrintInvoicePage() {
         {balanceDue > 0 ? (
           <>
             <p style={{ margin: "0 0 4px" }}><strong>Due Date:</strong> {formatDate(invoice.createdAt)}</p>
-            <p style={{ margin: "0 0 3px" }}>INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING +447711781911 TO PAY OVER THE PHONE.</p>
+            <p style={{ margin: "0 0 3px" }}>INVOICES CAN BE PAID VIA BANK TRANSFER OR BY CALLING 02870348834 TO PAY OVER THE PHONE.</p>
             <p style={{ margin: "0 0 6px" }}>Registered in Northern Ireland &nbsp;|&nbsp; VAT Registration Number XI369865135</p>
             <p style={{ margin: "0 0 2px" }}><strong>Danske Bank</strong></p>
             <p style={{ margin: "0 0 2px" }}>Name On Account : NII Clean Ltd</p>
