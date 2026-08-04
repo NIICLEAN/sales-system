@@ -1984,6 +1984,12 @@ export default function InvoicesPage() {
                     </Form>
 
                     <Button
+                      onClick={() => navigate(withEmbeddedParams("/app/missing-orders"))}
+                    >
+                      Missing Orders
+                    </Button>
+
+                    <Button
                       variant="primary"
                       onClick={() => navigate(withEmbeddedParams("/app/invoice"))}
                     >
