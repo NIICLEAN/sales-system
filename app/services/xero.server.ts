@@ -13,6 +13,37 @@ const scopes = [
 // Cache bank account so we only query Xero once per process
 let cachedPaymentAccount: { code?: string; accountID?: string } | null | undefined = undefined;
 
+// Ensure syncPaused column exists — runs once per process
+let syncPausedColumnEnsured = false;
+async function ensureSyncPausedColumn() {
+  if (syncPausedColumnEnsured) return;
+  try {
+    await prisma.$executeRaw`
+      ALTER TABLE "XeroConnection" ADD COLUMN IF NOT EXISTS "syncPaused" BOOLEAN NOT NULL DEFAULT false
+    `;
+  } catch { /* ignore — already exists or no table yet */ }
+  syncPausedColumnEnsured = true;
+}
+
+export async function getXeroSyncPaused(): Promise<boolean> {
+  try {
+    await ensureSyncPausedColumn();
+    const rows = await prisma.$queryRaw<Array<{ syncPaused: boolean }>>`
+      SELECT "syncPaused" FROM "XeroConnection" ORDER BY "updatedAt" DESC LIMIT 1
+    `;
+    return Boolean(rows[0]?.syncPaused ?? false);
+  } catch {
+    return false;
+  }
+}
+
+export async function setXeroSyncPaused(paused: boolean): Promise<void> {
+  await ensureSyncPausedColumn();
+  await prisma.$executeRaw`
+    UPDATE "XeroConnection" SET "syncPaused" = ${paused}
+  `;
+}
+
 async function getPaymentAccount(xero: XeroClient, tenantId: string): Promise<{ code?: string; accountID?: string } | null> {
   if (process.env.XERO_PAYMENT_ACCOUNT_CODE) return { code: process.env.XERO_PAYMENT_ACCOUNT_CODE };
   if (process.env.XERO_PAYMENT_ACCOUNT_ID) return { accountID: process.env.XERO_PAYMENT_ACCOUNT_ID };
@@ -106,6 +137,15 @@ export async function getConnectedXeroClient() {
  * function never throws so callers can fire-and-forget.
  */
 export async function pushNewPaymentsToXero(saleId: number): Promise<{ pushed: number; lastError: string | null }> {
+  // Check if sync is paused
+  try {
+    const paused = await getXeroSyncPaused();
+    if (paused) {
+      console.log(`[Xero] sync paused — skipping push for sale ${saleId}`);
+      return { pushed: 0, lastError: "Xero sync is paused" };
+    }
+  } catch { /* if check fails, proceed */ }
+
   let xeroClient: Awaited<ReturnType<typeof getConnectedXeroClient>>;
   try {
     xeroClient = await getConnectedXeroClient();

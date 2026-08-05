@@ -21,7 +21,7 @@ import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getConnectedXeroClient, getXeroConnection, pushNewPaymentsToXero } from "../services/xero.server";
+import { getConnectedXeroClient, getXeroConnection, pushNewPaymentsToXero, getXeroSyncPaused, setXeroSyncPaused } from "../services/xero.server";
 import { createSaleCompat, updateSaleCompat } from "../services/saleCompat.server";
 import { getSaleShippingMetaBySaleIds, upsertSaleShippingMeta } from "../services/saleShippingMeta.server";
 import { deleteInvoiceWithRelations } from "../services/deleteInvoice.server";
@@ -1337,6 +1337,18 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
+  if (intent === "toggleXeroPause") {
+    try {
+      const currentPaused = await getXeroSyncPaused();
+      await setXeroSyncPaused(!currentPaused);
+      const message = !currentPaused ? "Xero sync paused — no invoices will be sent to Xero" : "Xero sync resumed";
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=success&syncMessage=${encodeURIComponent(message)}`));
+    } catch (error: any) {
+      const message = encodeURIComponent(String(error?.message || "Failed to toggle Xero sync"));
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices?syncStatus=error&syncMessage=${message}`));
+    }
+  }
+
   if (intent !== "syncXero") {
     return null;
   }
@@ -1522,6 +1534,7 @@ export async function loader({ request }: { request: Request }) {
 
     let xeroConnected = false;
     let unpushedToXeroCount = 0;
+    let xeroSyncPaused = false;
     if (xeroConfigured) {
       try {
         const xeroConnection = await getXeroConnection();
@@ -1532,6 +1545,9 @@ export async function loader({ request }: { request: Request }) {
         xeroConnected = false;
       }
       if (xeroConnected) {
+        try {
+          xeroSyncPaused = await getXeroSyncPaused();
+        } catch { /* ignore */ }
         try {
           const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
             SELECT COUNT(*) as count FROM "Sale" s
@@ -1715,6 +1731,7 @@ export async function loader({ request }: { request: Request }) {
       xeroConnected,
       xeroConfigured,
       unpushedToXeroCount,
+      xeroSyncPaused,
       error: null,
     };
   } catch (error) {
@@ -1738,6 +1755,7 @@ export async function loader({ request }: { request: Request }) {
       xeroConnected: false,
       xeroConfigured: false,
       unpushedToXeroCount: 0,
+      xeroSyncPaused: false,
       error: "Invoices could not be loaded right now.",
     };
   }
@@ -1759,6 +1777,7 @@ export default function InvoicesPage() {
     xeroConnected,
     xeroConfigured,
     unpushedToXeroCount,
+    xeroSyncPaused,
     error,
   } = useLoaderData<typeof loader>();
   const location = useLocation();
@@ -1967,9 +1986,16 @@ export default function InvoicesPage() {
                           <Button submit disabled={!xeroConnected}>Sync Xero</Button>
                         </Form>
 
-                        {!xeroConnected ? (
+                        {xeroConnected ? (
+                          <Form method="post">
+                            <input type="hidden" name="_intent" value="toggleXeroPause" />
+                            <Button submit tone={xeroSyncPaused ? "success" : "critical"}>
+                              {xeroSyncPaused ? "Resume Xero" : "Pause Xero"}
+                            </Button>
+                          </Form>
+                        ) : (
                           <Button onClick={() => window.open("/xero/connect", "_blank")}>Connect Xero</Button>
-                        ) : null}
+                        )}
                       </>
                     ) : null}
 
@@ -2126,6 +2152,30 @@ export default function InvoicesPage() {
                 <div style={{ marginTop: 8 }}>
                   <Button onClick={() => window.open("/xero/connect", "_blank")}>Open Xero connect</Button>
                 </div>
+              </Banner>
+            ) : null}
+
+            {xeroConfigured && xeroConnected && xeroSyncPaused ? (
+              <Banner
+                tone="warning"
+                title="Xero sync is paused"
+                action={{
+                  content: "Resume Xero sync",
+                  onAction: () => {
+                    const form = document.createElement("form");
+                    form.method = "post";
+                    form.action = "/app/invoices";
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = "_intent";
+                    input.value = "toggleXeroPause";
+                    form.appendChild(input);
+                    document.body.appendChild(form);
+                    form.submit();
+                  },
+                }}
+              >
+                <p>No invoices are being sent to Xero right now. Click "Resume" to re-enable syncing.</p>
               </Banner>
             ) : null}
 
