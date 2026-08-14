@@ -1,14 +1,25 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { redirect, Form, useLoaderData } from "react-router";
 
-import { login } from "../../shopify.server";
+import { login, authenticate } from "../../shopify.server";
 
-import styles from "./styles.module.css";
+import styles from "././styles.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
 
+  // If shop param is present (OAuth callback), redirect to /app
   if (url.searchParams.get("shop")) {
+    throw redirect(`/app?${url.searchParams.toString()}`);
+  }
+
+  // If id_token is present (embedded app from Shopify Admin), redirect to /app
+  if (url.searchParams.get("id_token")) {
+    throw redirect(`/app?${url.searchParams.toString()}`);
+  }
+
+  // If host param is present (embedded app), redirect to /app
+  if (url.searchParams.get("host")) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
@@ -55,3 +66,4 @@ export default function App() {
     </div>
   );
 }
+
