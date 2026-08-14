@@ -1,9 +1,10 @@
-import { useLoaderData, useNavigate } from "react-router";
+import { Form, useLoaderData, useLocation, useNavigate } from "react-router";
 import {
   AppProvider,
   Page,
   Layout,
   Card,
+  Banner,
   Text,
   Button,
   IndexTable,
@@ -15,22 +16,64 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request }: { request: Request }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const quotes = await prisma.quote.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
+    const rawQuotes = await prisma.quote.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        customerName: true,
+        total: true,
+        createdAt: true,
+        staffId: true,
+      },
+    });
 
-  return { quotes };
+    const staffIds = Array.from(new Set(rawQuotes.map((quote) => quote.staffId)));
+    const staffRecords = staffIds.length
+      ? await prisma.staff.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+    const staffById = new Map(staffRecords.map((staff) => [staff.id, staff.name]));
+
+    const quotes = rawQuotes.map((quote) => ({
+      ...quote,
+      staff: staffById.has(quote.staffId)
+        ? { name: staffById.get(quote.staffId) }
+        : null,
+    }));
+
+    return { quotes, error: null };
+  } catch (error) {
+    console.error("Failed to load quotes:", error);
+    return { quotes: [], error: "Quotes could not be loaded right now." };
+  }
 }
 
 export default function QuotesPage() {
-  const { quotes } = useLoaderData<typeof loader>();
+  const { quotes, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value && !nextParams.has(key)) {
+        nextParams.set(key, value);
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
 
   return (
     <AppProvider i18n={{}}>
@@ -43,7 +86,7 @@ export default function QuotesPage() {
                   Saved quotes
                 </Text>
 
-                <Button variant="primary" onClick={() => navigate("/app/quote")}>
+                <Button variant="primary" onClick={() => navigate(withEmbeddedParams("/app/quote"))}>
                   Create Quote
                 </Button>
               </InlineStack>
@@ -51,6 +94,8 @@ export default function QuotesPage() {
           </Layout.Section>
 
           <Layout.Section>
+            {error ? <Banner tone="critical">{error}</Banner> : null}
+
             <Card>
               <IndexTable
                 resourceName={{ singular: "quote", plural: "quotes" }}
@@ -75,18 +120,27 @@ export default function QuotesPage() {
 
                     <IndexTable.Cell>{quote.customerName}</IndexTable.Cell>
                     <IndexTable.Cell>{quote.staff?.name || "-"}</IndexTable.Cell>
-                    <IndexTable.Cell>£{quote.total.toFixed(2)}</IndexTable.Cell>
+                    <IndexTable.Cell>£{Number(quote.total ?? 0).toFixed(2)}</IndexTable.Cell>
                     <IndexTable.Cell>
                       {new Date(quote.createdAt).toLocaleString()}
                     </IndexTable.Cell>
 
                     <IndexTable.Cell>
                       <InlineStack gap="200">
-                        <Button onClick={() => navigate(`/app/quotes/${quote.id}`)}>
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}`))}>
                           View
                         </Button>
 
-                        <Button onClick={() => navigate(`/app/quotes/${quote.id}/print`)}>
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quote?editQuoteId=${quote.id}`))}>
+                          Edit
+                        </Button>
+
+                        <form method="post" action={withEmbeddedParams(`/app/quotes/${quote.id}`)} onSubmit={(e) => { if (!window.confirm(`Email QUO-${quote.id} to customer?`)) e.preventDefault(); }}>
+                          <input type="hidden" name="_intent" value="emailQuote" />
+                          <Button submit>Email</Button>
+                        </form>
+
+                        <Button onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}>
                           Print
                         </Button>
                       </InlineStack>

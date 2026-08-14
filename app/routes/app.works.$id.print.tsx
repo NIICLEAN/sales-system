@@ -53,6 +53,10 @@ export default function PrintWorksOrderPage() {
   return () => window.clearTimeout(timer);
 }, []);
 
+  function formatCurrency(value: any) {
+    return `£${Number(value ?? 0).toFixed(2)}`;
+  }
+
   function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
     event?.preventDefault();
     event?.stopPropagation();
@@ -334,9 +338,9 @@ export default function PrintWorksOrderPage() {
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
-              <td className="right">£{Number(item.discount).toFixed(2)}</td>
-              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
+              <td className="right">{formatCurrency(item.unitPrice)}</td>
+              <td className="right">{formatCurrency(item.discount)}</td>
+              <td className="right">{formatCurrency(item.lineTotal)}</td>
             </tr>
           ))}
         </tbody>
@@ -345,36 +349,35 @@ export default function PrintWorksOrderPage() {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(worksOrder.subtotal).toFixed(2)}</span>
+          <span>{formatCurrency(worksOrder.subtotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(worksOrder.discountTotal).toFixed(2)}</span>
+          <span>{formatCurrency(worksOrder.discountTotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(worksOrder.vatAmount).toFixed(2)}</span>
+          <span>{formatCurrency(worksOrder.vatAmount)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{Number(worksOrder.total).toFixed(2)}</span>
+          <span>{formatCurrency(worksOrder.total)}</span>
         </div>
 
         <div className="totals-row">
           <span>Amount paid</span>
-          <span>£{Number(worksOrder.amountPaid).toFixed(2)}</span>
+          <span>{formatCurrency(worksOrder.amountPaid)}</span>
         </div>
 
         <div className="totals-row">
           <span>Balance due</span>
           <span>
-            £
-            {(
-              Number(worksOrder.total) - Number(worksOrder.amountPaid)
-            ).toFixed(2)}
+            {formatCurrency(
+              Number(worksOrder.total ?? 0) - Number(worksOrder.amountPaid ?? 0)
+            )}
           </span>
         </div>
       </div>

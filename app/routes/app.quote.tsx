@@ -1,5 +1,5 @@
-import { Form, useLoaderData, redirect } from "react-router";
-import { useMemo, useState } from "react";
+import { Form, useLoaderData, redirect, useSearchParams } from "react-router";
+import { useMemo, useRef, useState } from "react";
 import {
   AppProvider,
   Page,
@@ -14,104 +14,182 @@ import {
   Text,
   Badge,
   Divider,
+  Banner,
 } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
-  const url = new URL(request.url);
+  try {
+    const { admin } = await authenticate.admin(request);
+    const url = new URL(request.url);
 
-  const productSearch = url.searchParams.get("productSearch") || "";
-  const customerSearch = url.searchParams.get("customerSearch") || "";
+    const productSearch = url.searchParams.get("productSearch") || "";
+    const customerSearch = url.searchParams.get("customerSearch") || "";
+    const editQuoteId = Number(url.searchParams.get("editQuoteId") || "0");
 
-  const staff = await prisma.staff.findMany({
-    orderBy: { name: "asc" },
-  });
+    // Load existing quote for editing if editQuoteId is present
+    let existingQuote = null;
+    if (editQuoteId > 0) {
+      existingQuote = await prisma.quote.findUnique({
+        where: { id: editQuoteId },
+        select: {
+          id: true, customerName: true, customerEmail: true, customerPhone: true,
+          address1: true, address2: true, city: true, county: true, postcode: true, country: true,
+          reference: true, vatType: true, staffId: true,
+          lineItems: { select: { shopifyVariantId: true, title: true, sku: true, quantity: true, unitPrice: true, discount: true } },
+        },
+      });
+    }
 
-  let variants: any[] = [];
-  let customers: any[] = [];
+    const staff = await prisma.staff.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  if (productSearch.trim()) {
-    const productsResponse = await admin.graphql(
-      `
-        query ProductVariants($query: String) {
-          productVariants(first: 25, query: $query) {
-            edges {
-              node {
-                id
-                title
-                sku
-                price
-                product {
+    let variants: any[] = [];
+    let customers: any[] = [];
+
+    if (productSearch.trim()) {
+      try {
+      const productsResponse = await admin.graphql(
+        `
+          query ProductVariants($query: String) {
+            productVariants(first: 25, query: $query) {
+              edges {
+                node {
+                  id
                   title
+                  sku
+                  price
+                  image {
+                    url
+                    altText
+                  }
+                  product {
+                    title
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
                 }
               }
             }
           }
+        `,
+        {
+          variables: {
+            query: productSearch,
+          },
         }
-      `,
-      {
-        variables: {
-          query: productSearch,
-        },
+      );
+
+      const productsJson = (await productsResponse.json()) as any;
+
+      if (productsJson.errors) {
+        console.error(
+          "Product search GraphQL errors:",
+          JSON.stringify(productsJson.errors, null, 2),
+        );
       }
-    );
 
-    const productsJson = await productsResponse.json();
+      variants =
+        productsJson.data?.productVariants?.edges?.map((edge: any) => edge.node) ||
+        [];
+      } catch (error) {
+        console.error("Product search failed:", error);
+        variants = [];
+      }
+    }
 
-    variants =
-      productsJson.data.productVariants.edges.map((edge: any) => edge.node) ||
-      [];
-  }
-
-  if (customerSearch.trim()) {
-    const customersResponse = await admin.graphql(
-      `
-        query Customers($query: String) {
-          customers(first: 10, query: $query) {
-            edges {
-              node {
-                id
-                firstName
-                lastName
-                email
-                phone
-                defaultAddress {
-                  address1
-                  address2
-                  city
-                  province
-                  zip
-                  country
+    if (customerSearch.trim()) {
+      try {
+      const customersResponse = await admin.graphql(
+        `
+          query Customers($query: String) {
+            customers(first: 10, query: $query) {
+              edges {
+                node {
+                  id
+                  firstName
+                  lastName
+                  email
+                  phone
+                  defaultAddress {
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                  }
                 }
               }
             }
           }
+        `,
+        {
+          variables: {
+            query: customerSearch,
+          },
         }
-      `,
-      {
-        variables: {
-          query: customerSearch,
-        },
+      );
+
+      const customersJson = (await customersResponse.json()) as any;
+
+      if (customersJson.errors) {
+        console.error(
+          "Customer search GraphQL errors:",
+          JSON.stringify(customersJson.errors, null, 2),
+        );
       }
-    );
 
-    const customersJson = await customersResponse.json();
+      customers =
+        customersJson.data?.customers?.edges?.map((edge: any) => edge.node) || [];
+      } catch (error) {
+        console.error("Customer search failed:", error);
+        customers = [];
+      }
+    }
 
-    customers =
-      customersJson.data.customers.edges.map((edge: any) => edge.node) || [];
+    return {
+      staff,
+      variants,
+      customers,
+      productSearch,
+      customerSearch,
+      existingQuote,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote page:", error);
+    return {
+      staff: [],
+      variants: [],
+      customers: [],
+      productSearch: "",
+      customerSearch: "",
+      existingQuote: null,
+    };
   }
-
-  return {
-    staff,
-    variants,
-    customers,
-    productSearch,
-    customerSearch,
-  };
 }
 
 export async function action({ request }: { request: Request }) {
@@ -132,10 +210,16 @@ export async function action({ request }: { request: Request }) {
   const country = String(formData.get("country") || "").trim();
 
   const reference = String(formData.get("reference") || "").trim();
-  const lineItems = JSON.parse(String(formData.get("lineItems") || "[]"));
+  let lineItems: any[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("lineItems") || "[]"));
+    lineItems = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    lineItems = [];
+  }
 
   if (!staffId || lineItems.length === 0) {
-    return redirect("/app/quote");
+    return redirect(withEmbeddedParamsFromRequest(request, "/app/quote"));
   }
 
   const subtotal = lineItems.reduce(
@@ -150,43 +234,82 @@ export async function action({ request }: { request: Request }) {
   );
 
   const netTotal = subtotal - discountTotal;
-  const vatAmount = netTotal * 0.2;
+  const vatType = String(formData.get("vatType") || "Standard");
+  const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
   const total = netTotal + vatAmount;
+  const editQuoteId = Number(formData.get("editQuoteId") || "0");
 
-  const quote = await prisma.quote.create({
-    data: {
-      customerName,
-      customerEmail,
-      customerPhone,
-      address1,
-      address2,
-      city,
-      county,
-      postcode,
-      country,
-      reference,
-      subtotal,
-      discountTotal,
-      vatAmount,
-      total,
-      staffId,
-      lineItems: {
-        create: lineItems.map((item: any) => ({
-          shopifyVariantId: item.id,
-          title: item.title,
-          sku: item.sku,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          discount: Number(item.discount || 0),
-          lineTotal:
-            Number(item.unitPrice) * Number(item.quantity) -
-            Number(item.discount || 0),
-        })),
+  let quote;
+  try {
+    if (editQuoteId > 0) {
+      // Update existing quote — delete old line items and recreate
+      await prisma.quoteLineItem.deleteMany({ where: { quoteId: editQuoteId } });
+      quote = await prisma.quote.update({
+        where: { id: editQuoteId },
+        data: {
+          customerName, customerEmail, customerPhone,
+          address1, address2, city, county, postcode, country,
+          reference, subtotal, discountTotal, vatAmount, total,
+          vatType: vatType as "Standard" | "Exempt" | "CrossBorder",
+          staffId,
+          lineItems: {
+            create: lineItems.map((item: any) => ({
+              shopifyVariantId: item.id && !String(item.id).startsWith("custom-") ? item.id : null,
+              title: item.title,
+              sku: item.sku,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              discount: Number(item.discount || 0),
+              lineTotal: Number(item.unitPrice) * Number(item.quantity) - Number(item.discount || 0),
+            })),
+          },
+        },
+      });
+    } else {
+      quote = await prisma.quote.create({
+      data: {
+        customerName,
+        customerEmail,
+        customerPhone,
+        address1,
+        address2,
+        city,
+        county,
+        postcode,
+        country,
+        reference,
+        subtotal,
+        discountTotal,
+        vatAmount,
+        total,
+        vatType: vatType as "Standard" | "Exempt" | "CrossBorder",
+        staffId,
+        lineItems: {
+          create: lineItems.map((item: any) => ({
+            shopifyVariantId: item.id,
+            title: item.title,
+            sku: item.sku,
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+            discount: Number(item.discount || 0),
+            lineTotal:
+              Number(item.unitPrice) * Number(item.quantity) -
+              Number(item.discount || 0),
+          })),
+        },
       },
-    },
-  });
+    });
+    } // end else (create)
+  } catch (error: any) {
+    console.error("Quote save failed:", error);
+    const message = encodeURIComponent(String(error?.message || "Quote save failed"));
+    const editParam = editQuoteId > 0 ? `&editQuoteId=${editQuoteId}` : "";
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quote?quoteError=${message}${editParam}`));
+  }
 
-  if (customerEmail) {
+  let quoteEmailStatus = "";
+  if (customerEmail && editQuoteId === 0) {
+    // Only auto-email on new quote creation; edits use the Email button on the detail page
     try {
       const { generateQuotePdf } = await import("../utils/quote-pdf.server");
       const { sendQuoteEmail } = await import("../utils/email.server");
@@ -199,39 +322,67 @@ export async function action({ request }: { request: Request }) {
         quoteId: quote.id,
         pdfBuffer,
       });
-    } catch (error) {
+      quoteEmailStatus = `&emailStatus=success&emailMessage=${encodeURIComponent(`Quote emailed to ${customerEmail}`)}`;
+    } catch (error: any) {
       console.error("Quote email failed:", error);
+      quoteEmailStatus = `&emailStatus=error&emailMessage=${encodeURIComponent(`Email failed: ${error?.message || "SMTP error"}`)}` ;
     }
   }
 
-  return redirect(`/app/quotes/${quote.id}?autoprint=1`);
+  if (editQuoteId > 0) {
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?emailStatus=success&emailMessage=${encodeURIComponent("Quote updated successfully")}`));
+  }
+
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quote.id}?autoprint=1${quoteEmailStatus}`));
 }
 
 export default function QuotePage() {
-  const { staff, variants, customers, productSearch, customerSearch } =
+  const { staff, variants, customers, productSearch, customerSearch, existingQuote } =
     useLoaderData<typeof loader>();
+  const [searchParams] = useSearchParams();
+  const quoteError = searchParams.get("quoteError");
 
   const [productSearchTerm, setProductSearchTerm] = useState(productSearch || "");
   const [customerSearchTerm, setCustomerSearchTerm] = useState(customerSearch || "");
 
   const [staffId, setStaffId] = useState(
-    staff[0]?.id ? String(staff[0].id) : ""
+    existingQuote ? String(existingQuote.staffId) : (staff[0]?.id ? String(staff[0].id) : "")
   );
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState(existingQuote?.customerName || "");
+  const [customerEmail, setCustomerEmail] = useState(existingQuote?.customerEmail || "");
+  const [customerPhone, setCustomerPhone] = useState(existingQuote?.customerPhone || "");
+  const [customerVatNumber, setCustomerVatNumber] = useState("");
+  const [vatType, setVatType] = useState<string>(existingQuote?.vatType || "Standard");
+  const [selectedCustomer, setSelectedCustomer] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
 
-  const [addressOpen, setAddressOpen] = useState(false);
-  const [address1, setAddress1] = useState("");
-  const [address2, setAddress2] = useState("");
-  const [city, setCity] = useState("");
-  const [county, setCounty] = useState("");
-  const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("United Kingdom");
+  const [addressOpen, setAddressOpen] = useState(Boolean(existingQuote?.address1 || existingQuote?.city));
+  const [address1, setAddress1] = useState(existingQuote?.address1 || "");
+  const [address2, setAddress2] = useState(existingQuote?.address2 || "");
+  const [city, setCity] = useState(existingQuote?.city || "");
+  const [county, setCounty] = useState(existingQuote?.county || "");
+  const [postcode, setPostcode] = useState(existingQuote?.postcode || "");
+  const [country, setCountry] = useState(existingQuote?.country || "United Kingdom");
 
-  const [reference, setReference] = useState("");
-  const [items, setItems] = useState<any[]>([]);
+  const [reference, setReference] = useState(existingQuote?.reference || "");
+  const [items, setItems] = useState<any[]>(
+    existingQuote?.lineItems.map((li) => ({
+      type: "custom",
+      id: li.shopifyVariantId || `custom-${Math.random()}`,
+      title: li.title,
+      sku: li.sku || "",
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      discount: li.discount,
+    })) || []
+  );
+  const productSearchRef = useRef<HTMLDivElement | null>(null);
+  const quoteLinesRef = useRef<HTMLDivElement | null>(null);
 
   const staffOptions = staff.map((person: any) => ({
     label: person.name,
@@ -243,9 +394,17 @@ export default function QuotePage() {
       .filter(Boolean)
       .join(" ");
 
+    const selectedName = fullName || "Unnamed customer";
+
     setCustomerName(fullName || "");
     setCustomerEmail(customer.email || "");
     setCustomerPhone(customer.phone || "");
+    setSelectedCustomer({
+      id: String(customer.id || ""),
+      name: selectedName,
+      email: customer.email || "",
+      phone: customer.phone || "",
+    });
 
     const address = customer.defaultAddress;
 
@@ -257,6 +416,18 @@ export default function QuotePage() {
       setPostcode(address.zip || "");
       setCountry(address.country || "United Kingdom");
     }
+
+    // Move the user directly to product selection after picking a customer.
+    window.setTimeout(() => {
+      productSearchRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
+
+  function clearSelectedCustomer() {
+    setSelectedCustomer(null);
   }
 
   function addItem(variant: any) {
@@ -266,11 +437,21 @@ export default function QuotePage() {
         id: variant.id,
         title: `${variant.product.title} - ${variant.title}`,
         sku: variant.sku || "",
+        imageUrl:
+          variant.image?.url || variant.product?.featuredImage?.url || "",
         quantity: 1,
         unitPrice: Number(variant.price || 0),
         discount: 0,
       },
     ]);
+
+    // Move straight to quote lines after adding a product.
+    window.setTimeout(() => {
+      quoteLinesRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   }
 
   function addCustomItem() {
@@ -311,7 +492,7 @@ export default function QuotePage() {
     );
 
     const netTotal = subtotal - discount;
-    const vatAmount = netTotal * 0.2;
+    const vatAmount = vatType === "Exempt" || vatType === "CrossBorder" ? 0 : netTotal * 0.2;
 
     return {
       subtotal,
@@ -320,11 +501,12 @@ export default function QuotePage() {
       vatAmount,
       total: netTotal + vatAmount,
     };
-  }, [items]);
+  }, [items, vatType]);
 
   return (
     <AppProvider i18n={{}}>
       <Page title="Create Quote">
+        {quoteError ? <Banner tone="critical">{quoteError}</Banner> : null}
         <Layout>
           <Layout.Section>
             <BlockStack gap="400">
@@ -405,6 +587,7 @@ export default function QuotePage() {
               )}
 
               <Card>
+                <div ref={productSearchRef} />
                 <Form method="get">
                   <BlockStack gap="300">
                     <Text as="h2" variant="headingMd">
@@ -437,41 +620,95 @@ export default function QuotePage() {
                       Search results
                     </Text>
 
-                    <IndexTable
-                      resourceName={{
-                        singular: "product",
-                        plural: "products",
+                    <div
+                      style={{
+                        maxHeight: 460,
+                        overflowY: "auto",
+                        overflowX: "auto",
                       }}
-                      itemCount={variants.length}
-                      headings={[
-                        { title: "Product" },
-                        { title: "SKU" },
-                        { title: "Price" },
-                        { title: "Action" },
-                      ]}
-                      selectable={false}
                     >
-                      {variants.map((variant: any, index: number) => (
-                        <IndexTable.Row
-                          id={variant.id}
-                          key={variant.id}
-                          position={index}
-                        >
-                          <IndexTable.Cell>
-                            {variant.product.title} - {variant.title}
-                          </IndexTable.Cell>
-                          <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
-                          <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
-                          <IndexTable.Cell>
-                            <Button onClick={() => addItem(variant)}>Add</Button>
-                          </IndexTable.Cell>
-                        </IndexTable.Row>
-                      ))}
-                    </IndexTable>
+                      <IndexTable
+                        resourceName={{
+                          singular: "product",
+                          plural: "products",
+                        }}
+                        itemCount={variants.length}
+                        headings={[
+                          { title: "Image" },
+                          { title: "Product" },
+                          { title: "SKU" },
+                          { title: "Price" },
+                          { title: "Action" },
+                        ]}
+                        selectable={false}
+                      >
+                        {variants.map((variant: any, index: number) => (
+                          <IndexTable.Row
+                            id={variant.id}
+                            key={variant.id}
+                            position={index}
+                          >
+                            <IndexTable.Cell>
+                              {(() => {
+                                const imageUrl =
+                                  variant.image?.url ||
+                                  variant.product?.featuredImage?.url;
+                                const imageAlt =
+                                  variant.image?.altText ||
+                                  variant.product?.featuredImage?.altText ||
+                                  variant.product?.title ||
+                                  "Product image";
+
+                                return imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt={imageAlt}
+                                    style={{
+                                      width: 56,
+                                      height: 56,
+                                      objectFit: "cover",
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 8,
+                                      border: "1px solid #ddd",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 11,
+                                      color: "#777",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    No image
+                                  </div>
+                                );
+                              })()}
+                            </IndexTable.Cell>
+
+                            <IndexTable.Cell>
+                              {variant.product.title} - {variant.title}
+                            </IndexTable.Cell>
+                            <IndexTable.Cell>{variant.sku || "-"}</IndexTable.Cell>
+                            <IndexTable.Cell>£{variant.price}</IndexTable.Cell>
+                            <IndexTable.Cell>
+                              <Button onClick={() => addItem(variant)}>Add</Button>
+                            </IndexTable.Cell>
+                          </IndexTable.Row>
+                        ))}
+                      </IndexTable>
+                    </div>
                   </BlockStack>
                 </Card>
               )}
 
+              <div ref={quoteLinesRef} />
               <Card>
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
@@ -591,7 +828,7 @@ export default function QuotePage() {
                               </div>
                             </IndexTable.Cell>
 
-                            <IndexTable.Cell>£{lineTotal.toFixed(2)}</IndexTable.Cell>
+                            <IndexTable.Cell>£{Number(lineTotal ?? 0).toFixed(2)}</IndexTable.Cell>
 
                             <IndexTable.Cell>
                               <Button
@@ -616,6 +853,9 @@ export default function QuotePage() {
                   name="lineItems"
                   value={JSON.stringify(items)}
                 />
+                {existingQuote && (
+                  <input type="hidden" name="editQuoteId" value={existingQuote.id} />
+                )}
 
                 <Layout>
                   <Layout.Section>
@@ -625,6 +865,42 @@ export default function QuotePage() {
                           <Text as="h2" variant="headingMd">
                             Customer details
                           </Text>
+
+                          {selectedCustomer && (
+                            <div
+                              style={{
+                                padding: 12,
+                                border: "1px solid #8c9196",
+                                borderRadius: 8,
+                                background: "#f6f6f7",
+                              }}
+                            >
+                              <InlineStack align="space-between" blockAlign="center">
+                                <BlockStack gap="100">
+                                  <InlineStack gap="200" blockAlign="center">
+                                    <Badge tone="success">Selected customer</Badge>
+                                    <Text as="span" tone="subdued">
+                                      {selectedCustomer.id}
+                                    </Text>
+                                  </InlineStack>
+
+                                  <Text as="p" fontWeight="bold">
+                                    {selectedCustomer.name}
+                                  </Text>
+
+                                  <Text as="p" tone="subdued">
+                                    {selectedCustomer.email || "No email"}
+                                    {" • "}
+                                    {selectedCustomer.phone || "No phone"}
+                                  </Text>
+                                </BlockStack>
+
+                                <Button variant="plain" onClick={clearSelectedCustomer}>
+                                  Clear selection
+                                </Button>
+                              </InlineStack>
+                            </div>
+                          )}
 
                           <InlineStack gap="300">
                             <div style={{ flex: 1 }}>
@@ -744,18 +1020,27 @@ export default function QuotePage() {
                             </div>
 
                             <div style={{ flex: 1 }}>
-                              <Select
-                                label="Quote valid for"
-                                options={[
-                                  { label: "7 days", value: "7" },
-                                  { label: "14 days", value: "14" },
-                                  { label: "30 days", value: "30" },
-                                  { label: "60 days", value: "60" },
-                                ]}
-                                value="30"
-                                onChange={() => {}}
-                              />
-                            </div>
+                                <TextField
+                                  label="VAT number"
+                                  name="customerVatNumber"
+                                  value={customerVatNumber}
+                                  onChange={setCustomerVatNumber}
+                                  autoComplete="off"
+                                />
+
+                                <Select
+                                  label="VAT type"
+                                  options={[
+                                    { label: "Standard 20%", value: "Standard" },
+                                    { label: "VAT exempt", value: "Exempt" },
+                                    { label: "Cross-border", value: "CrossBorder" },
+                                  ]}
+                                  onChange={setVatType}
+                                  value={vatType}
+                                />
+
+                                <input type="hidden" name="vatType" value={vatType} />
+                              </div>
                           </InlineStack>
 
                           <TextField
@@ -785,22 +1070,22 @@ export default function QuotePage() {
                           <BlockStack gap="200">
                             <InlineStack align="space-between">
                               <Text as="span">Net subtotal</Text>
-                              <Text as="span">£{totals.subtotal.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.subtotal ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">Discount</Text>
-                              <Text as="span">£{totals.discount.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.discount ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">Net total</Text>
-                              <Text as="span">£{totals.netTotal.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.netTotal ?? 0).toFixed(2)}</Text>
                             </InlineStack>
 
                             <InlineStack align="space-between">
                               <Text as="span">VAT</Text>
-                              <Text as="span">£{totals.vatAmount.toFixed(2)}</Text>
+                              <Text as="span">£{Number(totals.vatAmount ?? 0).toFixed(2)}</Text>
                             </InlineStack>
                           </BlockStack>
 
@@ -811,7 +1096,7 @@ export default function QuotePage() {
                               Total
                             </Text>
                             <Text as="span" fontWeight="bold">
-                              £{totals.total.toFixed(2)}
+                              £{Number(totals.total ?? 0).toFixed(2)}
                             </Text>
                           </InlineStack>
 
@@ -821,7 +1106,7 @@ export default function QuotePage() {
                             fullWidth
                             disabled={items.length === 0}
                           >
-                            Save Quote
+                            {existingQuote ? "Update Quote" : "Save Quote"}
                           </Button>
                         </BlockStack>
                       </Card>

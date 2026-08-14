@@ -1,9 +1,10 @@
-import { redirect, Form, useLoaderData } from "react-router";
+import { redirect, Form, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   Page,
   Layout,
   Card,
+  Banner,
   Text,
   BlockStack,
   InlineStack,
@@ -16,24 +17,17 @@ import { useMemo, useState } from "react";
 import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const sales = await db.sale.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-
-  const staff = await db.staff.findMany({
-    orderBy: { name: "asc" },
-  });
-
-  const schedules = await db.workSchedule.findMany({
-    include: {
-      sale: true,
-      assignedStaff: true,
-    },
-    orderBy: { scheduledDate: "asc" },
-  });
-
-  return { sales, staff, schedules };
+  try {
+    const staff = await db.staff.findMany({ orderBy: { name: "asc" } });
+    const schedules = await db.workSchedule.findMany({
+      include: { sale: true, assignedStaff: true },
+      orderBy: { scheduledDate: "asc" },
+    });
+    return { staff, schedules, error: null };
+  } catch (error) {
+    console.error("Failed to load schedule:", error);
+    return { staff: [], schedules: [], error: "Schedule could not be loaded right now." };
+  }
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -41,38 +35,52 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = String(formData.get("_intent") || "create");
 
   if (intent === "delete") {
-    await db.workSchedule.delete({
-      where: {
-        id: Number(formData.get("scheduleId")),
-      },
-    });
-
+    await db.workSchedule.delete({ where: { id: Number(formData.get("scheduleId")) } });
     return redirect("/app/schedule");
   }
 
-  const invoiceMode = String(formData.get("invoiceMode") || "shopify");
-  const customInvoiceNumber = String(
-    formData.get("customInvoiceNumber") || "",
-  ).trim();
-  const customCustomerName = String(
-    formData.get("customCustomerName") || "",
-  ).trim();
+  if (intent === "reschedule") {
+    await db.workSchedule.update({
+      where: { id: Number(formData.get("scheduleId")) },
+      data: { scheduledDate: new Date(String(formData.get("newDate"))) },
+    });
+    return null;
+  }
+
+  const customInvoiceNumber = String(formData.get("customInvoiceNumber") || "").trim();
+  const customCustomerName = String(formData.get("customCustomerName") || "").trim();
+  const workType = String(formData.get("workType")) as any;
+  const scheduledDate = new Date(String(formData.get("scheduledDate")));
+  const assignedStaffId = Number(formData.get("assignedStaffId")) || null;
+  const note = String(formData.get("note") || "");
+
+  if (intent === "update") {
+    await db.workSchedule.update({
+      where: { id: Number(formData.get("scheduleId")) },
+      data: {
+        saleId: null,
+        customInvoiceNumber: customInvoiceNumber || null,
+        customCustomerName: customCustomerName || null,
+        workType,
+        scheduledDate,
+        assignedStaffId,
+        note,
+      },
+    });
+    return redirect("/app/schedule");
+  }
 
   await db.workSchedule.create({
     data: {
-      saleId:
-        invoiceMode === "shopify" ? Number(formData.get("saleId")) : null,
-      customInvoiceNumber:
-        invoiceMode === "custom" ? customInvoiceNumber : null,
-      customCustomerName:
-        invoiceMode === "custom" ? customCustomerName : null,
-      workType: String(formData.get("workType")) as any,
-      scheduledDate: new Date(String(formData.get("scheduledDate"))),
-      assignedStaffId: Number(formData.get("assignedStaffId")),
-      note: String(formData.get("note") || ""),
+      saleId: null,
+      customInvoiceNumber: customInvoiceNumber || null,
+      customCustomerName: customCustomerName || null,
+      workType,
+      scheduledDate,
+      assignedStaffId,
+      note,
     },
   });
-
   return redirect("/app/schedule");
 }
 
@@ -103,37 +111,33 @@ function workTypeClass(workType: string) {
 }
 
 function invoiceLabel(item: any) {
-  if (item.sale) {
-    return item.sale.shopifyOrderName || `Invoice #${item.sale.id}`;
-  }
-
-  return item.customInvoiceNumber || "Custom invoice";
+  if (item.customInvoiceNumber) return item.customInvoiceNumber;
+  if (item.sale) return item.sale.shopifyOrderName || `Invoice #${item.sale.id}`;
+  return "No invoice";
 }
 
 function customerLabel(item: any) {
-  if (item.sale) {
-    return item.sale.customerName;
-  }
-
-  return item.customCustomerName || "No customer name";
+  if (item.customCustomerName) return item.customCustomerName;
+  if (item.sale) return item.sale.customerName || "";
+  return "";
 }
 
 export default function SchedulePage() {
-  const { sales, staff, schedules } = useLoaderData<typeof loader>();
+  const { staff, schedules, error } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher();
 
   const today = new Date();
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [calendarStartDate, setCalendarStartDate] = useState(
     toDateInputValue(today),
   );
   const [viewStaffId, setViewStaffId] = useState("all");
 
-  const [invoiceMode, setInvoiceMode] = useState("shopify");
-  const [saleId, setSaleId] = useState(String(sales[0]?.id || ""));
   const [customInvoiceNumber, setCustomInvoiceNumber] = useState("");
   const [customCustomerName, setCustomCustomerName] = useState("");
-
   const [workType, setWorkType] = useState("Repairs");
   const [scheduledDate, setScheduledDate] = useState(toDateInputValue(today));
   const [assignedStaffId, setAssignedStaffId] = useState(
@@ -141,26 +145,22 @@ export default function SchedulePage() {
   );
   const [note, setNote] = useState("");
 
-  const saleOptions = sales.map((sale) => ({
-    label: `${sale.shopifyOrderName || `Invoice #${sale.id}`} — ${
-      sale.customerName
-    }`,
-    value: String(sale.id),
-  }));
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
 
-  const staffOptions = staff.map((person) => ({
-    label: person.name,
-    value: String(person.id),
-  }));
+  const staffOptions = [
+    { label: "Unassigned", value: "" },
+    ...staff.map((p) => ({ label: p.name, value: String(p.id) })),
+  ];
 
   const viewStaffOptions = [
     { label: "All staff", value: "all" },
-    ...staffOptions,
+    ...staff.map((p) => ({ label: p.name, value: String(p.id) })),
   ];
 
   const calendarDays = useMemo(() => {
     const start = new Date(calendarStartDate);
-    return Array.from({ length: 14 }, (_, index) => addDays(start, index));
+    return Array.from({ length: 28 }, (_, index) => addDays(start, index));
   }, [calendarStartDate]);
 
   const visibleSchedules = schedules.filter((item) => {
@@ -171,27 +171,67 @@ export default function SchedulePage() {
   const viewingStaffName =
     viewStaffId === "all"
       ? "All staff"
-      : staff.find((person) => String(person.id) === viewStaffId)?.name ||
-        "Selected staff";
+      : staff.find((p) => String(p.id) === viewStaffId)?.name || "Selected staff";
+
+  function openCreateModal() {
+    setModalMode("create");
+    setEditingItemId(null);
+    setCustomInvoiceNumber("");
+    setCustomCustomerName("");
+    setWorkType("Repairs");
+    setScheduledDate(toDateInputValue(today));
+    setAssignedStaffId(String(staff[0]?.id || ""));
+    setNote("");
+    setModalOpen(true);
+  }
+
+  function openEditModal(item: any) {
+    setModalMode("edit");
+    setEditingItemId(item.id);
+    setCustomInvoiceNumber(invoiceLabel(item) !== "No invoice" ? invoiceLabel(item) : "");
+    setCustomCustomerName(customerLabel(item));
+    setWorkType(item.workType || "Repairs");
+    setScheduledDate(toDateInputValue(new Date(item.scheduledDate)));
+    setAssignedStaffId(String(item.assignedStaffId || ""));
+    setNote(item.note || "");
+    setModalOpen(true);
+  }
+
+  function handleDragStart(e: React.DragEvent, itemId: number) {
+    setDraggingId(itemId);
+    e.dataTransfer.setData("text/plain", String(itemId));
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null);
+    setDragOverDate(null);
+  }
+
+  function handleDrop(e: React.DragEvent, day: Date) {
+    e.preventDefault();
+    const id = Number(e.dataTransfer.getData("text/plain"));
+    setDraggingId(null);
+    setDragOverDate(null);
+    if (!id) return;
+    fetcher.submit(
+      { _intent: "reschedule", scheduleId: String(id), newDate: toDateInputValue(day) },
+      { method: "post" },
+    );
+  }
 
   return (
     <Page
       fullWidth
       title="Works Calendar"
-      primaryAction={{
-        content: "Schedule Works",
-        onAction: () => setModalOpen(true),
-      }}
-      secondaryActions={[
-        {
-          content: "Print Calendar",
-          onAction: () => window.print(),
-        },
-      ]}
+      primaryAction={{ content: "Schedule Works", onAction: openCreateModal }}
+      secondaryActions={[{ content: "Print Calendar", onAction: () => window.print() }]}
     >
       <div className="screen-only">
         <Layout>
           <Layout.Section>
+            {error ? <Banner tone="critical">{error}</Banner> : null}
+
             <Card>
               <BlockStack gap="500">
                 <InlineStack gap="400" align="space-between" blockAlign="end">
@@ -218,105 +258,132 @@ export default function SchedulePage() {
                 <div className="calendar-heading">
                   <div>
                     <Text as="h2" variant="headingLg">
-                      2 Week Works Rota
+                      4 Week Works Rota
                     </Text>
                     <Text as="p" tone="subdued">
                       Viewing: {viewingStaffName}
                     </Text>
                   </div>
+                  {fetcher.state !== "idle" ? (
+                    <Text as="p" tone="subdued">Saving…</Text>
+                  ) : null}
                 </div>
 
-                <div className="calendar-grid">
-                  {calendarDays.map((day) => {
-                    const daySchedules = visibleSchedules.filter((item) =>
-                      sameDay(new Date(item.scheduledDate), day),
-                    );
+                {[0, 1, 2, 3].map((weekIndex) => (
+                  <div key={weekIndex}>
+                    <div style={{ marginBottom: 8, marginTop: weekIndex === 0 ? 0 : 16 }}>
+                      <Text as="h3" variant="headingMd">Week {weekIndex + 1}</Text>
+                    </div>
+                    <div className="calendar-grid">
+                      {calendarDays.slice(weekIndex * 7, (weekIndex + 1) * 7).map((day) => {
+                        const daySchedules = visibleSchedules.filter((item) =>
+                          sameDay(new Date(item.scheduledDate), day),
+                        );
+                        const isDragOver = dragOverDate === day.toISOString();
 
-                    return (
-                      <div
-                        key={day.toISOString()}
-                        className={`calendar-day ${
-                          sameDay(day, today) ? "calendar-day-today" : ""
-                        }`}
-                      >
-                        <div className="calendar-date">
-                          <span>
-                            {day.toLocaleDateString("en-GB", {
-                              weekday: "short",
-                            })}
-                          </span>
-                          <strong>
-                            {day.toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "2-digit",
-                            })}
-                          </strong>
-                        </div>
-
-                        <div className="calendar-jobs">
-                          {daySchedules.map((item) => (
-                            <div
-                              key={item.id}
-                              className={`job-card ${workTypeClass(
-                                item.workType,
-                              )}`}
-                            >
-                              <div className="job-top">
-                                <span className="job-pill">
-                                  {workTypeLabel(item.workType)}
-                                </span>
-
-                                <Form method="post">
-                                  <input
-                                    type="hidden"
-                                    name="_intent"
-                                    value="delete"
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="scheduleId"
-                                    value={item.id}
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="delete-job"
-                                    onClick={(event) => {
-                                      if (
-                                        !confirm(
-                                          "Delete this scheduled work item?",
-                                        )
-                                      ) {
-                                        event.preventDefault();
-                                      }
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </Form>
-                              </div>
-
-                              <div className="job-invoice">
-                                {invoiceLabel(item)}
-                              </div>
-
-                              <div className="job-customer">
-                                {customerLabel(item)}
-                              </div>
-
-                              <div className="job-staff">
-                                {item.assignedStaff.name}
-                              </div>
-
-                              {item.note ? (
-                                <div className="job-note">{item.note}</div>
-                              ) : null}
+                        return (
+                          <div
+                            key={day.toISOString()}
+                            className={[
+                              "calendar-day",
+                              sameDay(day, today) ? "calendar-day-today" : "",
+                              isDragOver ? "calendar-day-dragover" : "",
+                            ].filter(Boolean).join(" ")}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              setDragOverDate(day.toISOString());
+                            }}
+                            onDragLeave={(e) => {
+                              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                setDragOverDate(null);
+                              }
+                            }}
+                            onDrop={(e) => handleDrop(e, day)}
+                          >
+                            <div className="calendar-date">
+                              <span>
+                                {day.toLocaleDateString("en-GB", {
+                                  weekday: "short",
+                                })}
+                              </span>
+                              <strong>
+                                {day.toLocaleDateString("en-GB", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                })}
+                              </strong>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+
+                            <div className="calendar-jobs">
+                              {daySchedules.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className={[
+                                    "job-card",
+                                    workTypeClass(item.workType),
+                                    draggingId === item.id ? "job-dragging" : "",
+                                  ].filter(Boolean).join(" ")}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, item.id)}
+                                  onDragEnd={handleDragEnd}
+                                >
+                                  <div className="job-top">
+                                    <span className="job-pill">
+                                      {workTypeLabel(item.workType)}
+                                    </span>
+                                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                      <button
+                                        type="button"
+                                        className="edit-job"
+                                        title="Edit"
+                                        onClick={() => openEditModal(item)}
+                                      >
+                                        ✎
+                                      </button>
+                                      <Form method="post" style={{ display: "contents" }}>
+                                        <input type="hidden" name="_intent" value="delete" />
+                                        <input type="hidden" name="scheduleId" value={item.id} />
+                                        <button
+                                          type="submit"
+                                          className="delete-job"
+                                          onClick={(event) => {
+                                            if (!confirm("Delete this scheduled work item?"))
+                                              event.preventDefault();
+                                          }}
+                                        >
+                                          ×
+                                        </button>
+                                      </Form>
+                                    </div>
+                                  </div>
+
+                                  <div className="job-invoice">
+                                    {invoiceLabel(item)}
+                                  </div>
+
+                                  {customerLabel(item) ? (
+                                    <div className="job-customer">
+                                      {customerLabel(item)}
+                                    </div>
+                                  ) : null}
+
+                                  <div className="job-staff">
+                                    {item.assignedStaff?.name || "Unassigned"}
+                                  </div>
+
+                                  {item.note ? (
+                                    <div className="job-note">{item.note}</div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -326,11 +393,11 @@ export default function SchedulePage() {
       <div className="print-only">
         <div className="print-header">
           <div>
-            <h1 className="print-title">NCP Sales — 2 Week Works Rota</h1>
+            <h1 className="print-title">NCP Sales — 4 Week Works Rota</h1>
             <div className="print-subtitle">Staff: {viewingStaffName}</div>
             <div className="print-subtitle">
               From {new Date(calendarStartDate).toLocaleDateString("en-GB")} to{" "}
-              {addDays(new Date(calendarStartDate), 13).toLocaleDateString(
+              {addDays(new Date(calendarStartDate), 27).toLocaleDateString(
                 "en-GB",
               )}
             </div>
@@ -369,7 +436,7 @@ export default function SchedulePage() {
                     <br />
                     {customerLabel(item)}
                     <br />
-                    Assigned: {item.assignedStaff.name}
+                    Assigned: {item.assignedStaff?.name || "Unassigned"}
                     {item.note ? (
                       <div className="print-note">{item.note}</div>
                     ) : null}
@@ -384,7 +451,7 @@ export default function SchedulePage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Schedule Works"
+        title={modalMode === "edit" ? "Edit Scheduled Work" : "Schedule Works"}
         primaryAction={{
           content: "Close",
           onAction: () => setModalOpen(false),
@@ -393,63 +460,35 @@ export default function SchedulePage() {
         <Modal.Section>
           <Form method="post">
             <BlockStack gap="400">
-              <input type="hidden" name="_intent" value="create" />
-              <input type="hidden" name="invoiceMode" value={invoiceMode} />
-              <input type="hidden" name="saleId" value={saleId} />
               <input
                 type="hidden"
-                name="customInvoiceNumber"
-                value={customInvoiceNumber}
+                name="_intent"
+                value={modalMode === "edit" ? "update" : "create"}
               />
-              <input
-                type="hidden"
-                name="customCustomerName"
-                value={customCustomerName}
-              />
+              {modalMode === "edit" && (
+                <input type="hidden" name="scheduleId" value={String(editingItemId)} />
+              )}
+              <input type="hidden" name="customInvoiceNumber" value={customInvoiceNumber} />
+              <input type="hidden" name="customCustomerName" value={customCustomerName} />
               <input type="hidden" name="workType" value={workType} />
               <input type="hidden" name="scheduledDate" value={scheduledDate} />
-              <input
-                type="hidden"
-                name="assignedStaffId"
-                value={assignedStaffId}
-              />
+              <input type="hidden" name="assignedStaffId" value={assignedStaffId} />
               <input type="hidden" name="note" value={note} />
 
-              <Select
-                label="Invoice source"
-                options={[
-                  { label: "Shopify invoice", value: "shopify" },
-                  { label: "Custom / Xero invoice", value: "custom" },
-                ]}
-                value={invoiceMode}
-                onChange={setInvoiceMode}
+              <TextField
+                label="NCP / Invoice number"
+                value={customInvoiceNumber}
+                onChange={setCustomInvoiceNumber}
+                autoComplete="off"
+                placeholder="e.g. NCP1234"
               />
 
-              {invoiceMode === "shopify" ? (
-                <Select
-                  label="Invoice"
-                  options={saleOptions}
-                  value={saleId}
-                  onChange={setSaleId}
-                />
-              ) : (
-                <>
-                  <TextField
-                    label="Custom invoice number"
-                    value={customInvoiceNumber}
-                    onChange={setCustomInvoiceNumber}
-                    autoComplete="off"
-                    placeholder="e.g. XERO-1042"
-                  />
-
-                  <TextField
-                    label="Customer name"
-                    value={customCustomerName}
-                    onChange={setCustomCustomerName}
-                    autoComplete="off"
-                  />
-                </>
-              )}
+              <TextField
+                label="Customer name"
+                value={customCustomerName}
+                onChange={setCustomCustomerName}
+                autoComplete="off"
+              />
 
               <Select
                 label="Work type"
@@ -487,7 +526,7 @@ export default function SchedulePage() {
 
               <InlineStack align="end">
                 <Button variant="primary" submit>
-                  Save Schedule
+                  {modalMode === "edit" ? "Save Changes" : "Save Schedule"}
                 </Button>
               </InlineStack>
             </BlockStack>
@@ -523,6 +562,7 @@ export default function SchedulePage() {
             border-bottom: 1px solid #dfe3e8;
             padding: 12px;
             background: #ffffff;
+            transition: background 0.12s;
           }
 
           .calendar-day:nth-child(7n) {
@@ -531,6 +571,12 @@ export default function SchedulePage() {
 
           .calendar-day-today {
             background: #f1f8ff;
+          }
+
+          .calendar-day-dragover {
+            background: #e3efff !important;
+            outline: 2px dashed #2c6ecb;
+            outline-offset: -3px;
           }
 
           .calendar-date {
@@ -562,7 +608,13 @@ export default function SchedulePage() {
             padding: 10px;
             border: 1px solid #dfe3e8;
             box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+            cursor: grab;
+            transition: opacity 0.15s, transform 0.15s;
+            user-select: none;
           }
+
+          .job-card:active { cursor: grabbing; }
+          .job-dragging { opacity: 0.35; transform: scale(0.96); }
 
           .job-repairs {
             background: #fff4e5;
@@ -616,6 +668,25 @@ export default function SchedulePage() {
 
           .delete-job:hover {
             background: #d72c0d;
+            color: white;
+          }
+
+          .edit-job {
+            width: 22px;
+            height: 22px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.12);
+            cursor: pointer;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+          }
+
+          .edit-job:hover {
+            background: #2c6ecb;
             color: white;
           }
 

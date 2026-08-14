@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { useLoaderData, useLocation, useNavigate, useSearchParams, redirect } from "react-router";
 import {
   Page,
   Layout,
@@ -11,13 +11,31 @@ import {
   IndexTable,
   Badge,
   Divider,
+  Banner,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { createSaleCompat } from "../services/saleCompat.server";
+
+function withEmbeddedParamsFromRequest(request: Request, path: string) {
+  const requestUrl = new URL(request.url);
+  const [pathname, queryString = ""] = path.split("?");
+  const nextParams = new URLSearchParams(queryString);
+
+  for (const key of ["shop", "host", "embedded", "id_token"]) {
+    const value = requestUrl.searchParams.get(key);
+    if (value && !nextParams.has(key)) {
+      nextParams.set(key, value);
+    }
+  }
+
+  const nextQuery = nextParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
 
 function money(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 export async function loader({
@@ -27,51 +45,276 @@ export async function loader({
   request: Request;
   params: { quoteId: string };
 }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
+
+    const quote = await prisma.quote.findUnique({
+      where: { id: Number(params.quoteId) },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
+
+    if (!quote) {
+      throw new Response("Quote not found", { status: 404 });
+    }
+
+    return {
+      quote,
+      logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote:", error);
+    return {
+      quote: null,
+      logoUrl: "",
+      error: "Quote could not be loaded right now.",
+    };
+  }
+}
+
+export async function action({ request, params }: { request: Request; params: { quoteId: string } }) {
+  const { admin } = await authenticate.admin(request);
+
+  const quoteId = Number(params.quoteId);
+  const formData = await request.formData();
+  const intent = String(formData.get("_intent") || "convertToInvoice");
+
+  // Email the quote as a PDF
+  if (intent === "emailQuote") {
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: { customerEmail: true, customerName: true },
+    });
+    if (!quote?.customerEmail) {
+      return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quoteId}?emailStatus=error&emailMessage=${encodeURIComponent("No customer email address on this quote")}`));
+    }
+    const to = quote.customerEmail;
+    const customerName = quote.customerName || "";
+    (async () => {
+      try {
+        const { generateQuotePdf } = await import("../utils/quote-pdf.server");
+        const { sendQuoteEmail } = await import("../utils/email.server");
+        const pdfBuffer = await generateQuotePdf(quoteId);
+        await sendQuoteEmail({ to, customerName, quoteId, pdfBuffer });
+        console.log(`[email] Quote QUO-${quoteId} emailed to ${to}`);
+      } catch (err: any) {
+        console.error(`[email] Quote QUO-${quoteId} failed:`, err);
+      }
+    })();
+    return redirect(withEmbeddedParamsFromRequest(request, `/app/quotes/${quoteId}?emailStatus=success&emailMessage=${encodeURIComponent(`Quote QUO-${quoteId} emailed to ${to}`)}`));
+  }
 
   const quote = await prisma.quote.findUnique({
-    where: { id: Number(params.quoteId) },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
+    where: { id: quoteId },
+    include: { lineItems: true },
   });
 
   if (!quote) {
     throw new Response("Quote not found", { status: 404 });
   }
 
-  return {
-    quote,
-    logoUrl: process.env.BUSINESS_LOGO_URL || "",
+  const vatType = quote.vatType || "Standard";
+  const isVatExempt = vatType === "Exempt" || vatType === "CrossBorder";
+
+  const draftOrderInput: any = {
+    customerId: undefined,
+    email: quote.customerEmail || undefined,
+    phone: quote.customerPhone || undefined,
+    taxExempt: isVatExempt,
+    note: quote.reference || undefined,
+    tags: ["Quote Converted"],
+    lineItems: quote.lineItems.map((item: any) => {
+      const netUnitPrice = Math.round(Number(item.unitPrice || 0) * 100) / 100;
+
+      return {
+        quantity: Number(item.quantity || 1),
+        title: item.title || "Custom item",
+        sku: item.sku || undefined,
+        originalUnitPriceWithCurrency: {
+          amount: Number(netUnitPrice ?? 0).toFixed(2),
+          currencyCode: "GBP",
+        },
+        taxable: vatType === "Standard",
+        appliedDiscount: Number(item.discount || 0)
+          ? {
+              value: Number(item.discount || 0),
+              valueType: "FIXED_AMOUNT",
+              title: "Manual discount",
+            }
+          : null,
+      };
+    }),
   };
+
+  const createDraftResponse = await admin.graphql(
+    `
+      mutation CreateDraftOrder($input: DraftOrderInput!) {
+        draftOrderCreate(input: $input) {
+          draftOrder { id name }
+          userErrors { field message }
+        }
+      }
+    `,
+    { variables: { input: draftOrderInput } },
+  );
+
+  const createDraftJson = await createDraftResponse.json();
+
+  const createErrors = createDraftJson.data?.draftOrderCreate?.userErrors || [];
+
+  if (createErrors.length > 0) {
+    throw new Response(createErrors.map((e: any) => e.message).join(", "), { status: 400 });
+  }
+
+  const draftOrderId = createDraftJson.data.draftOrderCreate.draftOrder.id;
+
+  const completeDraftResponse = await admin.graphql(
+    `
+      mutation CompleteDraftOrder($id: ID!, $paymentPending: Boolean!) {
+        draftOrderComplete(id: $id, paymentPending: $paymentPending) {
+          draftOrder { id order { id name } }
+          userErrors { field message }
+        }
+      }
+    `,
+    { variables: { id: draftOrderId, paymentPending: true } },
+  );
+
+  const completeDraftJson = await completeDraftResponse.json();
+
+  const completeErrors = completeDraftJson.data?.draftOrderComplete?.userErrors || [];
+
+  if (completeErrors.length > 0) {
+    throw new Response(completeErrors.map((e: any) => e.message).join(", "), { status: 400 });
+  }
+
+  const shopifyOrder = completeDraftJson.data.draftOrderComplete.draftOrder.order;
+
+  const sale = await createSaleCompat({
+    sale: {
+      shopifyOrderId: shopifyOrder?.id || null,
+      shopifyOrderName: shopifyOrder?.name || null,
+      customerId: null,
+      customerName: quote.customerName,
+      customerEmail: quote.customerEmail,
+      customerVatNumber: null,
+      customerPhone: quote.customerPhone,
+      address1: quote.address1,
+      address2: quote.address2,
+      city: quote.city,
+      county: quote.county,
+      postcode: quote.postcode,
+      country: quote.country,
+      reference: quote.reference,
+      paymentMethod: "Other",
+      subtotal: quote.subtotal,
+      discountTotal: quote.discountTotal,
+      vatAmount: quote.vatAmount,
+      total: quote.total,
+      amountPaid: 0,
+      balanceDue: quote.total,
+      paymentStatus: "Unpaid",
+      depositPaid: false,
+      staffId: quote.staffId,
+    },
+    lineItems: quote.lineItems.map((item: any) => ({
+          shopifyVariantId: item.shopifyVariantId || null,
+          title: item.title,
+          sku: item.sku,
+          imageUrl: null,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          discount: Number(item.discount || 0),
+          lineTotal: item.lineTotal,
+          isCustom: !item.shopifyVariantId,
+        })),
+  });
+
+  // send invoice email if customer has email
+  if (quote.customerEmail) {
+    try {
+      const { generateInvoicePdf } = await import("../utils/invoice-pdf.server");
+      const { sendInvoiceEmail } = await import("../utils/email.server");
+
+      const pdfBuffer = await generateInvoicePdf(sale.id);
+
+      await sendInvoiceEmail({
+        to: quote.customerEmail,
+        customerName: quote.customerName,
+        invoiceId: sale.id,
+        pdfBuffer,
+        paymentStatus: "Unpaid",
+      });
+    } catch (err) {
+      console.error("Failed to send invoice email after conversion:", err);
+    }
+  }
+
+  return redirect(withEmbeddedParamsFromRequest(request, `/app/invoices/${sale.id}`));
 }
 
 export default function QuoteViewPage() {
-  const { quote } = useLoaderData<typeof loader>();
+  const { quote, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  function withEmbeddedParams(path: string) {
+    const [pathname, queryString = ""] = path.split("?");
+    const currentParams = new URLSearchParams(location.search);
+    const nextParams = new URLSearchParams(queryString);
+
+    for (const key of ["shop", "host", "embedded", "id_token"]) {
+      const value = currentParams.get(key);
+      if (value && !nextParams.has(key)) {
+        nextParams.set(key, value);
+      }
+    }
+
+    const nextQuery = nextParams.toString();
+    return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  }
+
+  const loadedQuote = quote;
+
+  if (error || !loadedQuote) {
+    return <Banner tone="critical">{error || "Quote not found."}</Banner>;
+  }
 
   useEffect(() => {
     if (searchParams.get("autoprint") !== "1") return;
 
     const timer = window.setTimeout(() => {
-      navigate(`/app/quotes/${quote.id}/print?autoprint=1`);
+      navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print?autoprint=1`));
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [searchParams, navigate, quote.id]);
+  }, [searchParams, navigate, loadedQuote.id, location.search]);
+
+  const emailStatus = searchParams.get("emailStatus");
+  const emailMessage = searchParams.get("emailMessage");
 
   return (
     <Page
-      title={`Quote QUO-${quote.id}`}
+      title={`Quote QUO-${loadedQuote.id}`}
       subtitle="Review, print, or download this customer quote."
       backAction={{
         content: "Quotes",
-        onAction: () => navigate("/app/quotes"),
+          onAction: () => navigate(withEmbeddedParams("/app/quotes")),
       }}
     >
       <Layout>
+        {emailStatus && emailMessage ? (
+          <Layout.Section>
+            <Banner tone={emailStatus === "success" ? "success" : "critical"}>
+              {emailMessage}
+            </Banner>
+          </Layout.Section>
+        ) : null}
         <Layout.Section>
           <BlockStack gap="400">
             <Card>
@@ -79,10 +322,10 @@ export default function QuoteViewPage() {
                 <InlineStack align="space-between" blockAlign="center">
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingLg">
-                      QUO-{quote.id}
+                      QUO-{loadedQuote.id}
                     </Text>
                     <Text as="p" tone="subdued">
-                      Created {new Date(quote.createdAt).toLocaleString("en-GB")}
+                      Created {new Date(loadedQuote.createdAt).toLocaleString("en-GB")}
                     </Text>
                   </BlockStack>
 
@@ -94,12 +337,56 @@ export default function QuoteViewPage() {
                 <InlineStack gap="300">
                   <Button
                     variant="primary"
-                    onClick={() => navigate(`/app/quotes/${quote.id}/print`)}
+                    onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}
                   >
                     Print / Download Quote
                   </Button>
 
-                  <Button onClick={() => navigate("/app/quotes")}>Back</Button>
+                  <Button
+                    onClick={() => navigate(withEmbeddedParams(`/app/quote?editQuoteId=${quote.id}`))}
+                  >
+                    Edit Quote
+                  </Button>
+
+                  <form method="post" style={{ display: "inline" }}>
+                    <input type="hidden" name="_intent" value="emailQuote" />
+                    <button
+                      type="submit"
+                      style={{
+                        background: "#006aff",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        marginRight: 8,
+                      }}
+                      onClick={(e) => {
+                        if (!window.confirm(`Email quote QUO-${quote.id} to ${loadedQuote.customerEmail || "customer"}?`)) e.preventDefault();
+                      }}
+                    >
+                      Email Quote
+                    </button>
+                  </form>
+
+                  <form method="post" style={{ display: "inline" }}>
+                    <button
+                      type="submit"
+                      style={{
+                        background: "#1f7a1f",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        marginRight: 8,
+                      }}
+                    >
+                      Convert to Invoice
+                    </button>
+                  </form>
+
+                  <Button onClick={() => navigate(withEmbeddedParams("/app/quotes"))}>Back</Button>
                 </InlineStack>
               </BlockStack>
             </Card>
@@ -236,7 +523,7 @@ export default function QuoteViewPage() {
                 <Button
                   variant="primary"
                   fullWidth
-                  onClick={() => navigate(`/app/quotes/${quote.id}/print`)}
+                  onClick={() => navigate(withEmbeddedParams(`/app/quotes/${quote.id}/print`))}
                 >
                   Print / Download Quote
                 </Button>

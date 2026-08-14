@@ -596,12 +596,12 @@ export default function CreateWorksOrderPage() {
                   prefix="£"
                 />
 
-                <Text as="p">Subtotal: £{totals.subtotal.toFixed(2)}</Text>
-                <Text as="p">Discount: £{totals.discount.toFixed(2)}</Text>
-                <Text as="p">VAT: £{totals.vatAmount.toFixed(2)}</Text>
+                <Text as="p">Subtotal: £{Number(totals.subtotal ?? 0).toFixed(2)}</Text>
+                <Text as="p">Discount: £{Number(totals.discount ?? 0).toFixed(2)}</Text>
+                <Text as="p">VAT: £{Number(totals.vatAmount ?? 0).toFixed(2)}</Text>
 
                 <Text as="p" fontWeight="bold">
-                  Total: £{totals.total.toFixed(2)}
+                  Total: £{Number(totals.total ?? 0).toFixed(2)}
                 </Text>
 
                 <Button submit variant="primary">

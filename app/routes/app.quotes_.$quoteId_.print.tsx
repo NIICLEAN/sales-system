@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import {
   useLoaderData,
   useSearchParams,
-} from "react-router";import { authenticate } from "../shopify.server";
+} from "react-router";
+import { Banner } from "@shopify/polaris";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({
@@ -12,28 +14,45 @@ export async function loader({
   request: Request;
   params: { quoteId: string };
 }) {
-  await authenticate.admin(request);
+  try {
+    await authenticate.admin(request);
 
-  const quote = await prisma.quote.findUnique({
-    where: { id: Number(params.quoteId) },
-    include: {
-      staff: true,
-      lineItems: true,
-    },
-  });
+    const quote = await prisma.quote.findUnique({
+      where: { id: Number(params.quoteId) },
+      include: {
+        staff: true,
+        lineItems: true,
+      },
+    });
 
-  if (!quote) {
-    throw new Response("Quote not found", { status: 404 });
+    if (!quote) {
+      throw new Response("Quote not found", { status: 404 });
+    }
+
+    return {
+      quote,
+      logoUrl: process.env.BUSINESS_LOGO_URL || "",
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("Failed to load quote print page:", error);
+    return {
+      quote: null,
+      logoUrl: "",
+      error: "Quote could not be loaded right now.",
+    };
   }
-
-  return {
-    quote,
-    logoUrl: process.env.BUSINESS_LOGO_URL || "",
-  };
 }
 
 export default function PrintQuotePage() {
-  const { quote, logoUrl } = useLoaderData<typeof loader>();
+  const { quote, logoUrl, error } = useLoaderData<typeof loader>();
+
+  if (error || !quote) {
+    return <Banner tone="critical">{error || "Quote not found."}</Banner>;
+  }
+
+  const loadedQuote = quote;
 
   const [searchParams] = useSearchParams();
 
@@ -51,25 +70,32 @@ useEffect(() => {
     window.clearTimeout(timer);
 }, [searchParams]);
 
-function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
+function formatCurrency(value: any) {
+  return `£${Number(value ?? 0).toFixed(2)}`;
+}
+
+async function downloadPdf(event?: React.MouseEvent<HTMLButtonElement>) {
   event?.preventDefault();
   event?.stopPropagation();
 
-const pdfUrl =
-  window.location.pathname.replace(
-    /\/$/,
-    ""
-  ) + "/pdf";
+  const pdfUrl = window.location.pathname.replace(/\/$/, "") + "/pdf";
 
-  const link = document.createElement("a");
-  link.href = pdfUrl;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.download = `Quote-QUO-${quote.id}.pdf`;
-
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  try {
+    const response = await fetch(pdfUrl);
+    if (!response.ok) throw new Error(`Server returned ${response.status}`);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `Quote-QUO-${loadedQuote.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    console.error("PDF download failed:", err);
+    alert("Failed to download PDF — please try again.");
+  }
 }
   return (
     <div className="page">
@@ -260,12 +286,12 @@ th {
 
       <div className="header">
         <div>
-          <h1>Quote QUO-{quote.id}</h1>
+          <h1>Quote QUO-{loadedQuote.id}</h1>
           <p className="muted">
-            Date: {new Date(quote.createdAt).toLocaleString("en-GB")}
+            Date: {new Date(loadedQuote.createdAt).toLocaleString("en-GB")}
           </p>
-          <p>Salesperson: {quote.staff?.name || "-"}</p>
-          <p>Reference: {quote.reference || "-"}</p>
+          <p>Salesperson: {loadedQuote.staff?.name || "-"}</p>
+          <p>Reference: {loadedQuote.reference || "-"}</p>
         </div>
 
         <div className="business">
@@ -284,20 +310,20 @@ th {
       <div className="grid">
         <div className="box">
           <h3>Customer</h3>
-          <p>{quote.customerName}</p>
-          <p>{quote.customerEmail || ""}</p>
-          <p>{quote.customerPhone || ""}</p>
+          <p>{loadedQuote.customerName}</p>
+          <p>{loadedQuote.customerEmail || ""}</p>
+          <p>{loadedQuote.customerPhone || ""}</p>
         </div>
 
         <div className="box">
           <h3>Address</h3>
-          <p>{quote.address1 || ""}</p>
-          <p>{quote.address2 || ""}</p>
+          <p>{loadedQuote.address1 || ""}</p>
+          <p>{loadedQuote.address2 || ""}</p>
           <p>
-            {quote.city || ""} {quote.county || ""}
+            {loadedQuote.city || ""} {loadedQuote.county || ""}
           </p>
-          <p>{quote.postcode || ""}</p>
-          <p>{quote.country || ""}</p>
+          <p>{loadedQuote.postcode || ""}</p>
+          <p>{loadedQuote.country || ""}</p>
         </div>
       </div>
 
@@ -314,14 +340,14 @@ th {
         </thead>
 
         <tbody>
-          {quote.lineItems.map((item: any) => (
+          {loadedQuote.lineItems.map((item: any) => (
             <tr key={item.id}>
               <td>{item.title}</td>
               <td>{item.sku || "-"}</td>
               <td className="right">{item.quantity}</td>
-              <td className="right">£{Number(item.unitPrice).toFixed(2)}</td>
-              <td className="right">£{Number(item.discount).toFixed(2)}</td>
-              <td className="right">£{Number(item.lineTotal).toFixed(2)}</td>
+              <td className="right">{formatCurrency(item.unitPrice)}</td>
+              <td className="right">{formatCurrency(item.discount)}</td>
+              <td className="right">{formatCurrency(item.lineTotal)}</td>
             </tr>
           ))}
         </tbody>
@@ -330,22 +356,22 @@ th {
       <div className="totals">
         <div className="totals-row">
           <span>Subtotal</span>
-          <span>£{Number(quote.subtotal).toFixed(2)}</span>
+          <span>{formatCurrency(loadedQuote.subtotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>Discount</span>
-          <span>£{Number(quote.discountTotal).toFixed(2)}</span>
+          <span>{formatCurrency(loadedQuote.discountTotal)}</span>
         </div>
 
         <div className="totals-row">
           <span>VAT</span>
-          <span>£{Number(quote.vatAmount).toFixed(2)}</span>
+          <span>{formatCurrency(loadedQuote.vatAmount)}</span>
         </div>
 
         <div className="totals-row grand-total">
           <span>Total</span>
-          <span>£{Number(quote.total).toFixed(2)}</span>
+          <span>{formatCurrency(loadedQuote.total)}</span>
         </div>
       </div>
 

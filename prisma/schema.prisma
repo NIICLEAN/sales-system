@@ -37,6 +37,13 @@ model Sale {
   postcode String?
   country  String?
 
+  deliveryAddress1 String?
+  deliveryAddress2 String?
+  deliveryCity     String?
+  deliveryCounty   String?
+  deliveryPostcode String?
+  deliveryCountry  String?
+
   reference     String?
   paymentMethod String
 
@@ -52,11 +59,22 @@ model Sale {
   staffId Int
   staff   Staff @relation(fields: [staffId], references: [id])
 
+  // VAT treatment for this sale
+  vatType VatType @default(Standard)
+
+  // Xero integration — stores the Xero invoice ID once pushed
+  xeroInvoiceId String?
+
   lineItems SaleLineItem[]
 
+  payments Payment[] @relation("SalePayments")
   workSchedules WorkSchedule[]
 
   createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([paymentStatus])
+  @@index([staffId])
 }
 
 model WorkSchedule {
@@ -72,8 +90,8 @@ model WorkSchedule {
 
   scheduledDate DateTime
 
-  assignedStaffId Int
-  assignedStaff   Staff @relation("AssignedWorkStaff", fields: [assignedStaffId], references: [id])
+  assignedStaffId Int?
+  assignedStaff   Staff? @relation("AssignedWorkStaff", fields: [assignedStaffId], references: [id])
 
   note String?
 
@@ -125,9 +143,45 @@ model Quote {
   staffId Int
   staff   Staff @relation(fields: [staffId], references: [id])
 
+  // VAT treatment for this quote
+  vatType VatType @default(Standard)
+
   lineItems QuoteLineItem[]
 
   createdAt DateTime @default(now())
+}
+
+model Payment {
+  id Int @id @default(autoincrement())
+
+  saleId Int
+  sale   Sale @relation("SalePayments", fields: [saleId], references: [id], onDelete: Cascade)
+
+  amount   Float
+  method   PaymentMethod
+  provider String?   // e.g. MyPOS, Worldpay
+  reference String?
+  notes    String?
+
+  xeroInvoiceId String?   // Xero invoice ID for the per-payment invoice (e.g. NCP157.1)
+
+  paidAt    DateTime?  // transaction date/time set by user at time of recording payment
+  createdAt DateTime @default(now())
+}
+
+enum VatType {
+  Standard
+  Exempt
+  CrossBorder
+}
+
+enum PaymentMethod {
+  Cash
+  Card
+  BankTransfer
+  MyPos
+  Worldpay
+  Other
 }
 
 model QuoteLineItem {

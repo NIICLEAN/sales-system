@@ -3,7 +3,7 @@ import puppeteer from "puppeteer-core";
 import { Buffer } from "node:buffer";
 
 function money(value: any) {
-  return `£${Number(value || 0).toFixed(2)}`;
+  return `£${Number(value ?? 0).toFixed(2)}`;
 }
 
 function safe(value: any) {
@@ -18,9 +18,34 @@ function safe(value: any) {
 export async function generateQuotePdf(quoteId: number) {
   const quote = await prisma.quote.findUnique({
     where: { id: quoteId },
-    include: {
-      staff: true,
-      lineItems: true,
+    select: {
+      id: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      address1: true,
+      address2: true,
+      city: true,
+      county: true,
+      postcode: true,
+      country: true,
+      reference: true,
+      subtotal: true,
+      discountTotal: true,
+      vatAmount: true,
+      total: true,
+      createdAt: true,
+      staff: { select: { name: true } },
+      lineItems: {
+        select: {
+          title: true,
+          sku: true,
+          quantity: true,
+          unitPrice: true,
+          discount: true,
+          lineTotal: true,
+        },
+      },
     },
   });
 
@@ -344,7 +369,14 @@ export async function generateQuotePdf(quoteId: number) {
     headless: true,
     executablePath:
       process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+    ],
   });
 
   try {

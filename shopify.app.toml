@@ -2,7 +2,7 @@
 
 client_id = "73dc4d0aacda6538b6ca2984537733e0"
 name = "NCP Sales"
-application_url = "https://sales-system-production-e547.up.railway.app"
+application_url = "https://www.niicleanproducts.co.uk"
 embedded = true
 
 [build]
@@ -19,14 +19,18 @@ api_version = "2026-04"
   uri = "/webhooks/app/uninstalled"
   topics = [ "app/uninstalled" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/paid"
+  topics = [ "orders/paid" ]
+
 [access_scopes]
-scopes = "write_draft_orders,read_draft_orders,write_inventory,read_inventory,read_orders,write_orders,read_products,write_products,read_customers,write_customers"
+scopes = "write_draft_orders,read_draft_orders,write_inventory,read_inventory,read_orders,write_orders,write_merchant_managed_fulfillment_orders,read_merchant_managed_fulfillment_orders,read_products,write_products,read_customers,write_customers"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://sales-system-production-e547.up.railway.app/auth/callback"
+  "https://www.niicleanproducts.co.uk/auth/callback"
 ]
 
 [product.metafields.app.demo_info]

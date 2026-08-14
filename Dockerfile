@@ -25,4 +25,4 @@ RUN npm run build
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npx react-router-serve ./build/server/index.js --host 0.0.0.0 --port ${PORT:-3000}"]
+CMD ["sh", "-c", "npm run setup && npx react-router-serve ./build/server/index.js --host 0.0.0.0 --port ${PORT:-3000}"]

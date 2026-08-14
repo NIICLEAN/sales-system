@@ -140,6 +140,18 @@ The table `main.Session` does not exist in the current database.
 
 Create the database for Prisma. Run the `setup` script in `package.json` using `npm`, `yarn` or `pnpm`.
 
+### Prisma: missing DATABASE_URL
+
+If you see a Prisma error complaining about `DATABASE_URL` (error code `P1012`), create a local `.env` file at the project root with a `DATABASE_URL` value. For example:
+
+```shell
+cat > .env <<EOF
+DATABASE_URL="postgresql://postgres:password@localhost:5432/sales_system?schema=public"
+EOF
+```
+
+Replace the connection string with your Postgres credentials, then restart your container or the dev server so Prisma picks up the environment variable.
+
 ### Navigating/redirecting breaks an embedded app
 
 Embedded apps must maintain the user session, which can be tricky inside an iFrame. To avoid issues:

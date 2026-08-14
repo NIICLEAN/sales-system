@@ -1,14 +1,51 @@
 import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
+import dns from "dns";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.OUTLOOK_SMTP_HOST,
-  port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
-  secure: false,
-  auth: {
-    user: process.env.OUTLOOK_EMAIL,
-    pass: process.env.OUTLOOK_PASSWORD,
-  },
-});
+// Create the transport fresh each time so it always picks up the current
+// env vars (avoids stale module-level state if vars change between deploys).
+// Pre-resolves the SMTP hostname to an IPv4 address so Railway containers
+// (which lack IPv6 egress) don't hit ENETUNREACH when dns returns AAAA records.
+async function createTransport() {
+  const host = process.env.OUTLOOK_SMTP_HOST;
+  const user = process.env.OUTLOOK_EMAIL;
+  const pass = process.env.OUTLOOK_PASSWORD;
+  if (!host || !user || !pass) {
+    throw new Error(
+      `SMTP not configured. Missing: ${[
+        !host && "OUTLOOK_SMTP_HOST",
+        !user && "OUTLOOK_EMAIL",
+        !pass && "OUTLOOK_PASSWORD",
+      ].filter(Boolean).join(", ")}`
+    );
+  }
+  // Force IPv4: pre-resolve hostname → IPv4 address, keep original hostname
+  // in tls.servername so the TLS certificate is still validated correctly.
+  let connectHost = host;
+  try {
+    const { address } = await new Promise<{ address: string; family: number }>(
+      (resolve, reject) =>
+        dns.lookup(host, { family: 4 }, (err, address, family) =>
+          err ? reject(err) : resolve({ address, family })
+        )
+    );
+    connectHost = address;
+  } catch {
+    // Fallback to hostname if IPv4 lookup fails
+  }
+  const options: SMTPTransport.Options = {
+    host: connectHost,
+    port: Number(process.env.OUTLOOK_SMTP_PORT || 587),
+    secure: false,
+    requireTLS: true,
+    tls: { servername: host }, // SNI: validate cert against original hostname
+    auth: { user, pass },
+    connectionTimeout: 10000,  // 10 s — fail fast if TCP connect hangs
+    greetingTimeout: 10000,    // 10 s — fail fast if SMTP greeting times out
+    socketTimeout: 15000,      // 15 s — fail fast if idle mid-transfer
+  };
+  return nodemailer.createTransport(options);
+}
 
 export async function sendInvoiceEmail({
   to,
@@ -25,6 +62,7 @@ export async function sendInvoiceEmail({
 }) {
   if (!to) return;
 
+  const transporter = await createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
@@ -81,42 +119,19 @@ html: `
           Payment Information
         </h3>
 
-        <p style="margin:0 0 16px; color:#444; line-height:1.7;">
-          Invoices can be paid via bank transfer or by calling
-          <strong>02870348834</strong> to pay over the phone.
+        <p style="margin:0 0 8px; color:#444; line-height:1.7;">
+          To arrange payment please contact us:
         </p>
 
-        <table style="width:100%; font-size:14px; border-collapse:collapse;">
-          <tr>
-            <td style="padding:6px 0;"><strong>Bank</strong></td>
-            <td>Danske Bank</td>
-          </tr>
+        <p style="margin:0; color:#444; line-height:1.7;">
+          <strong>Phone:</strong> 02870348834<br />
+          <strong>Email:</strong> Reply to this email
+        </p>
 
-          <tr>
-            <td style="padding:6px 0;"><strong>Account Name</strong></td>
-            <td>NII Clean Ltd</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>Sort Code</strong></td>
-            <td>95-06-79</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>Account Number</strong></td>
-            <td>40254274</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>IBAN</strong></td>
-            <td>GB83 DABA 9506 7940 2542 74</td>
-          </tr>
-
-          <tr>
-            <td style="padding:6px 0;"><strong>BIC / SWIFT</strong></td>
-            <td>DABAGB2B</td>
-          </tr>
-        </table>
+        <p style="margin:12px 0 0; color:#444; line-height:1.7;">
+          We accept payment by bank transfer, card over the phone, or in person.
+          Bank details are available on request.
+        </p>
       </div>
       `
           : `
@@ -153,7 +168,9 @@ html: `
     attachments: [
       {
         filename: `Invoice-INV-${invoiceId}.pdf`,
-        content: pdfBuffer,
+        content: pdfBuffer.toString("base64"),
+        contentType: "application/pdf",
+        encoding: "base64",
       },
     ],
   });
@@ -172,6 +189,7 @@ export async function sendQuoteEmail({
 }) {
   if (!to) return;
 
+  const transporter = await createTransport();
   const logoUrl = process.env.BUSINESS_LOGO_URL || "";
 
   await transporter.sendMail({
@@ -226,7 +244,9 @@ export async function sendQuoteEmail({
     attachments: [
       {
         filename: `Quote-QUO-${quoteId}.pdf`,
-        content: pdfBuffer,
+        content: pdfBuffer.toString("base64"),
+        contentType: "application/pdf",
+        encoding: "base64",
       },
     ],
   });

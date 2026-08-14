@@ -25,7 +25,7 @@ export async function loader({ request }: { request: Request }) {
   startDate.setHours(0, 0, 0, 0);
 
   const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 14);
+  endDate.setDate(endDate.getDate() + 28);
 
   const worksOrders = await prisma.worksOrder.findMany({
     where: {
@@ -87,7 +87,7 @@ export default function ScheduledWorksPage() {
 
   const start = new Date(startDate);
 
-  const days = Array.from({ length: 14 }).map((_, index) => {
+  const days = Array.from({ length: 28 }).map((_, index) => {
     const day = new Date(start);
     day.setDate(start.getDate() + index);
     return day;
@@ -107,10 +107,10 @@ export default function ScheduledWorksPage() {
   }
 
   const previousStart = new Date(start);
-  previousStart.setDate(previousStart.getDate() - 14);
+  previousStart.setDate(previousStart.getDate() - 28);
 
   const nextStart = new Date(start);
-  nextStart.setDate(nextStart.getDate() + 14);
+  nextStart.setDate(nextStart.getDate() + 28);
 
   function calendarUrl(date: Date) {
     const base = `/app/works/scheduled?start=${dateKey(date)}`;
@@ -227,15 +227,15 @@ export default function ScheduledWorksPage() {
         <Layout.Section>
           <InlineStack gap="300" align="space-between">
             <Link to={calendarUrl(previousStart)}>
-              <Button>Previous fortnight</Button>
+              <Button>Previous 4 weeks</Button>
             </Link>
 
             <Text as="p" fontWeight="bold">
-              {shortDate(days[0])} to {shortDate(days[13])}
+              {shortDate(days[0])} to {shortDate(days[27])}
             </Text>
 
             <Link to={calendarUrl(nextStart)}>
-              <Button>Next fortnight</Button>
+              <Button>Next 4 weeks</Button>
             </Link>
           </InlineStack>
         </Layout.Section>
@@ -285,6 +285,26 @@ export default function ScheduledWorksPage() {
                 </Text>
 
                 <CalendarWeek weekDays={days.slice(7, 14)} />
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingLg">
+                  Week 3
+                </Text>
+
+                <CalendarWeek weekDays={days.slice(14, 21)} />
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingLg">
+                  Week 4
+                </Text>
+
+                <CalendarWeek weekDays={days.slice(21, 28)} />
               </BlockStack>
             </Card>
           </BlockStack>
